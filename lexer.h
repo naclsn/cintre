@@ -45,11 +45,25 @@ typedef struct lex_state {
         bufsl file;
         size_t line;
     }) include_stack;
-    dyarr(bool) ifdef_stack;
+    dyarr(char) ifdef_stack;
     dyarr(buf) workbufs;
 } lex_state;
 
 /// add to defined macros
+void ldef(lex_state ref ls, char cref name, char cref value);
+/// add to include paths
+void linc(lex_state ref ls, char cref path);
+/// set the entry file, lexer ready to go
+void lini(lex_state ref ls, char cref entry);
+/// clear and delete everything (do not hold on to bufsl tokens!)
+void ldel(lex_state ref ls);
+/// true if no more token (also last token is empty)
+#define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
+/// compute a preprocessor expression
+long lxpr(lex_state cref ls, bufsl ref xpr);
+/// next token, move forward
+bufsl lext(lex_state ref ls);
+
 void ldef(lex_state ref ls, char cref name, char cref value) {
     struct _lex_state_macro* it = dyarr_push(&ls->macros);
     if (!it) exitf("OOM");
@@ -58,7 +72,6 @@ void ldef(lex_state ref ls, char cref name, char cref value) {
     it->repl.len = strlen(it->repl.ptr = value);
 }
 
-/// add to include paths
 void linc(lex_state ref ls, char cref path) {
     bufsl* it = dyarr_push(&ls->include_paths);
     if (!it) exitf("OOM");
@@ -66,7 +79,6 @@ void linc(lex_state ref ls, char cref path) {
     it->len = strlen(path);
 }
 
-/// set the entry file, lexer ready to go
 void lini(lex_state ref ls, char cref entry) {
     struct _lex_state_source* src = dyarr_push(&ls->sources);
     if (!src) exitf("OOM");
@@ -79,7 +91,6 @@ void lini(lex_state ref ls, char cref entry) {
     ls->line = 1;
 }
 
-/// clear and delete everything (do not hold on to bufsl tokens!)
 void ldel(lex_state ref ls) {
     for (size_t k = 0; k < ls->sources.len; k++) free(ls->sources.ptr[k].text.ptr);
     free(ls->sources.ptr);
@@ -91,13 +102,175 @@ void ldel(lex_state ref ls) {
     free(ls->workbufs.ptr);
 }
 
-/// true if no more token (also last token is empty)
-#define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
+static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr) {
+#   define nx() (++xpr->ptr, --xpr->len)
+#   define at() (*xpr->ptr)
+    long r = 0;
+    if (!xpr->len) return 0;
+    while (strchr(" \t\n\\", at()) && nx());
+    if ('0' <= at() && at() <= '9') {
+        unsigned shft = 0;
+        char const* dgts = "0123456789";
+        if ('0' == at() && nx()) switch (at()) {
+        case 'x':
+        case 'X': nx(); shft = 4; dgts = "0123456789abcdef"; break;
+        default:        shft = 3; dgts = "01234567";         break;
+        }
+        if (!xpr->len) return 0;
+        char const* v = strchr(dgts, at()|32);
+        if (!v) return 0;
+        do r = (!shft ? r*10 : r<<shft) + (v-dgts);
+        while (nx() && (v = strchr(dgts, at()|32)));
+        if (xpr->len && strchr("ulUL", at())) nx();
+    } else if ('\'' == at()) {
+        while (nx() && '\'' != at()) {
+            if ('\\' == at()) switch (nx() ? at() : 0) {
+            case '0': r = r<<8 | '\0'; break;
+            case'\'': r = r<<8 | '\''; break;
+            case '"': r = r<<8 | '\"'; break;
+            case '?': r = r<<8 | '\?'; break;
+            case'\\': r = r<<8 | '\\'; break;
+            case 'a': r = r<<8 | '\a'; break;
+            case 'b': r = r<<8 | '\b'; break;
+            case 'f': r = r<<8 | '\f'; break;
+            case 'n': r = r<<8 | '\n'; break;
+            case 'r': r = r<<8 | '\r'; break;
+            case 't': r = r<<8 | '\t'; break;
+            case 'v': r = r<<8 | '\v'; break;
+            default: return 0;
+            } else r = r<<8 | at();
+        }
+        nx();
+    } else if ('(' == at() && nx()) {
+        r = lxpr(ls, xpr);
+        if (xpr->len && ')' == at()) nx();
+    } else if ('_' == at() || ('a' <= (at()|32) && (at()|32) <= 'z')) {
+        bool defd = strlen("defined") < xpr->len && !memcmp("defined", xpr->ptr, strlen("defined"));
+        bool pars;
+        if (defd) {
+            xpr->ptr+= strlen("defined");
+            xpr->len-= strlen("defined");
+            if (!xpr->len) return 0;
+            while (strchr(" \t\n\\", at()) && nx());
+            pars = xpr->len && '(' == at();
+            if (pars && nx()) while (strchr(" \t\n\\", at()) && nx());
+        }
+        bufsl name = {.ptr= xpr->ptr};
+        while (nx() && ('_' == at() || ('A' <= at() && at() <= 'Z') || ('a' <= at() && at() <= 'z') || ('0' <= at() && at() <= '9')));
+        name.len = xpr->ptr - name.ptr;
+        search_namespace(name, ls->macros) {
+            bufsl w = ls->macros.ptr[k].repl;
+            r = defd ? 1 : lxpr(ls, &w);
+            break;
+        }
+        if (pars && xpr->len) {
+            while (strchr(" \t\n\\", at()) && nx());
+            if (xpr->len && ')' == at()) nx();
+        }
+    } else switch (at()) {
+    case '-': nx(); r = -lxpr(ls, xpr); break;
+    case '+': nx(); r = +lxpr(ls, xpr); break;
+    case '~': nx(); r = ~lxpr(ls, xpr); break;
+    case '!': nx(); r = !lxpr(ls, xpr); break;
+    }
+    return r;
+}
+enum _lex_operator {
+    _lex_opnone,
+    _lex_oplor,
+    _lex_opland,
+    _lex_opbor,
+    _lex_opbxor,
+    _lex_opband,
+    _lex_opeq, _lex_opne,
+    _lex_oplt, _lex_opgt, _lex_ople, _lex_opge,
+    _lex_opbshl, _lex_opbshr,
+    _lex_opadd, _lex_opsub,
+    _lex_opmul, _lex_opdiv, _lex_oprem,
+};
+static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long const rhs) {
+    switch (op) {
+    case _lex_oplor:  return lhs || rhs;
+    case _lex_opland: return lhs && rhs;
+    case _lex_opbor:  return lhs |  rhs;
+    case _lex_opbxor: return lhs ^  rhs;
+    case _lex_opband: return lhs &  rhs;
+    case _lex_opeq:   return lhs == rhs;
+    case _lex_opne:   return lhs != rhs;
+    case _lex_oplt:   return lhs <  rhs;
+    case _lex_opgt:   return lhs >  rhs;
+    case _lex_ople:   return lhs <= rhs;
+    case _lex_opge:   return lhs >= rhs;
+    case _lex_opbshl: return lhs << rhs;
+    case _lex_opbshr: return lhs >> rhs;
+    case _lex_opadd:  return lhs +  rhs;
+    case _lex_opsub:  return lhs -  rhs;
+    case _lex_opmul:  return lhs *  rhs;
+    case _lex_opdiv:  return lhs /  rhs;
+    case _lex_oprem:  return lhs %  rhs;
+    default: return 0;
+    }
+}
+static long _lex_oprxpr(lex_state cref ls, bufsl ref xpr, long lhs, enum _lex_operator lop) {
+    long rhs;
+    enum _lex_operator nop;
+again:
+    if (lop) {
+        rhs = lxpr(ls, xpr);
+        if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
+    }
+    nop = _lex_opnone;
+    char c;
+    if (xpr->len) switch (c = at()) {
+    case '+': nx(); nop = _lex_opadd;  break;
+    case '-': nx(); nop = _lex_opsub;  break;
+    case '*': nx(); nop = _lex_opmul;  break;
+    case '/': nx(); nop = _lex_opdiv;  break;
+    case '%': nx(); nop = _lex_oprem;  break;
+    case '^': nx(); nop = _lex_opbxor; break;
+    case '=': case '!':
+        if (nx() && '=' == at()) nx();
+        else return 0;
+        nop = '=' == c ? _lex_opeq : _lex_opne;
+    case ':':
+        break;
+    case '<': case '>':
+        if (1 < xpr->len && '=' == xpr->ptr[1]) nx(), nop = '<' == c ? _lex_ople : _lex_opge;
+        else
+        // fall through
+    case '&': case '|':
+        if (1 < xpr->len && c == xpr->ptr[1]) nx(), nop = '&' == c ? _lex_opland : '|' == c ? _lex_oplor : '<' == c ? _lex_opbshl : _lex_opbshr;
+        else nop = '&' == c ? _lex_opband : '|' == c ? _lex_opbor : '<' == c ? _lex_oplt : _lex_opgt;
+        // fall through
+    default: nx();
+    }
+    if (!lop && nop) { lop = nop; goto again; }
+    if (lop < nop) {
+        rhs = _lex_exexpr(lhs, nop, _lex_oprxpr(ls, xpr, rhs, nop));
+        nop = lop;
+    } else {
+        lhs = _lex_exexpr(lhs, lop, rhs);
+        if (nop) lhs = _lex_oprxpr(ls, xpr, lhs, nop);
+    }
+    return nop ? _lex_exexpr(lhs, nop, rhs) : lhs;
+}
+long lxpr(lex_state cref ls, bufsl ref xpr) {
+    long first = _lex_atmxpr(ls, xpr);
+    if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
+    if ('?' == at() && nx()) {
+        long maybe = lxpr(ls, xpr);
+        if (xpr->len && ':' == at()) nx();
+        else return 0;
+        return first ? maybe : lxpr(ls, xpr);
+    }
+    return xpr->len && !strchr(":)", at()) ? _lex_oprxpr(ls, xpr, first, _lex_opnone) : first;
+#   undef at
+#   undef nx
+}
 
-/// next token, move forward
 bufsl lext(lex_state ref ls) {
 #   define nx() (ls->line+= --ls->slice.len && '\n' == *ls->slice.ptr && !ls->macro_depth, ++ls->slice.ptr)
-#   define at() ls->slice.ptr[0]
+#   define at() (*ls->slice.ptr)
 #   define has(n) ((n) <= ls->slice.len)
 #   define is(c) ((c) == at())
 #   define isin(lo, hi) ((lo) <= at() && at() <= (hi))
@@ -128,7 +301,7 @@ bufsl lext(lex_state ref ls) {
         return lext(ls);
     }
 
-    bool disab = ls->ifdef_stack.len && !*dyarr_top(&ls->ifdef_stack);
+    bool disab = ls->ifdef_stack.len && *dyarr_top(&ls->ifdef_stack);
 
     if (!ls->macro_depth && has(1) && is('#')) {
         nx();
@@ -247,38 +420,45 @@ bufsl lext(lex_state ref ls) {
             skip(strchr(" \t", at()));
             bufsl name;
             accu(name) skip(isid());
-            bool* top = dyarr_push(&ls->ifdef_stack);
+            char* top = dyarr_push(&ls->ifdef_stack);
             if (!top) exitf("OOM");
-            *top = false;
-            if (!disab) {
-                search_namespace(name, ls->macros) { *top = true; break; }
-                if ('n' == dir.ptr[2]) *top = !*top;
+            if (!(*top = disab*2)) {
+                search_namespace(name, ls->macros) { *top = 0; break; }
+                if ('n' == dir.ptr[2]) *top^= 1;
             }
         }
 
         else if (diris("if") || diris("elif")) {
+            skip(strchr(" \t", at()));
+            bufsl expr;
+            accu(expr) {
+                if (!has(1) || is('\n')) break;
+                do if (has(1) && is('\\')) nx();
+                while (nx(), has(1) && !is('\n'));
+            }
             bool e = 'e' == dir.ptr[0];
-            bool* top = e ? dyarr_top(&ls->ifdef_stack) : dyarr_push(&ls->ifdef_stack);
+            char* top = e ? dyarr_top(&ls->ifdef_stack) : dyarr_push(&ls->ifdef_stack);
             if (!top) exitf("OOM");
-            *top = false;
-            /*if (!disab && (!e || !*top)) {
-                // TODO: todo
-            }*/
+            *top = (e ? 1 != *top : disab) ? 2 : !lxpr(ls, &expr);
         }
 
         else if (diris("else")) {
-            bool* top = dyarr_top(&ls->ifdef_stack);
-            if (top) *top = !*top;
+            char* top = dyarr_top(&ls->ifdef_stack);
+            if (top) *top^= 1;
         }
 
         else if (diris("endif")) {
-            if (ls->ifdef_stack.len) dyarr_pop(&ls->ifdef_stack);
+            dyarr_pop(&ls->ifdef_stack);
         }
 
 #       ifdef on_lunr
         else if (!disab) {
             bufsl dirlne;
-            accu(dirlne) if (has(1) && !is('\n')) do if (has(1) && is('\\')) nx(); while (nx(), has(1) && !is('\n'));
+            accu(dirlne) {
+                if (!has(1) || is('\n')) break;
+                do if (has(1) && is('\\')) nx();
+                while (nx(), has(1) && !is('\n'));
+            }
             dirlne.len+= dirlne.ptr-dir.ptr;
             dirlne.ptr = dir.ptr;
             on_lunr(dirlne);
@@ -464,8 +644,7 @@ bufsl lext(lex_state ref ls) {
         case '*': case '/': case '%': case '^': case '=': case '!':
             if ('=' == (&at())[1]) nx();
             // fall through
-        default:
-            nx();
+        default: nx();
         }
     } // accu r
 

@@ -2,17 +2,17 @@
 #include "lexer.h"
 
 bufsl passthrough(bufsl it) {
-    printf("\x1b[36m/* %.*s */\x1b[m", (unsigned)it.len, it.ptr);
+    printf("\x1b[36m%.*s \x1b[m", (unsigned)it.len, it.ptr);
     return it;
 }
-#define lext(_ls) passthrough(lext(ls))
+#define lext(_ls) passthrough(lext(_ls))
 
 /// http://slebok.github.io/zoo/c/c99/iso-9899-1999/extracted/
 /// https://en.cppreference.com/w/c/language/declarations
 
 #define kws(a,b,c,...) ((a&31)<<10 | (b&31)<<5 | (c&31))
 #define kw(s) kws(s[0],s[1],s[2],)
-#define iskwx(tok, ...) dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
+#define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
 #define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
 
 typedef struct declaration {
@@ -41,14 +41,23 @@ typedef struct declaration {
         } quals[8];
 
         enum type_kind {
-            TAG_NOTAG= 0,
-            TAG_STRUCT= kws('s','t','r','u','c','t'),
-            TAG_UNION= kws('u','n','i','o','n'),
-            TAG_ENUM= kws('e','n','u','m'),
+            KIND_NOTAG= 0,
+            KIND_STRUCT= kws('s','t','r','u','c','t'),
+            KIND_UNION= kws('u','n','i','o','n'),
+            KIND_ENUM= kws('e','n','u','m'),
+            KIND_PTR= '*',
+            KIND_FUN= ('('&31)<<5 | (')'&31),
         } kind;
 
-        // if struct or union: fields, which are type+name (no decl spec)
-        // if enum: the list of enumerators, which are name+(optional)value
+        union type_info {
+            // if struct or union: fields, which are type+name (no decl spec)
+            // if enum: the list of enumerators, which are name+(optional)value
+            struct decl_type const* ptr;
+            struct {
+                struct decl_type const* ret;
+                // params
+            } fun;
+        } info;
 
         bufsl name;
     } type;
@@ -58,12 +67,40 @@ typedef struct declaration {
     bufsl name;
 } declaration;
 
-bufsl _parse_params(lex_state ref ls) {
-    // note: "register" can be used, params may not have a name, a ',' is used
-    //       to separate decls (see also in _parse_declarators)
-    bufsl tok = lext(ls);
-    if (dyarr_cmp(&((bufsl){.ptr= "void", .len= 4}), &tok)) tok = lext(ls);
-    return tok;
+void print_decl_type(FILE ref strm, struct decl_type cref type) {
+#   define unkw(k) ((char[4]){((k)>>10&31)|96, ((k)>>5&31)|96, ((k)&31)|96})
+    switch (type->kind) {
+    case KIND_NOTAG:
+        break;
+
+    case KIND_STRUCT:
+    case KIND_UNION:
+    case KIND_ENUM:
+        fprintf(strm, "\x1b[33m%s\x1b[m ", unkw(type->kind));
+        break;
+
+    case KIND_PTR:
+        print_decl_type(strm, type->info.ptr);
+        fprintf(strm, "* ");
+        break;
+
+    case KIND_FUN:
+        print_decl_type(strm, type->info.fun.ret);
+        fprintf(strm, "!!!() "); // TODO
+        break;
+    }
+
+    for (unsigned k = 0; type->quals[k]; k++) fprintf(strm, "\x1b[34m%s\x1b[m ", unkw(type->quals[k]));
+
+    if (type->name.len) fprintf(strm, "\x1b[33m%.*s\x1b[m ", (unsigned)type->name.len, type->name.ptr);
+    //else fprintf(strm, "\x1b[33mint\x1b[m ");
+}
+
+void print_declaration(FILE ref strm, declaration cref decl) {
+    if (decl->spec) fprintf(strm, "\x1b[32m%s\x1b[m ", unkw(decl->spec));
+    print_decl_type(strm, &decl->type);
+    fprintf(strm, "%.*s", (unsigned)decl->name.len, decl->name.ptr);
+#   undef unkw
 }
 
 bufsl _parse_expr(lex_state ref ls) {
@@ -79,16 +116,43 @@ bufsl _parse_body(lex_state ref ls) {
         if (!tok.len || (!depth && c)) break;
         depth+= ('{' == *tok.ptr)-c;
     }
-    return tok;
+    return lext(ls);
 }
 
-void _decl_put_field(void ref struct_or_union, declaration cref field_decl) {
-    struct decl_type* it = struct_or_union;
-    (void)it;
-    (void)field_decl;
+void _decl_put_param(void ref params, declaration cref decl) {
+    printf("{{{ ");
+    print_declaration(stdout, decl);
+    printf(" }}}");
 }
 
-bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, declaration cref), bufsl const tok1, bufsl const tok2, declaration cref base) {
+struct yyy {
+    lex_state ref ls;
+    void ref usr;
+    void (*on)(void ref, declaration cref);
+    declaration ref outer;
+};
+bufsl _parse_declarator();
+void yyy(struct yyy ref yyy, declaration cref inner) {
+    bufsl tok = lext(yyy->ls);
+    switch (*tok.ptr) {
+    case ';': case ',': case ')':
+        break;
+        tok = _parse_declarator(yyy->ls, yyy->usr, yyy->on, ") - fake token to force continuation past the switch", tok,
+                yyy->outer // the jazz that has the 'char', and storage class and all
+                );
+    }
+
+    // char (y);
+    yyy->outer->name = inner->name;
+    yyy->on(yyy->usr, yyy->outer);
+
+    // char (*yy);
+    yyy->outer->name = inner->name;
+    yyy->outer->type = inner->type;
+    yyy->on(yyy->usr, yyy->outer);
+}
+
+bufsl _parse_declarator(lex_state ref ls, void ref usr, void on(void ref, declaration cref), bufsl const tok1, bufsl const tok2, declaration cref base) {
     if (!tok1.len) return (bufsl){0};
 #   define is1(w) (tok.len && w == *tok.ptr)
     bufsl tok;
@@ -96,14 +160,21 @@ bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, decla
 
     switch (*tok1.ptr) {
     case '(':
-        tok = lext(ls);
-        if (is1(')')) decl.name = tok2; // eg `int (a);`
-        else tok = _parse_declarators(ls, usr, on, tok2, tok, base);
-        tok = lext(ls);
-        break;
+        //tok = lext(ls);
+        //if (is1(')')) decl.name = tok2; // eg `int (a);`
+        //else tok = _parse_declarator(ls, NULL, NULL, tok2, tok, &decl);
+        //tok = lext(ls);
+        //return lext(ls);
+        ;
+        struct yyy a_yyy = {.ls= ls, .usr= usr, .on= on, .outer= &decl};
+        tok = _parse_declarator(ls, &a_yyy, (void(*)())yyy, tok2, lext(ls), &(declaration){.type= decl.type});
+        tok = lext(ls); // yyy: ?
+        return tok;
 
     case '*':
         tok = tok2;
+        struct decl_type const hold = decl.type;
+        decl.type = (struct decl_type){.kind= KIND_PTR, .info.ptr= &hold};
         while (3 < tok.len) {
             unsigned askw = kw(tok.ptr);
             switch (askw) {
@@ -119,8 +190,9 @@ bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, decla
             }
             break;
         }
-        tok = _parse_declarators(ls, usr, on, tok, lext(ls), &decl);
-        break;
+        return _parse_declarator(ls, usr, on, tok, lext(ls), &decl);
+
+    //case "fake token thingy": break;
 
     default:
         // TODO: in function paramter declarations, can omit name (and must not
@@ -137,7 +209,11 @@ bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, decla
     }
 
     if (is1('(')) {
-        tok = _parse_params(ls);
+        struct decl_type const hold = decl.type;
+        decl.type = (struct decl_type){.kind= KIND_FUN, .info.fun.ret= &hold};
+        tok = lext(ls);
+        while (!is1(')'))
+            tok = _parse_declarator(ls, NULL, _decl_put_param, tok, lext(ls), &(declaration){0});
         tok = lext(ls);
     }
 
@@ -152,8 +228,7 @@ bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, decla
             while (3 < tok.len && (
                         iskw(tok, askw, 'c','o','n','s','t') ||
                         iskw(tok, askw, 'r','e','s','t','r','i','c','t') ||
-                        iskw(tok, askw, 'v','o','l','a','t','i','l','e')
-                        )) {
+                        iskw(tok, askw, 'v','o','l','a','t','i','l','e') )) {
                 // TODO: add askw
                 tok = lext(ls);
                 askw = kw(tok.ptr);
@@ -163,30 +238,10 @@ bufsl _parse_declarators(lex_state ref ls, void ref usr, void on(void ref, decla
         tok = lext(ls);
     }
 
-    if (!tok.len) return (bufsl){0};
+    if (on) on(usr, &decl);
 
-    switch (*tok.ptr) {
-    case '{':
-        tok = _parse_body(ls);
-        on(usr, &decl);
-        // fall through
-
-    case ')': case ';':
-        return tok;
-
-    case '=':
-        tok = _parse_expr(ls);
-        if (is1(';')) return tok;
-        // fall through
-
-    case ',':
-        on(usr, &decl);
-        tok = lext(ls);
-        return _parse_declarators(ls, usr, on, tok, lext(ls), base);
-    }
-
-    return tok;
 #   undef is1
+    return tok;
 }
 
 bufsl parse(lex_state ref ls, void ref usr, void on(void ref, declaration cref)) {
@@ -208,15 +263,16 @@ bufsl parse(lex_state ref ls, void ref usr, void on(void ref, declaration cref))
 #   define isid() (tok.len && ('_' == *tok.ptr || ('A' <= *tok.ptr && *tok.ptr <= 'Z') || ('a' <= *tok.ptr && *tok.ptr <= 'z') || ('0' <= *tok.ptr && *tok.ptr <= '9')))
 #   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(tok, __VA_ARGS__)) goto notkw;
 
-    while ((tok = lext(ls)).len && !is1('}')) switch (askw = tok.len <3 ? 0 : kw(tok.ptr)) {
+    while ((tok = lext(ls)).len && !is1('}')) redo: switch (askw = tok.len <3 ? 0 : kw(tok.ptr)) {
     case 0: goto notkw;
 
     case_iskw('t','y','p','e','d','e','f') case_iskw('e','x','t','e','r','n') case_iskw('s','t','a','t','i','c') case_iskw('a','u','t','o') case_iskw('r','e','g','i','s','t','e','r')
         base.spec = askw;
         break;
 
-    case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e') case_iskw('i','n','l','i','n','e')
     case_iskw('s','i','g','n','e','d') case_iskw('u','n','s','i','g','n','e','d') case_iskw('s','h','o','r','t') case_iskw('l','o','n','g')
+        if (!base.type.name.len) base.type.name = (bufsl){.ptr= "int", .len= 3};
+    case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e') case_iskw('i','n','l','i','n','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
         for (unsigned k = 0; k < countof(base.type.quals); k++) if (QUAL_END == base.type.quals[k]) {
             base.type.quals[k] = askw;
@@ -240,7 +296,7 @@ bufsl parse(lex_state ref ls, void ref usr, void on(void ref, declaration cref))
                     if (is1('=')) tok = _parse_expr(ls);
                     if (is1(',')) tok = lext(ls);
                 } while (isid());
-            } else parse(ls, &base.type, _decl_put_field);
+            } else exitf("TODO: parse(ls, &base.type, _decl_put_field);");
         }
         break;
 
@@ -259,12 +315,30 @@ bufsl parse(lex_state ref ls, void ref usr, void on(void ref, declaration cref))
             break;
         default:
             base.type.name = tok1;
-            continue;
+            tok = tok2;
+            goto redo;
         }
 
-        tok = _parse_declarators(ls, usr, on, tok1, tok2, &base);
-        if (!is1(';')) return tok;
-        base = (declaration){0};
+        declaration copy = base;
+        tok = _parse_declarator(ls, usr, on, tok1, tok2, &copy);
+        if (!tok.len) return tok;
+
+        switch (*tok.ptr) {
+        case '{':
+            tok = _parse_body(ls);
+            return tok;
+
+        case '=':
+            tok = _parse_expr(ls);
+            if (tok.len && ';' == *tok.ptr) // fall through
+        case ';':
+                base = (declaration){0};
+            // fall through
+       case ',':
+            //on(usr, &copy);
+            // here to emit definition if at any point it's needed
+            continue;
+        }
     } // while-switch tok
 
 #   undef case_iskw
@@ -274,7 +348,10 @@ bufsl parse(lex_state ref ls, void ref usr, void on(void ref, declaration cref))
     return tok;
 }
 
+#undef iskw
+#undef iskwx
 #undef kw
+#undef kws
 
 lex_state ls;
 
@@ -282,15 +359,10 @@ void cleanup(void) {
     ldel(&ls);
 }
 
-void show_decl(void ref _, declaration cref decl) {
+void show(void ref _, declaration cref decl) {
     (void)_;
-#   define unkw(k) ((char[4]){((k)>>10&5)|96, ((k)>>5&5)|96, ((k)&5)|96})
-    if (decl->spec) printf("%s ", unkw(decl->spec));
-    for (unsigned k = 0; decl->type.quals[k]; k++)
-        printf("%s ", unkw(decl->type.quals[k]));
-    if (decl->type.kind) printf("%s ", unkw(decl->type.kind));
-    printf("%.*s %.*s;\n", (unsigned)decl->type.name.len, decl->type.name.ptr, (unsigned)decl->name.len, decl->name.ptr);
-#   undef unkw
+    print_declaration(stdout, decl);
+    printf(";\n");
 }
 
 int main(int argc, char** argv) {
@@ -320,7 +392,8 @@ int main(int argc, char** argv) {
 
     lini(&ls, file);
 
-    parse(&ls, NULL, show_decl);
+    parse(&ls, NULL, show);
+    puts("\x1b[m");
 
     return EXIT_SUCCESS;
 }

@@ -7,6 +7,8 @@
 #include <string.h>
 #include <time.h>
 
+#define countof(__a) (sizeof(__a)/sizeof*(__a))
+
 #define ref * const
 #define cref const* const
 

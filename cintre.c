@@ -67,7 +67,7 @@ void cleanup(void) {
     ldel(&ls);
 }
 
-void show(void ref _, declaration cref decl, bufsl ref tok) {
+void show(char ref _, declaration cref decl, bufsl ref tok) {
     (void)_;
     print_declaration(stdout, decl);
     printf("; // %.*s\n", (unsigned)tok->len, tok->ptr);

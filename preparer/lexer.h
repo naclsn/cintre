@@ -48,7 +48,7 @@ typedef struct lex_state {
         bufsl file;
         size_t line;
     }) include_stack;
-    dyarr(char) ifdef_stack;
+    dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
     dyarr(buf) workbufs;
 } lex_state;
 
@@ -337,6 +337,9 @@ bufsl lext(lex_state ref ls) {
             }
             nx();
             if (!s) {
+                // FIXME: include needs to be relative to the current file first
+                notif("include '%.*s' from '%.*s'", (int)path.len, path.ptr, (int)ls->file.len, ls->file.ptr);
+                // then try the include_paths
                 struct _lex_state_hold* hold = dyarr_push(&ls->include_stack);
                 struct _lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
                 if (src) src->text.ptr = NULL;
@@ -428,6 +431,7 @@ bufsl lext(lex_state ref ls) {
             char* top = dyarr_push(&ls->ifdef_stack);
             if (!top) exitf("OOM");
             if (!(*top = disab*2)) {
+                *top = 1;
                 search_namespace(name, ls->macros) { *top = 0; break; }
                 if ('n' == dir.ptr[2]) *top^= 1;
             }

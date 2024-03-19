@@ -23,6 +23,9 @@
 /// #define on_lsys(pth) printf("%.*s\n", (unsigned)pth.len, pth.ptr);
 /// ```
 
+#ifndef CINTRE_LEXER_H
+#define CINTRE_LEXER_H
+
 #include "common.h"
 
 typedef struct lex_state {
@@ -63,6 +66,8 @@ void ldel(lex_state ref ls);
 long lxpr(lex_state cref ls, bufsl ref xpr);
 /// next token, move forward
 bufsl lext(lex_state ref ls);
+
+// ---
 
 void ldef(lex_state ref ls, char cref name, char cref value) {
     struct _lex_state_macro* it = dyarr_push(&ls->macros);
@@ -659,3 +664,5 @@ bufsl lext(lex_state ref ls) {
 #   undef at
 #   undef nx
 }
+
+#endif // CINTRE_LEXER_H

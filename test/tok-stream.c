@@ -1,27 +1,21 @@
 #if 0
-set -ex
-cd ${0%/*} #*/
-cc tok-stream.c -o ../build/tok-stream && \
-       ../build/tok-stream tok-stream.c |:
-exit
+p=${0%/*}/../build/${0##*/}.exe
+cc -ggdb $0 -o $p || exit 1
+exec $p "$@"
 #endif
 
 #include "../preparer/lexer.h"
 
 int main(int argc, char** argv) {
-    if (1 == argc) return 1;
+    if (1 == argc) return puts("Usage: <prog> <filename>");
 
     lex_state ls = {0};
-    // TODO: remove both once fixed in `lexer.h`
-    linc(&ls, "./");
-    linc(&ls, "./preparer/");
-
     lini(&ls, argv[1]);
+
     while (!lend(&ls)) {
         bufsl const token = lext(&ls);
-        printf("[%.*s:%zu] %.*s\n", (int)ls.file.len, ls.file.ptr, ls.line, (int)token.len, token.ptr);
+        printf("[%s:%3zu]\t%.*s\n", ls.file, ls.line, (int)token.len, token.ptr);
     }
-    ldel(&ls);
 
-    return 0;
+    ldel(&ls);
 }

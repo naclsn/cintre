@@ -113,6 +113,10 @@ void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref dec
                 lext(capt->ls),
                 &(declaration){0});
     else {
+        if (1 == fun->count && !fun->first->decl->type.name.len && 4 == fun->first->decl->name.len && !memcmp("void", fun->first->decl->name.ptr, 4)) {
+            fun->count = 0;
+            fun->first = NULL;
+        }
         *tok = lext(capt->ls);
         if (capt->on) capt->on(capt->usr, capt->func, tok);
     }
@@ -220,13 +224,12 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const 
         struct decl_type const hold = decl.type;
         decl.type = (struct decl_type){.kind= KIND_FUN, .info.fun.ret= &hold};
         if (tok.len) {
-            if (is1(')')) decl.type.info.fun.count = -1;
-            else if (4 == tok.len && !memcmp("void", tok.ptr, 4)) lext(ls);
-            else return parse_declaration(ls,
+            if (!is1(')')) return parse_declaration(ls,
                     &(struct _parse_put_param_capt){.ls= ls, .usr= usr, .on= on, .func= &decl},
                     (void(*)())_decl_put_param,
                     tok,
                     &(declaration){0});
+            decl.type.info.fun.count = -1;
             tok = lext(ls);
         }
     } // if <decl>(<params>)

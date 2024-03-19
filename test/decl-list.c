@@ -1,16 +1,12 @@
-#include "preparer/common.h"
-#include "preparer/lexer.h"
-#include "preparer/parser.h"
+#if 0
+p=${0%/*}/../build/${0##*/}.exe
+cc -ggdb $0 -o $p || exit 1
+exec $p "$@"
+#endif
 
-/*
-bufsl passthrough(bufsl it) {
-    fprintf(stderr, "\x1b[36m%.*s \x1b[m", (unsigned)it.len, it.ptr);
-    return it;
-}
-#define lext(_ls) passthrough(lext(_ls))
-#define lextbang(_ls) (fprintf(stderr, "\x1b[31m!\x1b[m"), lext(_ls))
-*/
+#include "../preparer/parser.h"
 
+// print (TODO: better, cleaner, simpler) {{{
 void print_declaration(FILE ref strm, declaration cref decl);
 
 void print_decl_type(FILE ref strm, struct decl_type cref type) {
@@ -60,12 +56,7 @@ void print_declaration(FILE ref strm, declaration cref decl) {
     fprintf(strm, "\x1b[35m%.*s\x1b[m", (unsigned)decl->name.len, decl->name.ptr);
 #   undef unkw
 }
-
-lex_state ls;
-
-void cleanup(void) {
-    ldel(&ls);
-}
+// }}}
 
 void show(void ref _, declaration cref decl, bufsl ref tok) {
     (void)_;
@@ -74,61 +65,17 @@ void show(void ref _, declaration cref decl, bufsl ref tok) {
 }
 
 int main(int argc, char** argv) {
-    atexit(cleanup);
-    char const* prog = (argc--, *argv++);
-    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf("Usage: %s <entry-file> [-D...,-I...]", prog);
-    char const* file = (argc--, *argv++);
+    if (1 == argc) return puts("Usage: <prog> <filename>");
 
-    linc(&ls, "./");
-
-    while (argc) {
-        char const* arg = (argc--, *argv++);
-
-        if (!memcmp("-D", arg, 2)) {
-            char* val = strchr(arg, '=');
-            if (val) *(val++) = '\0';
-            else val = "1";
-            ldef(&ls, arg+2, val);
-        }
-
-        else if (!memcmp("-I", arg, 2)) {
-            linc(&ls, arg+2);
-        }
-
-        else notif("unused or unimplemented argument: %s", arg);
-    } // while args
-
-    lini(&ls, file);
+    lex_state ls = {0};
+    lini(&ls, argv[1]);
 
     bufsl tok = lext(&ls);
     declaration base = {0};
-    while (tok.len) if ((tok = parse_declaration(&ls, NULL, show, tok, &base)).len)
-        switch (*tok.ptr) {
-        case '{':
-            for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
-                bool c = '}' == *tok.ptr;
-                if (!tok.len || (!depth && c)) break;
-                depth+= ('{' == *tok.ptr)-c;
-            }
-            tok = lext(&ls);
-            base = (declaration){0}; // reset
-            continue;
+    while (tok.len) {
+        tok = parse_declaration(&ls, NULL, show, tok, &base);
+        tok = lext(&ls);
+    }
 
-        case '=':
-            tok = parse_expression(&ls, lext(&ls));
-            if (tok.len && ';' == *tok.ptr)
-
-        case ';':
-                base = (declaration){0}; // reset
-            // fall through
-
-        case ',':
-            tok = lext(&ls);
-            continue;
-
-        default:
-            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
-        }
-
-    return EXIT_SUCCESS;
-} // main
+    ldel(&ls);
+}

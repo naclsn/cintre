@@ -8,7 +8,7 @@
 /// while (!lend(&ls)) {
 ///     bufsl const token = lext(&ls);
 ///     // note: the last ("EOF") token has `token.len == 0`
-///     printf("[%.*s:%zu] %.*s\n", (int)ls.file.len, ls.file.ptr, ls.line, (int)token.len, token.ptr);
+///     printf("[%s:%zu] %.*s\n", ls.file, ls.line, (int)token.len, token.ptr);
 /// }
 ///
 /// ldel(&ls);
@@ -30,11 +30,11 @@
 
 typedef struct lex_state {
     bufsl slice;
-    bufsl file;
+    char const* file;
     size_t line;
     unsigned macro_depth;
     dyarr(struct _lex_state_source {
-        bufsl file;
+        char const* file;
         buf text;
     }) sources;
     dyarr(bufsl) include_paths;
@@ -45,7 +45,7 @@ typedef struct lex_state {
     }) macros;
     dyarr(struct _lex_state_hold {
         bufsl slice;
-        bufsl file;
+        char const* file;
         size_t line;
     }) include_stack;
     dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
@@ -86,8 +86,13 @@ void linc(lex_state ref ls, char cref path) {
 
 void lini(lex_state ref ls, char cref entry) {
     struct _lex_state_source* src = dyarr_push(&ls->sources);
-    if (!src) exitf("OOM");
-    src->file = (bufsl){.ptr= entry, .len= strlen(entry)};
+    if (src) src->file = src->text.ptr = NULL;
+    size_t n = strlen(entry);
+    char* dup = malloc(n+1);
+    if (!src || !dup) exitf("OOM");
+    memcpy(dup, entry, n);
+    dup[n] = '\0';
+    src->file = dup;
     src->text = read_all(entry);
     if (!src->text.len) exitf("Could not open entry file %s", entry);
     ls->slice.ptr = src->text.ptr;
@@ -97,7 +102,10 @@ void lini(lex_state ref ls, char cref entry) {
 }
 
 void ldel(lex_state ref ls) {
-    for (size_t k = 0; k < ls->sources.len; k++) dyarr_clear(&ls->sources.ptr[k].text);
+    for (size_t k = 0; k < ls->sources.len; k++) {
+        free((void*)ls->sources.ptr[k].file);
+        dyarr_clear(&ls->sources.ptr[k].text);
+    }
     dyarr_clear(&ls->sources);
     dyarr_clear(&ls->include_paths);
     for (size_t k = 0; k < ls->macros.len; k++) dyarr_clear(&ls->macros.ptr[k].params);
@@ -281,7 +289,11 @@ bufsl lext(lex_state ref ls) {
 #   define isin(lo, hi) ((lo) <= at() && at() <= (hi))
 #   define isid() (isin('A', 'Z') || isin('a', 'z') || is('_') || isin('0', '9'))
 #   define skip(cx) while (has(1) && (cx)) nx()
-#   define accu(wh) for ((wh).len = 0, (wh).ptr = ls->slice.ptr; !(wh).len; (wh).len = ls->slice.ptr-(wh).ptr)
+#   define accu(wh) for (                                               \
+        bool accuini = ((wh).len = 0, (wh).ptr = ls->slice.ptr, true);  \
+        accuini;                                                        \
+        accuini = ((wh).len = ls->slice.ptr-(wh).ptr, false)            \
+    )
 
     skip(strchr(" \t\n\r", at()));
     if (has(2) && is('\\')) return nx(), lext(ls);
@@ -292,10 +304,11 @@ bufsl lext(lex_state ref ls) {
 #       endif
         {
             nx();
-            if ('*' == at()) while (nx(), has(2)) {
-                if (is('*')) {
-                    while (nx(), has(2) && is('\\') && '\n' == (&at())[1]) nx();
-                    if (is('/')) { nx(); break; }
+            if ('*' == at()) while (nx(), has(1)) {
+                if (is('*') && '/' == (&at())[1]) {
+                    nx();
+                    nx();
+                    break;
                 }
             } else do if (has(1) && is('\\')) nx();
                 while (nx(), has(1) && !is('\n'));
@@ -337,31 +350,41 @@ bufsl lext(lex_state ref ls) {
             }
             nx();
             if (!s) {
-                // FIXME: include needs to be relative to the current file first
-                notif("include '%.*s' from '%.*s'", (int)path.len, path.ptr, (int)ls->file.len, ls->file.ptr);
-                // then try the include_paths
                 struct _lex_state_hold* hold = dyarr_push(&ls->include_stack);
                 struct _lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
-                if (src) src->text.ptr = NULL;
+                if (src) src->file = src->text.ptr = NULL;
                 if (!hold || !src) exitf("OOM");
-                src->file = path;
-                for (size_t k = 0; k < ls->include_paths.len; k++) {
-                    char file[1024];
+                char const* dirend = strrchr(ls->file, '/');
+                bufsl* it = dirend ? &(bufsl){.ptr= ls->file, .len= dirend-ls->file} : &(bufsl){0};
+                size_t k = -1;
+                do {
+                    char file[2048];
                     size_t n = 0;
-                    bufsl const it = ls->include_paths.ptr[k];
-                    memcpy(file+n, it.ptr, it.len); n+= it.len;
-                    if ('/' != it.ptr[it.len-1]) file[n++] = '/';
-                    memcpy(file+n, path.ptr, path.len); n+= path.len;
+                    if (it->len+1+path.len < sizeof file) {
+                        if (it->len) {
+                            memcpy(file+n, it->ptr, it->len); n+= it->len;
+                            if ('/' != it->ptr[it->len-1]) file[n++] = '/';
+                        }
+                        memcpy(file+n, path.ptr, path.len); n+= path.len;
+                    }
                     file[n] = '\0';
                     src->text = read_all(file);
-                    if (src->text.len) break;
-                }
+                    if (src->text.len) {
+                        char* dup = malloc(n+1);
+                        if (!dup) exitf("OOM");
+                        memcpy(dup, file, n);
+                        dup[n] = '\0';
+                        src->file = dup;
+                        break;
+                    }
+                    it = ls->include_paths.ptr + ++k;
+                } while (k < ls->include_paths.len);
                 hold->slice = ls->slice;
                 hold->file = ls->file;
                 hold->line = ls->line;
                 ls->slice.ptr = src->text.ptr;
                 ls->slice.len = src->text.len;
-                ls->file = src->file; // xxx: could be full and corrected path
+                ls->file = src->file;
                 ls->line = 1;
                 return lext(ls);
             }
@@ -377,8 +400,15 @@ bufsl lext(lex_state ref ls) {
             skip(strchr(" \t", at()));
             if (has(1) && is('"')) {
                 nx();
-                accu(ls->file) skip(!is('"'));
-                ls->file.len--;
+                free((void*)ls->file);
+                ls->file = NULL;
+                bufsl path;
+                accu(path) skip(!is('"'));
+                char* dup = malloc(--path.len);
+                if (!dup) exitf("OOM");
+                dup[path.len] = '\0';
+                memcpy(dup, path.ptr, path.len);
+                ls->file = dup;
             }
         }
 
@@ -608,7 +638,7 @@ bufsl lext(lex_state ref ls) {
                             char tmp[32];
                             time_t tt;
                             if (nameis("__VA_ARGS__") && isva) repl.len = argv[argc-1].ptr - (repl.ptr = argv[macro->params.len-1].ptr) + argv[argc-1].len;
-                            else if (nameis("__FILE__")) repl = ls->file;
+                            else if (nameis("__FILE__")) repl.len = strlen(repl.ptr = ls->file);
                             else if (nameis("__LINE__")) repl.len = snprintf((void*)(repl.ptr = tmp), sizeof tmp, "%zu", ls->line);
                             else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
                             else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));

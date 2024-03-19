@@ -92,14 +92,14 @@ void lini(lex_state ref ls, char cref entry) {
 }
 
 void ldel(lex_state ref ls) {
-    for (size_t k = 0; k < ls->sources.len; k++) free(ls->sources.ptr[k].text.ptr);
-    free(ls->sources.ptr);
-    free(ls->include_paths.ptr);
-    for (size_t k = 0; k < ls->macros.len; k++) free(ls->macros.ptr[k].params.ptr);
-    free(ls->macros.ptr);
-    free(ls->ifdef_stack.ptr);
-    for (size_t k = 0; k < ls->workbufs.len; k++) free(ls->workbufs.ptr[k].ptr);
-    free(ls->workbufs.ptr);
+    for (size_t k = 0; k < ls->sources.len; k++) dyarr_clear(&ls->sources.ptr[k].text);
+    dyarr_clear(&ls->sources);
+    dyarr_clear(&ls->include_paths);
+    for (size_t k = 0; k < ls->macros.len; k++) dyarr_clear(&ls->macros.ptr[k].params);
+    dyarr_clear(&ls->macros);
+    dyarr_clear(&ls->ifdef_stack);
+    for (size_t k = 0; k < ls->workbufs.len; k++) dyarr_clear(&ls->workbufs.ptr[k]);
+    dyarr_clear(&ls->workbufs);
 }
 
 static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr) {

@@ -71,12 +71,18 @@ typedef struct declaration {
         bufsl name;
     } type;
 
-    // (optional)value which can be bit more that an expression for function declaration
-
     bufsl name;
 } declaration;
 
-bufsl parse_declaration(lex_state ref ls, void ref usr, void on(void ref, declaration cref, bufsl ref tok), bufsl tok, declaration ref base);
+bufsl parse_declaration(lex_state ref ls,
+        void ref usr, void on(void ref, declaration cref, bufsl ref tok),
+        bufsl tok,
+        declaration ref base);
+
+bufsl _parse_declarator(lex_state ref ls,
+        void ref usr, void on(void ref, declaration cref, bufsl ref tok),
+        bufsl const tok1, bufsl const tok2,
+        declaration cref base);
 
 void print_declaration(FILE ref strm, declaration cref decl);
 
@@ -128,22 +134,8 @@ void print_declaration(FILE ref strm, declaration cref decl) {
 #   undef unkw
 }
 
-bufsl _parse_declarator(lex_state ref ls, void ref usr, void on(void ref, declaration cref, bufsl ref tok), bufsl const tok1, bufsl const tok2, declaration cref base);
-
-bufsl _parse_expr(lex_state ref ls, bufsl const tok) {
-    fprintf(stderr, "{{{ expression: %.*s }}}", (unsigned)tok.len, tok.ptr);
-    (void)lext(ls);
-    return lext(ls);
-}
-
-bufsl _parse_body(lex_state ref ls) {
-    bufsl tok;
-    unsigned depth = 0;
-    while ((tok = lext(ls)).len) {
-        bool c = '}' == *tok.ptr;
-        if (!tok.len || (!depth && c)) break;
-        depth+= ('{' == *tok.ptr)-c;
-    }
+bufsl parse_expression(lex_state ref ls, bufsl const tok) {
+    // TODO
     return lext(ls);
 }
 
@@ -153,9 +145,7 @@ struct _parse_put_param_capt {
 };
 
 void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref decl, bufsl ref tok) {
-    //fprintf(stderr, "{{{ ");
-    //print_declaration(stderr, decl);
-    //fprintf(stderr, " and '%.*s' }}}", (unsigned)tok->len, tok->ptr);
+    // FIXME: something breaks the 'float f', next to last, 3rd param (or is it just in printing it?)
 
     struct decl_type_fun* fun = &capt->func->type.info.fun;
     struct decl_type_param node = {.decl= decl};
@@ -167,7 +157,10 @@ void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref dec
     }
 
     if (tok->len && ',' == *tok->ptr)
-        *tok = parse_declaration(capt->ls, capt, (void(*)())_decl_put_param, lext(capt->ls), &(declaration){0});
+        *tok = parse_declaration(capt->ls,
+                capt, (void(*)())_decl_put_param,
+                lext(capt->ls),
+                &(declaration){0});
 }
 
 struct _parse_par_decl_capt {
@@ -175,16 +168,10 @@ struct _parse_par_decl_capt {
     void* usr;
     void (*on)(void ref, declaration cref, bufsl ref);
     declaration const* outer;
-    bufsl tok;
 };
 
 void _parse_par_decl_unwind(struct _parse_par_decl_capt ref capt, declaration cref decl, bufsl ref tok) {
-    //fprintf(stderr, "<<< ");
-    //print_declaration(stderr, decl);
-    //fprintf(stderr, " >>>");
-    //fprintf(stderr, " transform with <<< ");
-    //print_decl_type(stderr, &yyy->outer->type);
-    //fprintf(stderr, " >>>");
+    // TODO: apply the transformation from `yyy->outer->type` to `decl` (or rather the `local` copy)
 
     declaration local = *decl;
 
@@ -208,43 +195,41 @@ void _parse_par_decl_unwind(struct _parse_par_decl_capt ref capt, declaration cr
     // also somewhere in there
     local.name = capt->outer->name;
 
-    //fprintf(stderr, " res <<< ");
-    //print_declaration(stderr, &local);
-    //fprintf(stderr, " >>>\n");
-
     capt->on(capt->usr, &local, tok);
 }
 
-void _parse_par_decl(struct _parse_par_decl_capt ref capt, declaration cref inner, bufsl ref tuk) {
-    bufsl tok = lext(capt->ls);
-    if (tok.len) {
-        //fprintf(stderr, "\n\n---\n");
-        //fprintf(stderr, "inner:\n"); print_declaration(stderr, inner); puts("\n---\n");
-        //fprintf(stderr, "outer:\n"); print_declaration(stderr, yyy->outer); puts("\n---\n"); // outer needs to turn into the return type or the item type
+void _parse_par_decl(struct _parse_par_decl_capt ref capt, declaration cref inner, bufsl ref tok) {
+    *tok = lext(capt->ls);
+    if (tok->len) {
         declaration const* outer = capt->outer;
-        capt->outer = inner; // just reusing the thingy to store it, the name no apply in yyy2 then..
-        tok = _parse_declarator(capt->ls,
+        // reuses the same field, but in `_parse_par_decl_unwind` it will then
+        // carry `inner`, ie the transformation to unwind
+        capt->outer = inner;
+        *tok = _parse_declarator(capt->ls,
                 capt, (void(*)())_parse_par_decl_unwind,
-                (bufsl){.ptr= "@", .len= 1}, // fake token to get past the first switch
-                tok,
+                // fake token to get past the first switch
+                (bufsl){.ptr= "@", .len= 1}, *tok,
                 outer);
     }
-    capt->tok = tok;
     return;
 }
 
 bufsl _parse_declarator(lex_state ref ls, void ref usr, void on(void ref, declaration cref, bufsl ref tok), bufsl const tok1, bufsl const tok2, declaration cref base) {
-    if (!tok1.len) return (bufsl){0};
-#   define is1(w) (tok.len && w == *tok.ptr)
+    if (!tok1.len) return tok1;
+
     bufsl tok;
-    declaration decl = *base;
+#   define is1(w) (tok.len && w == *tok.ptr)
+
+    declaration decl = *base; // YYY: see if usl
 
     switch (*tok1.ptr) {
     case '(':
-        ;
-        struct _parse_par_decl_capt capt = {.ls= ls, .usr= usr, .on= on, .outer= &decl};
-        tok = _parse_declarator(ls, &capt, (void(*)())_parse_par_decl, tok2, lext(ls), &(declaration){.type= decl.type});
-        return capt.tok;
+        tok = _parse_declarator(ls,
+                &(struct _parse_par_decl_capt){.ls= ls, .usr= usr, .on= on, .outer= &decl},
+                (void(*)())_parse_par_decl,
+                tok2, lext(ls),
+                &(declaration){.type= decl.type});
+        return tok;
 
     case '*':
         tok = tok2;
@@ -267,40 +252,36 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, void on(void ref, declar
         }
         return _parse_declarator(ls, usr, on, tok, lext(ls), &decl);
 
-    case '@': // yyy: see yyy(), would work without when making name optional for function params
+    case '@': // YYY: see _parse_par_decl, will be worked out when making name optional (for function params)
         tok = tok2;
         break;
 
     default:
         // TODO: in function paramter declarations, can omit name (and must not
         //       continue on ',' but rather return)
-        // note: I could still re-use this code, by carefully setting `base`
-        //       and by making omitting the name working here, but function
-        //       parameters can be declared with "register" storage class which
-        //       is not technically part of the declarator (this very function)
         //if (isid()) { ... }
         //if (iskw(,, "register")
         decl.name = tok1;
         tok = tok2;
-        if (is1(':')) tok = _parse_expr(ls, lext(ls));
-    }
+        if (is1(':')) tok = parse_expression(ls, lext(ls));
+    } // switch with (<decl>), *<decl>
 
     if (is1('(')) {
+        tok = lext(ls);
         struct decl_type const hold = decl.type;
         decl.type = (struct decl_type){.kind= KIND_FUN, .info.fun.ret= &hold};
-        tok = lext(ls);
         if (tok.len) {
             if (is1(')')) decl.type.info.fun.count = -1;
             else if (4 == tok.len && !memcmp("void", tok.ptr, 4)) lext(ls);
             else parse_declaration(ls, &(struct _parse_put_param_capt){.ls= ls, .func= &decl}, (void(*)())_decl_put_param, tok, &(declaration){0});
             tok = lext(ls);
         }
-    }
+    } // if <decl>(<params>)
 
     else while (is1('[')) {
+        tok = lext(ls);
         struct decl_type const hold = decl.type;
         decl.type = (struct decl_type){.kind= KIND_ARR, .info.arr.item= &hold};
-        tok = lext(ls);
         if (3 < tok.len) {
             unsigned askw = kw(tok.ptr);
             if (iskw(tok, askw, 's','t','a','t','i','c')) {
@@ -316,35 +297,27 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, void on(void ref, declar
                 askw = kw(tok.ptr);
             }
         }
+        // TODO: add to type
         if (tok.len) switch (*tok.ptr) {
         case '*':
-            tok = lext(ls);
+            lext(ls);
             // fall through
         case ']':
             tok = lext(ls);
             break;
         default:
-            tok = _parse_expr(ls, tok);
+            parse_expression(ls, tok);
+            tok = lext(ls);
         }
-    }
+    } // while <decl>[<arrinfo>]
 
     if (on) on(usr, &decl, &tok);
 
 #   undef is1
     return tok;
-}
+} // _parse_declarator
 
 bufsl parse_declaration(lex_state ref ls, void ref usr, void on(void ref, declaration cref, bufsl ref tok), bufsl tok, declaration ref base) {
-    // <specs-and-quals>+ <declarator>,+ ;
-    // <specs-and-quals> ::= <words>
-    // <declarator> ::
-    //      = <ident>
-    //      | ( <declarator> )
-    //      | * <quals>? <declarator>
-    //      | <no-ptr> [ static? <quals>? <expr> ]
-    //      | <no-ptr> [ <quals>? * ] (* will for now just fold the 2 into just <expr> *)
-    //      | <no-ptr> ( <params> )
-
 #   define is(wo) (!dyarr_cmp((&(bufsl){.ptr= wo, .len= strlen(wo)}), &tok))
 #   define is1(w) (tok.len && w == *tok.ptr)
 #   define isid() (tok.len && ('_' == *tok.ptr || ('A' <= *tok.ptr && *tok.ptr <= 'Z') || ('a' <= *tok.ptr && *tok.ptr <= 'z') || ('0' <= *tok.ptr && *tok.ptr <= '9')))
@@ -372,20 +345,18 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, void on(void ref, declar
         tok = lext(ls);
         if (isid()) {
             base->type.name = tok;
-            tok = lextbang(ls);
+            tok = lext(ls);
         }
         if (is1('{')) {
+            // TODO: use
             if (KIND_ENUM == askw) {
                 tok = lext(ls);
                 do {
                     bufsl name = tok;
-                    fprintf(stderr, "{{{ name: %.*s }}}", (unsigned)name.len, name.ptr);
                     tok = lext(ls);
-                    if (is1('=')) tok = _parse_expr(ls, lext(ls));
-                    fprintf(stderr, "'%.*s'", (int)tok.len, tok.ptr);
+                    if (is1('=')) tok = parse_expression(ls, lext(ls));
                     if (is1(',')) tok = lext(ls);
                 } while (isid());
-                    fprintf(stderr, "!!'%.*s'", (int)tok.len, tok.ptr);
             } else exitf("TODO: parse(ls, &base->type, _decl_put_field);");
         } else goto redo;
         break;
@@ -409,34 +380,8 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, void on(void ref, declar
             goto redo;
         }
 
-        //declaration copy = *base;
-        tok = _parse_declarator(ls, usr, on, tok1, tok2, base); //&copy);
-        if (is1(';')) *base = (declaration){0}; // YYY: this might be on the calling code do decide
+        tok = _parse_declarator(ls, usr, on, tok1, tok2, base);
         return tok;
-
-        // XXX: dead code below
-        if (!tok.len) return tok;
-
-        switch (*tok.ptr) {
-        case '{':
-            tok = _parse_body(ls);
-            return tok;
-
-        case '=':
-            tok = _parse_expr(ls, lext(ls));
-            if (tok.len && ';' == *tok.ptr) { // fall through
-        case ';':
-                puts("(reset)");
-                *base = (declaration){0};
-            } else printf("(not reset: '%.*s')\n", (unsigned)tok.len, tok.ptr);
-            // fall through
-       case ',':
-            //on(usr, &copy);
-            // here to emit definition if at any point it's needed
-            continue;
-        default:
-            printf("(other: '%.*s')\n", (unsigned)tok.len, tok.ptr);
-        }
     } // while-switch tok
 
 #   undef case_iskw
@@ -444,7 +389,7 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, void on(void ref, declar
 #   undef is1
 #   undef is
     return tok;
-}
+} // parse_declaration
 
 #undef iskw
 #undef iskwx
@@ -466,7 +411,7 @@ void show(void ref _, declaration cref decl, bufsl ref tok) {
 int main(int argc, char** argv) {
     atexit(cleanup);
     char const* prog = (argc--, *argv++);
-    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf("Usage: %s <entry.h> [-D...,-I...]", prog);
+    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf("Usage: %s <entry-file> [-D...,-I...]", prog);
     char const* file = (argc--, *argv++);
 
     linc(&ls, "./");
@@ -492,12 +437,33 @@ int main(int argc, char** argv) {
 
     bufsl tok = lext(&ls);
     declaration base = {0};
-    while (tok.len) {
-        tok = parse_declaration(&ls, NULL, show, tok, &base);
-        tok = lext(&ls);
-    }
-    puts("");
-    //puts("\x1b[m");
+    while (tok.len) if ((tok = parse_declaration(&ls, NULL, show, tok, &base)).len)
+        switch (*tok.ptr) {
+        case '{':
+            for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
+                bool c = '}' == *tok.ptr;
+                if (!tok.len || (!depth && c)) break;
+                depth+= ('{' == *tok.ptr)-c;
+            }
+            tok = lext(&ls);
+            base = (declaration){0}; // reset
+            continue;
+
+        case '=':
+            tok = parse_expression(&ls, lextbang(&ls));
+            if (tok.len && ';' == *tok.ptr)
+
+        case ';':
+                base = (declaration){0}; // reset
+            // fall through
+
+        case ',':
+            tok = lext(&ls);
+            continue;
+
+        default:
+            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
+        }
 
     return EXIT_SUCCESS;
-}
+} // main

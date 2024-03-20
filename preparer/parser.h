@@ -50,9 +50,21 @@ typedef struct declaration {
         } kind;
 
         union type_info {
-            // if struct or union: fields, which are type+name (no decl spec)
-            // if enum: the list of enumerators, which are name+(optional)value
             struct decl_type const* ptr;
+            struct decl_type_obj {
+                size_t count;
+                struct decl_type_field {
+                    struct declaration const* decl;
+                    struct decl_type_field* next;
+                }* first;
+            } obj; // obj is struct or union
+            struct decl_type_enu {
+                size_t count;
+                struct decl_type_enumer {
+                    bufsl const name;
+                    struct decl_type_enumer* next;
+                }* first;
+            } enu; // TODO: see in parse_declaration
             struct decl_type_fun {
                 struct decl_type const* ret;
                 size_t count; // -1 when (), 0 when (void), n otherwise
@@ -89,11 +101,45 @@ bufsl _parse_declarator(lex_state ref ls,
         bufsl const tok1, bufsl const tok2,
         declaration cref base);
 
+// [struct|union] <name>? { <decls> } {{{
+struct _parse_put_field_capt {
+    lex_state* ls;
+    void* usr;
+    on_decl* on;
+    declaration* objc;
+};
+
+void _decl_put_field(struct _parse_put_field_capt ref capt, declaration cref decl, bufsl ref tok) {
+    struct decl_type_obj* obj = &capt->objc->type.info.obj;
+    struct decl_type_field node = {.decl= decl};
+    obj->count++;
+    if (!obj->first) obj->first = &node;
+    else for (struct decl_type_field* curr = obj->first ;3; curr = curr->next) if (!curr->next) {
+        curr->next = &node;
+        break;
+    }
+
+    bufsl nx = lext(capt->ls);
+    if (tok->len && nx.len && '}' != *nx.ptr) {
+        declaration local = ';' == *tok->ptr ? (declaration){0} : *decl;
+        *tok = parse_declaration(capt->ls,
+                capt, (void(*)())_decl_put_field,
+                nx,
+                &local);
+    } else {
+        *tok = lext(capt->ls);
+        if (tok->len && ';' == *tok->ptr) {
+            if (capt->on) capt->on(capt->usr, capt->objc, tok);
+        } else *tok = _parse_declarator(capt->ls, capt->usr, capt->on, *tok, lext(capt->ls), capt->objc);
+    }
+}
+// }}}
+
 // <decl>(<params>) {{{
 struct _parse_put_param_capt {
     lex_state* ls;
     void* usr;
-    void (*on)(void ref, declaration cref, bufsl ref);
+    on_decl* on;
     declaration* func;
 };
 
@@ -127,7 +173,7 @@ void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref dec
 struct _parse_par_decl_capt {
     lex_state* ls;
     void* usr;
-    void (*on)(void ref, declaration cref, bufsl ref);
+    on_decl* on;
     declaration const* outer;
 };
 
@@ -304,17 +350,30 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, d
             tok = lext(ls);
         }
         if (is1('{')) {
-            // TODO: use
+            tok = lext(ls);
             if (KIND_ENUM == askw) {
-                tok = lext(ls);
+                // TODO: store the names and value
                 do {
                     bufsl name = tok;
                     tok = lext(ls);
                     if (is1('=')) tok = parse_expression(ls, lext(ls));
                     if (is1(',')) tok = lext(ls);
                 } while (isid());
-            } else exitf("TODO: parse(ls, &base->type, _decl_put_field);");
-        } else goto redo;
+            } else if (!is1('}')) return parse_declaration(ls,
+                    &(struct _parse_put_field_capt){.ls= ls, .usr= usr, .on= on, .objc= base},
+                    (void(*)())_decl_put_field,
+                    lext(ls),
+                    &(declaration){0});
+            tok = lext(ls);
+            if (is1(';')) {
+                if (on) on(usr, base, &tok);
+                return tok;
+            }
+        } else {
+            if (KIND_STRUCT == askw || KIND_UNION == askw)
+                base->type.info.obj.count = -1;
+            goto redo;
+        }
         break;
 
     default:

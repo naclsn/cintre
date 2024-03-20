@@ -21,6 +21,17 @@ void print_decl_type(FILE ref strm, struct decl_type cref type) {
 
     case KIND_STRUCT:
     case KIND_UNION:
+        fprintf(strm, "\x1b[34m%s\x1b[m !!! ", unkw(type->kind));
+        if ((size_t)-1 == type->info.obj.count) break;
+        fprintf(strm, "{\n");
+        for (struct decl_type_field* curr = type->info.obj.first; curr; curr = curr->next) {
+            fprintf(strm, "\t");
+            print_declaration(strm, curr->decl);
+            fprintf(strm, ";\n");
+        }
+        fprintf(strm, "} ");
+        break;
+
     case KIND_ENUM:
         fprintf(strm, "\x1b[33m%s\x1b[m ", unkw(type->kind));
         break;

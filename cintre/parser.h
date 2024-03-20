@@ -6,9 +6,6 @@
 #include "common.h"
 #include "lexer.h"
 
-// http://slebok.github.io/zoo/c/c99/iso-9899-1999/extracted/
-// https://en.cppreference.com/w/c/language/declarations
-
 #define kws(a,b,c,...) ((a&31)<<10 | (b&31)<<5 | (c&31))
 #define kw(s) kws(s[0],s[1],s[2],)
 #define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)

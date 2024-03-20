@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "coucou.h"
+#include "exitf.h"
 
 #define SIMPLE_IMPLEMENTATION
+
+void sayhi(void);
+
 #ifdef SIMPLE_IMPLEMENTATION
 
 void sayhi(void) {

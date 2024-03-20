@@ -1,0 +1,124 @@
+#if 0
+prog=${0%/*}/../build/${0##*/}.exe
+base=${0%/*}/in/${0##*/}
+set -ex
+cc -x c $0 -o $prog || exit 1
+case $1 in
+    check)  bla() { diff -u $1 -; };;
+    update) bla() { cat >$1; };;
+    *) exec $prog "$@";;
+esac
+
+$prog $base/decls.c | bla $base/decls.tape
+
+exit
+#endif
+
+#include "../preparer/parser.h"
+
+// print {{{
+void print_decl(declaration cref decl, unsigned const depth);
+
+void print_type(struct decl_type cref type, unsigned const depth) {
+#   define unkw(k) ((char[4]){((k)>>10&31)|96, ((k)>>5&31)|96, ((k)&31)|96})
+    switch (type->kind) {
+    case KIND_NOTAG:
+        printf("%.*s", (unsigned)type->name.len, type->name.ptr);
+        break;
+
+    case KIND_STRUCT:
+    case KIND_UNION:
+        printf("%s %.*s", unkw(type->kind), (unsigned)type->name.len, type->name.ptr);
+        if (-1 == type->info.obj.count) break;
+        printf(type->name.len ? " {\n" : "{\n");
+        for (struct decl_type_field* curr = type->info.obj.first; curr; curr = curr->next) {
+            printf("%*s", (depth+1)*4, "");
+            print_decl(curr->decl, depth+1);
+            printf("\n");
+        }
+        printf("%*s}", depth*4, "");
+        break;
+
+    case KIND_ENUM:
+        printf("%s %.*s", unkw(type->kind), (unsigned)type->name.len, type->name.ptr);
+        printf("{ /*TODO*/ }");
+        break;
+
+    case KIND_PTR:
+        printf("*(");
+        print_type(type->info.ptr, depth);
+        printf(")");
+        break;
+
+    case KIND_FUN:
+        printf("(");
+        if (!type->info.fun.count) printf("void");
+        for (struct decl_type_param* curr = type->info.fun.first; curr; curr = curr->next) {
+            print_decl(curr->decl, depth);
+            if (curr->next) printf(", ");
+        }
+        printf(") -> ");
+        print_type(type->info.fun.ret, depth);
+        break;
+
+    case KIND_ARR:
+        printf("[%zu]", type->info.arr.count);
+        print_type(type->info.arr.item, depth);
+        break;
+    }
+
+    for (unsigned k = 0; type->quals[k]; k++) printf(" %s", unkw(type->quals[k]));
+}
+
+void print_decl(declaration cref decl, unsigned const depth) {
+    if (decl->spec) printf("%s ", unkw(decl->spec));
+    if (decl->name.len) printf("%.*s: ", (unsigned)decl->name.len, decl->name.ptr);
+    print_type(&decl->type, depth+1);
+#   undef unkw
+}
+// }}}
+
+void show(void ref _, declaration cref decl, bufsl ref tok) {
+    (void)_;
+    print_decl(decl, 0);
+    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+}
+
+int main(int argc, char** argv) {
+    if (1 == argc) return puts("Usage: <prog> <filename>");
+
+    lex_state ls = {0};
+    lini(&ls, argv[1]);
+
+    bufsl tok = lext(&ls);
+    declaration base = {0};
+    while (tok.len) if ((tok = parse_declaration(&ls, NULL, show, tok, &base)).len)
+        switch (*tok.ptr) {
+        case '{':
+            for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
+                bool c = '}' == *tok.ptr;
+                if (!tok.len || (!depth && c)) break;
+                depth+= ('{' == *tok.ptr)-c;
+            }
+            tok = lext(&ls);
+            base = (declaration){0}; // reset
+            continue;
+
+        case '=':
+            tok = parse_expression(&ls, lext(&ls));
+            if (tok.len && ';' == *tok.ptr)
+
+        case ';':
+                base = (declaration){0}; // reset
+            // fall through
+
+        case ',':
+            tok = lext(&ls);
+            continue;
+
+        default:
+            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
+        }
+
+    ldel(&ls);
+}

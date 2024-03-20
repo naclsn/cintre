@@ -1,7 +1,18 @@
 #if 0
-p=${0%/*}/../build/${0##*/}.exe
-cc -ggdb $0 -o $p || exit 1
-exec $p "$@"
+prog=${0%/*}/../build/${0##*/}.exe
+base=${0%/*}/in/${0##*/}
+set -ex
+cc -x c $0 -o $prog || exit 1
+case $1 in
+    check)  bla() { diff -u $1 -; };;
+    update) bla() { cat >$1; };;
+    *) exec $prog "$@";;
+esac
+
+$prog $base/macros.h | bla $base/macros.tape
+$prog $base/simple.h | bla $base/simple.tape
+
+exit
 #endif
 
 #include "../preparer/lexer.h"

@@ -352,7 +352,7 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, d
         if (is1('{')) {
             tok = lext(ls);
             if (KIND_ENUM == askw) {
-                // TODO: store the names and value
+                // TODO: store the names and values
                 do {
                     bufsl name = tok;
                     tok = lext(ls);
@@ -368,7 +368,7 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, d
             if (is1(';')) {
                 if (on) on(usr, base, &tok);
                 return tok;
-            }
+            } else goto redo;
         } else {
             if (KIND_STRUCT == askw || KIND_UNION == askw)
                 base->type.info.obj.count = -1;

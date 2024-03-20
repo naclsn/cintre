@@ -159,7 +159,7 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr) {
         if (xpr->len && ')' == at()) nx();
     } else if ('_' == at() || ('a' <= (at()|32) && (at()|32) <= 'z')) {
         bool defd = strlen("defined") < xpr->len && !memcmp("defined", xpr->ptr, strlen("defined"));
-        bool pars;
+        bool pars = false;
         if (defd) {
             xpr->ptr+= strlen("defined");
             xpr->len-= strlen("defined");
@@ -225,7 +225,7 @@ static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long
     }
 }
 static long _lex_oprxpr(lex_state cref ls, bufsl ref xpr, long lhs, enum _lex_operator lop) {
-    long rhs;
+    long rhs = 0;
     enum _lex_operator nop;
 again:
     if (lop) {

@@ -14,7 +14,7 @@ $prog $base/decls.c | bla $base/decls.tape
 exit
 #endif
 
-#include "../preparer/parser.h"
+#include "../cintre/parser.h"
 
 // print {{{
 void print_decl(declaration cref decl, unsigned const depth);

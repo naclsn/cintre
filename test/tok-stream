@@ -15,7 +15,7 @@ $prog $base/simple.h | bla $base/simple.tape
 exit
 #endif
 
-#include "../preparer/lexer.h"
+#include "../cintre/lexer.h"
 
 int main(int argc, char** argv) {
     if (1 == argc) return puts("Usage: <prog> <filename>");

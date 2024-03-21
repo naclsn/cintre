@@ -7,10 +7,8 @@
 #include "lexer.h"
 
 #define kws(a,b,c,...) ((a&31)<<10 | (b&31)<<5 | (c&31))
-#define kw(s) kws(s[0],s[1],s[2],)
-#define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
-#define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
 
+// struct declaration {{{
 typedef struct declaration {
     enum decl_spec {
         SPEC_NONE= 0,
@@ -81,22 +79,52 @@ typedef struct declaration {
 
     bufsl name;
 } declaration;
-
+// }}}
 typedef void on_decl(void ref usr, declaration cref decl, bufsl ref tok);
+typedef struct parse_decl_state {
+    lex_state* ls;
+    void* usr;
+    on_decl* on;
+    declaration base;
+} parse_decl_state;
+bufsl parse_declaration(parse_decl_state ref ps, bufsl tok);
 
-bufsl parse_declaration(lex_state ref ls,
-        void ref usr, on_decl on,
-        bufsl tok,
-        declaration ref base);
+// struct expression {{{
+typedef struct expression {
+    enum expr_kind {
+        KIND_LIT,
+        KIND_UNOP,
+        KIND_BINOP,
+        KIND_CALL,
+    } kind;
 
-bufsl parse_expression(lex_state ref ls, bufsl const tok);
+    union expr_info {
+        bufsl lit;
+        struct expression* opr[2];
+        struct expr_info_fun {
+            struct expression* base;
+            struct expr_info_arg {
+                struct expression* expr;
+                struct expr_info_arg* next;
+            }* first;
+        } fun;
+    } info;
+} expression;
+// }}}
+typedef struct parse_expr_state {
+    lex_state* ls;
+    void* usr;
+    void (*on)(void ref usr, expression cref expr, bufsl ref tok);
+} parse_expr_state;
+bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
 
 // ---
 
-bufsl _parse_declarator(lex_state ref ls,
-        void ref usr, on_decl on,
-        bufsl const tok1, bufsl const tok2,
-        declaration cref base);
+#define kw(s) kws(s[0],s[1],s[2],)
+#define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
+#define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
+
+bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const tok1, bufsl const tok2, declaration cref base);
 
 // [struct|union] <name>? { <decls> } {{{
 struct _parse_put_field_capt {
@@ -117,13 +145,13 @@ void _decl_put_field(struct _parse_put_field_capt ref capt, declaration cref dec
     }
 
     bufsl nx = lext(capt->ls);
-    if (tok->len && nx.len && '}' != *nx.ptr) {
-        declaration local = ';' == *tok->ptr ? (declaration){0} : *decl;
-        *tok = parse_declaration(capt->ls,
-                capt, (void(*)())_decl_put_field,
-                nx,
-                &local);
-    } else {
+    if (tok->len && nx.len && '}' != *nx.ptr)
+        *tok = parse_declaration(&(parse_decl_state){
+                .ls= capt->ls,
+                .usr= capt, .on= (void(*)())_decl_put_field,
+                .base= ';' == *tok->ptr ? (declaration){0} : *decl},
+                nx);
+    else {
         *tok = lext(capt->ls);
         if (tok->len && ';' == *tok->ptr) {
             if (capt->on) capt->on(capt->usr, capt->objc, tok);
@@ -151,10 +179,10 @@ void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref dec
     }
 
     if (tok->len && ',' == *tok->ptr)
-        *tok = parse_declaration(capt->ls,
-                capt, (void(*)())_decl_put_param,
-                lext(capt->ls),
-                &(declaration){0});
+        *tok = parse_declaration(&(parse_decl_state){
+                .ls= capt->ls,
+                .usr= capt, .on= (void(*)())_decl_put_param},
+                lext(capt->ls));
     else {
         if (1 == fun->count && !fun->first->decl->type.name.len && 4 == fun->first->decl->name.len && !memcmp("void", fun->first->decl->name.ptr, 4)) {
             fun->count = 0;
@@ -216,6 +244,7 @@ void _parse_par_decl(struct _parse_par_decl_capt ref capt, declaration cref inne
 }
 // }}}
 
+// parse declaration {{{
 bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const tok1, bufsl const tok2, declaration cref base) {
     if (!tok1.len) return tok1;
 
@@ -259,7 +288,7 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const 
         // fall through
     case ')':
         tok = tok2;
-        if (is1(':')) tok = parse_expression(ls, lext(ls));
+        if (is1(':')) tok = parse_expression(&(parse_expr_state){.ls= ls}, lext(ls));
     } // switch with (<decl>), *<decl>
 
     if (is1('(')) {
@@ -267,11 +296,11 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const 
         struct decl_type const hold = decl.type;
         decl.type = (struct decl_type){.kind= KIND_FUN, .info.fun.ret= &hold};
         if (tok.len) {
-            if (!is1(')')) return parse_declaration(ls,
-                    &(struct _parse_put_param_capt){.ls= ls, .usr= usr, .on= on, .func= &decl},
-                    (void(*)())_decl_put_param,
-                    tok,
-                    &(declaration){0});
+            if (!is1(')')) return parse_declaration(&(parse_decl_state){
+                    .ls= ls,
+                    .usr= &(struct _parse_put_param_capt){.ls= ls, .usr= usr, .on= on, .func= &decl},
+                    .on= (void(*)())_decl_put_param},
+                    tok);
             decl.type.info.fun.count = -1;
             tok = lext(ls);
         }
@@ -305,7 +334,7 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const 
             tok = lext(ls);
             break;
         default:
-            parse_expression(ls, tok);
+            parse_expression(&(parse_expr_state){.ls= ls}, tok);
             tok = lext(ls);
         }
     } // while <decl>[<arrinfo>]
@@ -316,59 +345,59 @@ bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const 
     return tok;
 } // _parse_declarator
 
-bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, declaration ref base) {
+bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
 #   define is(wo) (!dyarr_cmp((&(bufsl){.ptr= wo, .len= strlen(wo)}), &tok))
 #   define is1(w) (tok.len && w == *tok.ptr)
 #   define isid() (tok.len && ('_' == *tok.ptr || ('A' <= *tok.ptr && *tok.ptr <= 'Z') || ('a' <= *tok.ptr && *tok.ptr <= 'z') || ('0' <= *tok.ptr && *tok.ptr <= '9')))
 #   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(tok, __VA_ARGS__)) goto notkw;
 
-    for (unsigned askw; tok.len; tok = lext(ls)) redo: switch (askw = tok.len <3 ? 0 : kw(tok.ptr)) {
+    for (unsigned askw; tok.len; tok = lext(ps->ls)) redo: switch (askw = tok.len <3 ? 0 : kw(tok.ptr)) {
     case 0: goto notkw;
 
     case_iskw('t','y','p','e','d','e','f') case_iskw('e','x','t','e','r','n') case_iskw('s','t','a','t','i','c') case_iskw('a','u','t','o') case_iskw('r','e','g','i','s','t','e','r')
-        base->spec = askw;
+        ps->base.spec = askw;
         break;
 
     case_iskw('s','i','g','n','e','d') case_iskw('u','n','s','i','g','n','e','d') case_iskw('s','h','o','r','t') case_iskw('l','o','n','g')
-        if (!base->type.name.len) base->type.name = (bufsl){.ptr= "int", .len= 3};
+        if (!ps->base.type.name.len) ps->base.type.name = (bufsl){.ptr= "int", .len= 3};
     case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e') case_iskw('i','n','l','i','n','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
-        for (unsigned k = 0; k < countof(base->type.quals); k++) if (QUAL_END == base->type.quals[k]) {
-            base->type.quals[k] = askw;
+        for (unsigned k = 0; k < countof(ps->base.type.quals); k++) if (QUAL_END == ps->base.type.quals[k]) {
+            ps->base.type.quals[k] = askw;
             break;
         }
         break;
 
     case_iskw('s','t','r','u','c','t') case_iskw('u','n','i','o','n') case_iskw('e','n','u','m')
-        base->type.kind = askw;
-        tok = lext(ls);
+        ps->base.type.kind = askw;
+        tok = lext(ps->ls);
         if (isid()) {
-            base->type.name = tok;
-            tok = lext(ls);
+            ps->base.type.name = tok;
+            tok = lext(ps->ls);
         }
         if (is1('{')) {
-            tok = lext(ls);
+            tok = lext(ps->ls);
             if (KIND_ENUM == askw) {
                 // TODO: store the names and values
                 do {
                     bufsl name = tok;
-                    tok = lext(ls);
-                    if (is1('=')) tok = parse_expression(ls, lext(ls));
-                    if (is1(',')) tok = lext(ls);
+                    tok = lext(ps->ls);
+                    if (is1('=')) tok = parse_expression(&(parse_expr_state){.ls= ps->ls}, lext(ps->ls));
+                    if (is1(',')) tok = lext(ps->ls);
                 } while (isid());
-            } else if (!is1('}')) return parse_declaration(ls,
-                    &(struct _parse_put_field_capt){.ls= ls, .usr= usr, .on= on, .objc= base},
-                    (void(*)())_decl_put_field,
-                    lext(ls),
-                    &(declaration){0});
-            tok = lext(ls);
+            } else if (!is1('}')) return parse_declaration(&(parse_decl_state){
+                    .ls= ps->ls,
+                    .usr= &(struct _parse_put_field_capt){.ls= ps->ls, .usr= ps->usr, .on= ps->on, .objc= &ps->base},
+                    .on= (void(*)())_decl_put_field},
+                    lext(ps->ls));
+            tok = lext(ps->ls);
             if (is1(';')) {
-                if (on) on(usr, base, &tok);
+                if (ps->on) ps->on(ps->usr, &ps->base, &tok);
                 return tok;
             } else goto redo;
         } else {
             if (KIND_STRUCT == askw || KIND_UNION == askw)
-                base->type.info.obj.count = -1;
+                ps->base.type.info.obj.count = -1;
             goto redo;
         }
         break;
@@ -376,23 +405,23 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, d
     default:
     notkw:
         ;
-        bufsl tok1 = tok, tok2 = lext(ls);
+        bufsl tok1 = tok, tok2 = lext(ps->ls);
         if (tok2.len && isid()) switch (*tok2.ptr) {
         case '(': // eg `int (a);`
-            if (!base->type.name.len) {
-                base->type.name = tok1;
+            if (!ps->base.type.name.len) {
+                ps->base.type.name = tok1;
                 tok1 = tok2;
-                tok2 = lext(ls);
+                tok2 = lext(ps->ls);
             } // fall through
         case ',': case ';': case ')': case '[':
             break;
         default:
-            base->type.name = tok1;
+            ps->base.type.name = tok1;
             tok = tok2;
             goto redo;
         }
 
-        tok = _parse_declarator(ls, usr, on, tok1, tok2, base);
+        tok = _parse_declarator(ps->ls, ps->usr, ps->on, tok1, tok2, &ps->base);
         return tok;
     } // while-switch tok
 
@@ -402,15 +431,18 @@ bufsl parse_declaration(lex_state ref ls, void ref usr, on_decl on, bufsl tok, d
 #   undef is
     return tok;
 } // parse_declaration
+// }}}
 
 #undef iskw
 #undef iskwx
 #undef kw
+
 #undef kws
 
-bufsl parse_expression(lex_state ref ls, bufsl const tok) {
+bufsl parse_expression(parse_expr_state ref ps, bufsl const tok) {
     // TODO
-    return lext(ls);
+    return lext(ps->ls);
 }
 
+// vi:se fdm=marker fdl=0:
 #endif // CINTRE_PARSER_H

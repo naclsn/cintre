@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef STACK_SIZE
+#define STACK_SIZE 1024*1024
+#endif
+
 #ifdef USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -27,9 +31,6 @@ bool prompt(char const* prompt, char** res) {
     for (size_t k = 0; (__ns)[k].name; k++)  \
         if (!strcmp((__ns)[k].name, (__n)))
 
-#ifndef STACK_SIZE
-#define STACK_SIZE 1024*1024
-#endif
 char stack[STACK_SIZE];
 size_t sp = sizeof stack;
 #define top() (stack+sp)

@@ -162,8 +162,8 @@ int main(int argc, char** argv) {
     lini(&ls, file);
 
     bufsl tok = lext(&ls);
-    declaration base = {0};
-    while (tok.len) if ((tok = parse_declaration(&ls, NULL, emit, tok, &base)).len) switch (*tok.ptr) {
+    parse_decl_state ps = {.ls= &ls, .on= emit};
+    while (tok.len) if ((tok = parse_declaration(&ps, tok)).len) switch (*tok.ptr) {
     case '{':
         for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
             bool c = '}' == *tok.ptr;
@@ -171,14 +171,14 @@ int main(int argc, char** argv) {
             depth+= ('{' == *tok.ptr)-c;
         }
         tok = lext(&ls);
-        base = (declaration){0}; // reset
+        ps.base = (declaration){0}; // reset
         continue;
 
     case '=':
-        tok = parse_expression(&ls, lext(&ls));
+        tok = parse_expression(&(parse_expr_state){.ls= &ls}, lext(&ls));
         if (tok.len && ';' == *tok.ptr)
     case ';':
-            base = (declaration){0}; // reset
+            ps.base = (declaration){0}; // reset
         // fall through
     case ',':
         tok = lext(&ls);

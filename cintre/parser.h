@@ -467,7 +467,7 @@ bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
 struct _capture;
 typedef void _closure_t(parse_expr_state ref ps, struct _capture ref capt, expression cref expr);
 struct _capture {
-    expression hold;
+    expression* hold;
     struct _capture ref next;
     _closure_t ref then; // its `hold` is in `next->hold`
 };
@@ -549,7 +549,7 @@ void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cr
         expression pre = {.kind= prefix};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
-                    .hold= pre,
+                    .hold= &pre,
                     .next= capt->next,
                     .then= capt->then,
                 },
@@ -562,7 +562,7 @@ void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cr
         ps->tok = lext(ps->ls);
         _parse_one(ps, &(struct _capture){
                 .next= capt,
-                .then= _parse_one_par, // ')'
+                .then= _parse_one_par,
             }, NULL);
         return;
     }
@@ -579,13 +579,13 @@ void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cr
 }
 
 void _parse_one_post(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
-    capt->hold.info.opr[0] = expr;
+    capt->hold->info.opr[0] = expr;
     enum expr_kind postfix = _parse_is_postfix(ps->tok);
     if (postfix) {
         ps->tok = lext(ps->ls);
-        expression post = {.kind= postfix, .info.opr[0]= &capt->hold};
+        expression post = {.kind= postfix, .info.opr[0]= capt->hold};
         capt->then(ps, capt->next, &post);
-    } else capt->then(ps, capt->next, &capt->hold);
+    } else capt->then(ps, capt->next, capt->hold);
 }
 
 void _parse_one_par(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
@@ -594,38 +594,27 @@ void _parse_one_par(parse_expr_state ref ps, struct _capture ref capt, expressio
 }
 
 void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
-    //expression ref in = capt->hold;
-    //expression cref lhs = capt->hold.info.opr[0];
-    //int lop = capt->hold.kind;
-    //int nop = infix;
-
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (!infix) {
-        capt->hold.info.opr[1] = rhs;
-        capt->then(ps, capt->next, &capt->hold);
+        capt->hold->info.opr[1] = rhs;
+        capt->then(ps, capt->next, capt->hold);
         return;
     }
     ps->tok = lext(ps->ls);
 
-    if (capt->hold.kind < infix) {
+    if (capt->hold->kind < infix) {
         expression in = {.kind= infix, .info.opr[0]= rhs};
-        capt->hold.info.opr[1] = &in;
-        // capt->hold is the root to "return", ie, capt->then(ps, capt->next, capt->hold);
+        capt->hold->info.opr[1] = &in;
         _parse_one(ps, &(struct _capture){
-                .next= &(struct _capture){
-                    .hold= capt->hold, //&in,
-                    .next= capt->next,
-                    .then= capt->then, // FIXME: error somewhere in there: `1+2*3+4` -> `+4` not in result
-                },
+                .next= capt,
                 .then= _parse_two_after,
             }, NULL);
     } else {
-        capt->hold.info.opr[1] = rhs;
-        expression in = {.kind= infix, .info.opr[0]= &capt->hold};
-        // &in is the root, ie, capt->then(ps, capt->next, &in);
+        capt->hold->info.opr[1] = rhs;
+        expression in = {.kind= infix, .info.opr[0]= capt->hold};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
-                    .hold= in,
+                    .hold= &in,
                     .next= capt->next,
                     .then= capt->then,
                 },
@@ -635,11 +624,24 @@ void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cr
 }
 
 void _parse_two_after(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
-    //expression cref root = capt->hold;
-    //expression cref in = capt->hold.info.opr[1];
+    *((expression const**)&capt->hold->info.opr[1]->info.opr[1]) = rhs; // meh :/
 
-    *((expression const**)&capt->hold.info.opr[1]->info.opr[1]) = rhs; // meh :/
-    capt->then(ps, capt->next, &capt->hold);
+    enum expr_kind infix = _parse_is_infix(ps->tok);
+    if (infix) {
+        ps->tok = lext(ps->ls);
+        expression in = {.kind= infix, .info.opr[0]= capt->hold};
+        _parse_one(ps, &(struct _capture){
+                .next= &(struct _capture){
+                    .hold= &in,
+                    .next= capt->next,
+                    .then= capt->then,
+                },
+                .then= _parse_two,
+            }, NULL);
+        return;
+    }
+
+    capt->then(ps, capt->next, capt->hold);
 }
 
 void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression cref lhs) {
@@ -649,7 +651,7 @@ void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression 
         expression in = {.kind= infix, .info.opr[0]= lhs};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
-                    .hold= in,
+                    .hold= &in,
                     .then= _parse_exit,
                 },
                 .then= _parse_two,

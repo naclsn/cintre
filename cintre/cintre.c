@@ -86,8 +86,8 @@ void print_expr(FILE* strm, expression cref expr) {
     case UNOP_PLUS:        fprintf(strm, "+"); print_expr(strm, expr->info.opr[0]); break;
     case UNOP_PRE_DEC:     fprintf(strm, "--"); print_expr(strm, expr->info.opr[0]); break;
     case UNOP_PRE_INC:     fprintf(strm, "++"); print_expr(strm, expr->info.opr[0]); break;
-    case BINOP_SUBSCR:     print_expr(strm, expr->info.opr[0]); fprintf(strm, " [] "); print_expr(strm, expr->info.opr[1]); break;
-    case BINOP_CALL:       print_expr(strm, expr->info.opr[0]); fprintf(strm, " () "); print_expr(strm, expr->info.opr[1]); break;
+    case BINOP_SUBSCR:     print_expr(strm, expr->info.opr[0]); fprintf(strm, " []{ "); print_expr(strm, expr->info.opr[1]); fprintf(strm, " }"); break;
+    case BINOP_CALL:       print_expr(strm, expr->info.opr[0]); fprintf(strm, " (){ "); print_expr(strm, expr->info.opr[1]); fprintf(strm, " }"); break;
     case UNOP_POST_DEC:    print_expr(strm, expr->info.opr[0]); fprintf(strm, "--"); break;
     case UNOP_POST_INC:    print_expr(strm, expr->info.opr[0]); fprintf(strm, "++"); break;
     }

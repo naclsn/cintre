@@ -128,9 +128,6 @@ typedef struct expression {
     } kind;
 
     union expr_info {
-        bufsl const _tok;
-        struct expression const* _opr[2];
-
         bufsl const atom;
         struct { struct expression const* opr; } unary;
         struct { struct expression const* lhs, * rhs; } binary;
@@ -576,14 +573,14 @@ void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cr
         return;
     }
 
-    expression atom = {.kind= ATOM, .info._tok= ps->tok};
+    expression atom = {.kind= ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
     _parse_one_after(ps, capt, &atom);
 }
 
 /// sets the operand (expr) of the prefix op in: <prefix> <expr> [<postfix>]
 void _parse_one_post(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
-    capt->hold->info._opr[0] = expr;
+    capt->hold->info.unary.opr = expr;
     _parse_one_after(ps, capt, capt->hold);
 }
 
@@ -596,7 +593,7 @@ void _parse_one_lext(parse_expr_state ref ps, struct _capture ref capt, expressi
 /// skip a closing thingy and set the thing within (arg): <expr> ('('<arg>')' | '['<arg>']') [<postfix>]
 void _parse_one_lext_whole(parse_expr_state ref ps, struct _capture ref capt, expression cref within) {
     ps->tok = lext(ps->ls);
-    capt->hold->info._opr[1] = within;
+    capt->hold->info.call.args = within;
     _parse_one_after(ps, capt, capt->hold);
 }
 
@@ -605,7 +602,7 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
     enum expr_kind postfix = _parse_is_postfix(ps->tok);
     if (postfix) {
         ps->tok = lext(ps->ls);
-        expression post = {.kind= postfix, .info._opr[0]= expr};
+        expression post = {.kind= postfix, .info.unary.opr= expr};
         _parse_one_after(ps, capt, &post);
         return;
     }
@@ -617,7 +614,7 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
         bufsl const nx = lext(ps->ls);
         if (!nx.len || ')' == *nx.ptr) {
             ps->tok = lext(ps->ls);
-            expression access = {.kind= BINOP_CALL, .info._opr[0]= expr};
+            expression access = {.kind= BINOP_CALL, .info.call.base= expr};
             _parse_one_after(ps, capt, &access);
             return;
         }
@@ -625,7 +622,7 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
         if (0) // fall through
     case '[':
             ps->tok = lext(ps->ls);
-        expression whole = {.kind= call ? BINOP_CALL : BINOP_SUBSCR, .info._opr[0]= expr};
+        expression whole = {.kind= call ? BINOP_CALL : BINOP_SUBSCR, .info.call.base= expr};
         capt->hold = &whole;
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
@@ -659,22 +656,22 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
 void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (!infix) {
-        capt->hold->info._opr[1] = rhs;
+        capt->hold->info.binary.rhs = rhs;
         capt->then(ps, capt->next, capt->hold);
         return;
     }
     ps->tok = lext(ps->ls);
 
     if (capt->hold->kind < infix) {
-        expression in = {.kind= infix, .info._opr[0]= rhs};
-        capt->hold->info._opr[1] = &in;
+        expression in = {.kind= infix, .info.binary.lhs= rhs};
+        capt->hold->info.binary.rhs = &in;
         _parse_one(ps, &(struct _capture){
                 .next= capt,
                 .then= _parse_two_after,
             }, NULL);
     } else {
-        capt->hold->info._opr[1] = rhs;
-        expression in = {.kind= infix, .info._opr[0]= capt->hold};
+        capt->hold->info.binary.rhs = rhs;
+        expression in = {.kind= infix, .info.binary.lhs= capt->hold};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
                     .hold= &in,
@@ -688,12 +685,12 @@ void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cr
 
 /// handle the case in parse two where nop comes before lop in precedence
 void _parse_two_after(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
-    *((expression const**)&capt->hold->info._opr[1]->info._opr[1]) = rhs; // meh :/
+    *((expression const**)&capt->hold->info.binary.rhs->info.binary.rhs) = rhs; // meh :/
 
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
-        expression in = {.kind= infix, .info._opr[0]= capt->hold};
+        expression in = {.kind= infix, .info.binary.lhs= capt->hold};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
                     .hold= &in,
@@ -713,7 +710,7 @@ void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression 
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
-        expression in = {.kind= infix, .info._opr[0]= lhs};
+        expression in = {.kind= infix, .info.binary.lhs= lhs};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){
                     .hold= &in,
@@ -732,7 +729,7 @@ void _parse_continue(parse_expr_state ref ps, struct _capture ref capt, expressi
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
-        expression in = {.kind= infix, .info._opr[0]= lhs};
+        expression in = {.kind= infix, .info.binary.lhs= lhs};
         capt->hold = &in;
         _parse_one(ps, &(struct _capture){
                 .next= capt,

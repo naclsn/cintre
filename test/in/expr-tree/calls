@@ -1,0 +1,7 @@
+a(1, 2);
+a(1, 2, 3);
+a();
+(a())();
+a()();
+a(1)(2)(3);
+a((1, 2), 3); // XXX/REM: no way to dinstinguish from a(1, 2, 3)

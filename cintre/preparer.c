@@ -1,3 +1,4 @@
+#include "common.h"
 #include "parser.h"
 
 lex_state ls = {0};
@@ -183,7 +184,9 @@ int main(int argc, char** argv) {
         continue;
     }
 
-    fprintf(result, "#include \"cintre.c\"\n");
+    // TODO: should be under a flag, driver might want to make and gather
+    //       multiple adapted code under a single main
+    if ("main") fprintf(result, "#include \"cintre.c\"\n");
 
     return EXIT_SUCCESS;
 } // main

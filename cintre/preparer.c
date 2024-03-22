@@ -6,8 +6,6 @@ dyarr(struct seen {
     bufsl name;
 }) seen = {0};
 
-#define bufmt(x) (unsigned)x.len, x.ptr
-
 void cleanup(void) {
     ldel(&ls);
     if (result && stdout != result) fclose(result); // yyy

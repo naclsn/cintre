@@ -1,0 +1,48 @@
+#if 0
+prog=${0%/*}/../build/${0##*/}.exe
+base=${0%/*}/in/${0##*/}
+set -ex
+cc -x c $0 -o $prog || exit 1
+case $1 in
+    check)  bla() { diff -u $1 -; };;
+    update) bla() { cat >$1; };;
+    *) exec $prog "$@";;
+esac
+
+echo TODO: no test setup for $0! && exit 1
+#$prog $base/decls.c | bla $base/decls.tape
+
+exit
+#endif
+
+#include "../cintre/parser.h"
+
+// print {{{
+// }}}
+
+void show(void ref _, expression cref expr, bufsl ref tok) {
+    (void)_;
+    //print_expr(stdout, expr);
+    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+}
+
+int main(int argc, char** argv) {
+    if (1 == argc) return puts("Usage: <prog> <filename>");
+
+    lex_state ls = {0};
+    lini(&ls, argv[1]);
+
+    bufsl tok = lext(&ls);
+    parse_expr_state ps = {.ls= &ls, .on= show};
+    while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
+        switch (*tok.ptr) {
+        case ';':
+            tok = lext(&ls);
+            continue;
+
+        default:
+            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
+        }
+
+    ldel(&ls);
+}

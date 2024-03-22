@@ -15,6 +15,7 @@
 #include "dyarr.h"
 typedef dyarr(char) buf;
 typedef struct { char const* ptr; size_t len; } bufsl;
+#define bufmt(x) (unsigned)x.len, x.ptr
 
 #define exitf(...) (notif(__VA_ARGS__), exit(EXIT_FAILURE))
 #define notif(...) (fprintf(stderr, __VA_ARGS__), fputc(10, stderr))

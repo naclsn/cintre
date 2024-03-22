@@ -3,9 +3,11 @@ CFLAGS += -ggdb -O1 -std=c99 $(warnings)
 
 PR = build/preparer.exe
 
+ifneq ($(OS), Windows_NT)
 readline = $(shell pkg-config readline --cflags --libs)
 ifneq (,$(readline))
 readline += -DUSE_READLINE
+endif
 endif
 
 # TODO: (4 effective lines) maybe pattern, also streamline for multiple user files..
@@ -20,6 +22,6 @@ $(PR): cintre/preparer.c cintre/*.h; $(CC) $< -o $@ $(CFLAGS)
 # (by itself, just a C-like expression interpreter)
 build/cintre: cintre/cintre.c cintre/*.h; $(CC) $< -o $@ $(CFLAGS) $(readline)
 
-test: test/???*; for it in $^; do ./$$it check; done
+test: test/???*; for it in $^; do ./$$it check && printf "\x1b[32m$$it success\x1b[m\n" || printf "\x1b[31m$$it failure\x1b[m\n"; done
 testup: test/???*; for it in $^; do ./$$it update; done
 .PHONY: test testup

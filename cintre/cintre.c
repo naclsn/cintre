@@ -1,5 +1,6 @@
 #include "common.h"
 #include "parser.h"
+#include "adapter.h"
 
 #ifndef STACK_SIZE
 #define STACK_SIZE 1024*1024
@@ -23,6 +24,16 @@ bool prompt(char const* prompt, char** res) {
     r[strlen(r)-1] = '\0';
     return true;
 }
+#endif
+
+#ifndef CINTRE_NAMESPACES_DEFINED
+static struct {
+    char const* const name;
+    size_t const count;
+    struct adpt_item const* const items;
+} const namespaces[1] = {
+    {.name= "(builtin)", .count= 0, .items= NULL},
+};
 #endif
 
 /*
@@ -50,6 +61,11 @@ void show(void ref _, expression cref expr, bufsl ref tok) {
 }
 
 int main(void) {
+    printf("namespaces:\n");
+    for (size_t k = 0; k < countof(namespaces); k++)
+        printf("   %s (%zu items)\n", namespaces[k].name, namespaces[k].count);
+    printf("(%zu total)\n\n", countof(namespaces));
+
     lex_state ls = {.file= "<input>"};
 
     char* line = NULL;

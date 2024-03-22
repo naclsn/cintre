@@ -12,6 +12,7 @@ void cleanup(void) {
     if (result && stdout != result) fclose(result); // yyy
 }
 
+// emit {{{
 void emit_decl(declaration cref decl);
 void emit_type(struct decl_type cref type);
 
@@ -91,10 +92,10 @@ void emit_decl(declaration cref decl) {
         }
         fprintf(result, ");\n");
 
-        fprintf(result, "void %.*s_adapt(char* ret, char** args) {\n", bufmt(decl->name));
-        fprintf(result, (4 == decl->type.info.fun.ret->name.len && !memcmp("void", decl->type.info.fun.ret->name.ptr, 4))
-                ? "    (void)ret;\n    "
-                : "    *ret = ");
+        bool ret_void = 4 == decl->type.info.fun.ret->name.len && !memcmp("void", decl->type.info.fun.ret->name.ptr, 4);
+
+        fprintf(result, "void %.*s_adapt_call(char* ret, char** args) {\n", bufmt(decl->name));
+        fprintf(result, ret_void ? "    (void)ret;\n    " : "    *ret = ");
         fprintf(result, "%.*s(", bufmt(decl->name));
         if (!decl->type.info.fun.count) printf("void");
         size_t k = 0;
@@ -105,8 +106,25 @@ void emit_decl(declaration cref decl) {
             if (curr->next) fprintf(result, ", ");
         }
         fprintf(result, ");\n");
-        fprintf(result, "}\n\n");
+        fprintf(result, "}\n");
 
+        fprintf(result, "static struct adpt_type const %.*s_adapt_type = {\n", bufmt(decl->name));
+        fprintf(result, "    .size= %zu, .align= %zu,\n", sizeof&fprintf, sizeof&fprintf);
+        fprintf(result, "    .kind= ADPT_KIND_FUN,\n");
+        fprintf(result, "    .info.fun= {\n");
+        fprintf(result, "        .ret= &%s,\n", ret_void ? "adptb_void_type" : "adptb_int_type");
+        fprintf(result, "        .args= (struct adpt_fun_args[]){\n");
+        for (struct decl_type_param* curr = decl->type.info.fun.first; curr; curr = curr->next) {
+            bool arg_char = 4 == curr->decl->type.name.len && !memcmp("char", curr->decl->type.name.ptr, 4);
+            fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
+            fprintf(result, "            , .type= &%s\n", arg_char ? "adptb_char_type XXX: I meant `char*`! oops" : "adptb_int_type");
+            fprintf(result, "            },\n");
+        }
+        fprintf(result, "        },\n");
+        fprintf(result, "    },\n");
+        fprintf(result, "};\n");
+
+        fprintf(result, "\n");
         break;
 
     case KIND_ARR:
@@ -124,6 +142,7 @@ void emit(void* usl, declaration cref decl, bufsl ref tok) {
 
     emit_decl(decl);
 }
+// }}}
 
 int main(int argc, char** argv) {
     atexit(cleanup);
@@ -184,10 +203,39 @@ int main(int argc, char** argv) {
         continue;
     }
 
+    // TODO: should have an argument to control the namespace name other
+    //       than from the file name
+    bufsl thisns = {.ptr= file, .len= strlen(file)};
+    {
+        char const* basename = strrchr(file, '/');
+        if (basename) thisns.ptr = basename+1;
+        char const* fileext = strchr(thisns.ptr, '.');
+        if (fileext) thisns.len = fileext - thisns.ptr;
+    }
+    fprintf(result, "static struct adpt_item const adptns_%.*s[] = {\n", bufmt(thisns));
+    for (size_t k = 0; k < seen.len; k++) {
+        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    , .as.function= %.*s_adapt_call\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    },\n");
+    }
+    fprintf(result, "};\n\n");
+
     // TODO: should be under a flag, driver might want to make and gather
-    //       multiple adapted code under a single main
-    if ("main") fprintf(result, "#include \"cintre.c\"\n");
+    //       multiple adapted namespaces under a single main
+    if ("main") {
+        fprintf(result, "// generated as main with a single namespace\n");
+        fprintf(result, "static struct {\n");
+        fprintf(result, "    char const* const name;\n");
+        fprintf(result, "    size_t const count;\n");
+        fprintf(result, "    struct adpt_item const* const items;\n");
+        fprintf(result, "} const namespaces[] = {\n");
+        fprintf(result, "    {.name= \"%.*s\", .count= countof(adptns_%.*s), .items= adptns_%.*s},\n", bufmt(thisns), bufmt(thisns), bufmt(thisns));
+        fprintf(result, "    {.name= \"(builtin)\", .count= 0, .items= NULL},\n"); //YYY: mmh :<
+        fprintf(result, "};\n");
+        fprintf(result, "#define CINTRE_NAMESPACES_DEFINED\n");
+        fprintf(result, "#include \"cintre.c\"\n");
+    }
 
     return EXIT_SUCCESS;
 } // main
-

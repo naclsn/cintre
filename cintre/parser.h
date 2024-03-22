@@ -754,5 +754,4 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl tok) {
 }
 // }}}
 
-// vi:se fdm=marker fdl=0:
 #endif // CINTRE_PARSER_H

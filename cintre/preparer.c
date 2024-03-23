@@ -95,7 +95,12 @@ void emit_decl(declaration cref decl) {
         bool ret_void = 4 == decl->type.info.fun.ret->name.len && !memcmp("void", decl->type.info.fun.ret->name.ptr, 4);
 
         fprintf(result, "void %.*s_adapt_call(char* ret, char** args) {\n", bufmt(decl->name));
-        fprintf(result, ret_void ? "    (void)ret;\n    " : "    *ret = ");
+        if (ret_void) fprintf(result, "    (void)ret;\n    ");
+        else {
+            fprintf(result, "    *(");
+            emit_type(decl->type.info.fun.ret);
+            fprintf(result, "*)ret = ");
+        }
         fprintf(result, "%.*s(", bufmt(decl->name));
         if (!decl->type.info.fun.count) printf("void");
         size_t k = 0;
@@ -116,8 +121,26 @@ void emit_decl(declaration cref decl) {
         fprintf(result, "        .args= (struct adpt_fun_args[]){\n");
         for (struct decl_type_param* curr = decl->type.info.fun.first; curr; curr = curr->next) {
             bool arg_char = 4 == curr->decl->type.name.len && !memcmp("char", curr->decl->type.name.ptr, 4);
+            char const* ty = arg_char ? "adptb_char_type" : "adptb_int_type";
+            if (KIND_PTR == curr->decl->type.kind) {
+                bool ptr_char = 4 == curr->decl->type.info.ptr->name.len && !memcmp("char", curr->decl->type.info.ptr->name.ptr, 4);
+                ty = ptr_char
+                    ? "(struct adpt_type){\n"
+                      "                          .size= sizeof(char*),\n"
+                      "                          .align= sizeof(char*),\n"
+                      "                          .kind= ADPT_KIND_PTR,\n"
+                      "                          .info.to= &adptb_char_type,\n"
+                      "                      }"
+                    : "(struct adpt_type){\n"
+                      "                          .size= sizeof(int*),\n"
+                      "                          .align= sizeof(int*),\n"
+                      "                          .kind= ADPT_KIND_PTR,\n"
+                      "                          .info.to= &adptb_int_type,\n"
+                      "                      }"
+                    ;
+            }
             fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
-            fprintf(result, "            , .type= &%s\n", arg_char ? "adptb_char_type XXX: I meant `char*`! oops" : "adptb_int_type");
+            fprintf(result, "            , .type= &%s\n", ty);
             fprintf(result, "            },\n");
         }
         fprintf(result, "        },\n");
@@ -145,11 +168,62 @@ void emit(void* usl, declaration cref decl, bufsl ref tok) {
 // }}}
 
 int main(int argc, char** argv) {
-    atexit(cleanup);
     char* prog = (argc--, *argv++);
-    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf("Usage: %s <entry-file> [-D...,-I...] -o <result>", prog);
+    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf(
+            "Usage: %s <entry> [-D...,-I...] -o <a-file.h>\n"
+            "   or: %s -m <a-files...> -o <c-main.c>\n"
+            , prog, prog);
     char* file = (argc--, *argv++);
     result = stdout; // yyy
+
+    if (!strcmp("-m", file)) {
+        char** first = argv;
+        char** last = argv;
+        while (argc) {
+            char* arg = (argc--, *argv++);
+            char* val;
+            if (!memcmp("-o", arg, 2)) {
+                last = argv;
+                val = arg[2] ? arg+2 : (argc--, *argv++);
+                if ('-' != val[0]) result = fopen(val, "wb");
+                break;
+            }
+        }
+
+        for (char** it = first; it < last-1; it++)
+            fprintf(result, "#include \"%s\"\n", *it);
+        fprintf(result, "\n");
+
+        fprintf(result, "static struct {\n");
+        fprintf(result, "    char const* const name;\n");
+        fprintf(result, "    size_t const count;\n");
+        fprintf(result, "    struct adpt_item const* const items;\n");
+        fprintf(result, "} const namespaces[] = {\n");
+        for (char** it = first; it < last-1; it++) {
+            printf("it: '%s'\n", *it);
+            bufsl itns = {.ptr= *it, .len= strlen(*it)};
+            {
+                char const* basename = strrchr(itns.ptr, '/');
+                if (basename) itns.ptr = basename+1;
+                char const* fileext = strchr(itns.ptr, '.');
+                if (fileext) itns.len = fileext - itns.ptr;
+                if ('a' == itns.ptr[0] && '-' == itns.ptr[1]) {
+                    itns.ptr+= 2;
+                    itns.len-= 2;
+                }
+            }
+            fprintf(result, "    {.name= \"%.*s\", .count= countof(adptns_%.*s), .items= adptns_%.*s},\n", bufmt(itns), bufmt(itns), bufmt(itns));
+        }
+        fprintf(result, "};\n");
+        fprintf(result, "\n");
+
+        fprintf(result, "#define CINTRE_NAMESPACES_DEFINED\n");
+        fprintf(result, "#include \"cintre.c\"\n");
+
+        return EXIT_SUCCESS;
+    }
+
+    atexit(cleanup);
 
     while (argc) {
         char* arg = (argc--, *argv++);
@@ -203,39 +277,17 @@ int main(int argc, char** argv) {
         continue;
     }
 
-    // TODO: should have an argument to control the namespace name other
-    //       than from the file name
     bufsl thisns = {.ptr= file, .len= strlen(file)};
     {
-        char const* basename = strrchr(file, '/');
+        char const* basename = strrchr(thisns.ptr, '/');
         if (basename) thisns.ptr = basename+1;
         char const* fileext = strchr(thisns.ptr, '.');
         if (fileext) thisns.len = fileext - thisns.ptr;
     }
     fprintf(result, "static struct adpt_item const adptns_%.*s[] = {\n", bufmt(thisns));
-    for (size_t k = 0; k < seen.len; k++) {
-        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.ptr[k].name));
-        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.ptr[k].name));
-        fprintf(result, "    , .as.function= %.*s_adapt_call\n", bufmt(seen.ptr[k].name));
-        fprintf(result, "    },\n");
-    }
-    fprintf(result, "};\n\n");
-
-    // TODO: should be under a flag, driver might want to make and gather
-    //       multiple adapted namespaces under a single main
-    if ("main") {
-        fprintf(result, "// generated as main with a single namespace\n");
-        fprintf(result, "static struct {\n");
-        fprintf(result, "    char const* const name;\n");
-        fprintf(result, "    size_t const count;\n");
-        fprintf(result, "    struct adpt_item const* const items;\n");
-        fprintf(result, "} const namespaces[] = {\n");
-        fprintf(result, "    {.name= \"%.*s\", .count= countof(adptns_%.*s), .items= adptns_%.*s},\n", bufmt(thisns), bufmt(thisns), bufmt(thisns));
-        fprintf(result, "    {.name= \"(builtin)\", .count= 0, .items= NULL},\n"); //YYY: mmh :<
-        fprintf(result, "};\n");
-        fprintf(result, "#define CINTRE_NAMESPACES_DEFINED\n");
-        fprintf(result, "#include \"cintre.c\"\n");
-    }
+    for (size_t k = 0; k < seen.len; k++)
+        fprintf(result, "    {.name= \"%.*s\", .type= &%.*s_adapt_type, .as.function= %.*s_adapt_call},\n", bufmt(seen.ptr[k].name), bufmt(seen.ptr[k].name), bufmt(seen.ptr[k].name));
+    fprintf(result, "};\n");
 
     return EXIT_SUCCESS;
 } // main

@@ -55,9 +55,16 @@ static struct adpt_type {
 , adptb_float_type      = {.size= sizeof(float),              .align= sizeof(float),              .kind= ADPT_KIND_FLOAT     }
 , adptb_double_type     = {.size= sizeof(double),             .align= sizeof(double),             .kind= ADPT_KIND_DOUBLE    }
 , adptb_longdouble_type = {.size= sizeof(long double),        .align= sizeof(long double),        .kind= ADPT_KIND_LONGDOUBLE}
-, adptb_fun_type        = {.size= sizeof(void(*)()),          .align= sizeof(void(*)()),          .kind= ADPT_KIND_FUN       }
-, adptb_ptr_type        = {.size= sizeof(void*),              .align= sizeof(void*),              .kind= ADPT_KIND_PTR       }
 ;
+
+/*
+#define adptb_ptr_type(__to) (struct adpt_type){  \
+        .size= sizeof(void*),                     \
+        .align= sizeof(void*),                    \
+        .kind= ADPT_KIND_PTR,                     \
+        .info.to= &__to,                          \
+    }
+*/
 
 struct adpt_item {
     char const* const name;

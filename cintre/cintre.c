@@ -32,7 +32,7 @@ static struct {
     size_t const count;
     struct adpt_item const* const items;
 } const namespaces[1] = {
-    {.name= "(builtin)", .count= 0, .items= NULL},
+    {.name= "(placeholder)", .count= 0, .items= NULL},
 };
 #endif
 

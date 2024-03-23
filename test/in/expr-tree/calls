@@ -1,7 +1,12 @@
 a(1, 2);
 a(1, 2, 3);
 a();
+a(b(1, 2));
+a(0, b(1, 2));
+a(b(1, 2), c(3, 4));
+a(c(3, 4), 0);
+a(1), -1;
 (a())();
 a()();
 a(1)(2)(3);
-a((1, 2), 3); // XXX/REM: no way to dinstinguish from a(1, 2, 3)
+a((1, 2), 3); // XXX/REM: no way to distinguish from a(1, 2, 3)

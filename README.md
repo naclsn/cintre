@@ -11,6 +11,7 @@ hello
 - [forward] declaration of a function with `ret name()` (ie. "any params" syntax) or will be interpreted as `(void)`
 - va-args function
 - for now at least, there is no way to distinguish between `fn(1, 2, 3)` and `fn((1, 2), 3)` (later has only 2 args)
+- base of a subscript expression must be the pointer, and the offset must be integral
 
 ---
 

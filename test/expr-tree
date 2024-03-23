@@ -11,6 +11,7 @@ esac
 
 $prog $base/simple | bla $base/simple.tape
 $prog $base/calls | bla $base/calls.tape
+$prog $base/conds | bla $base/conds.tape
 $prog $base/weird | bla $base/weird.tape
 
 exit
@@ -74,7 +75,7 @@ void print_expr(FILE* strm, expression cref expr) {
 }
 // }}}
 
-void show(void ref _, expression cref expr, bufsl ref tok) {
+void show(void ref _, expression ref expr, bufsl ref tok) {
     (void)_;
     print_expr(stdout, expr);
     printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);

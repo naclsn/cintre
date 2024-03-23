@@ -118,7 +118,8 @@ void emit_decl(declaration cref decl) {
         fprintf(result, "    .kind= ADPT_KIND_FUN,\n");
         fprintf(result, "    .info.fun= {\n");
         fprintf(result, "        .ret= &%s,\n", ret_void ? "adptb_void_type" : "adptb_int_type");
-        fprintf(result, "        .args= (struct adpt_fun_args[]){\n");
+        fprintf(result, "        .params= (struct adpt_fun_param[]){\n");
+        size_t count = 0;
         for (struct decl_type_param* curr = decl->type.info.fun.first; curr; curr = curr->next) {
             bool arg_char = 4 == curr->decl->type.name.len && !memcmp("char", curr->decl->type.name.ptr, 4);
             char const* ty = arg_char ? "adptb_char_type" : "adptb_int_type";
@@ -142,8 +143,10 @@ void emit_decl(declaration cref decl) {
             fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
             fprintf(result, "            , .type= &%s\n", ty);
             fprintf(result, "            },\n");
+            count++;
         }
         fprintf(result, "        },\n");
+        fprintf(result, "        .count= %zu,\n", count);
         fprintf(result, "    },\n");
         fprintf(result, "};\n");
 

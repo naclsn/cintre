@@ -96,6 +96,8 @@ typedef struct expression {
 
         BINOP_SUBSCR, BINOP_CALL,
 
+        BINOP_TERNCOND,
+        BINOP_TERNBRANCH,
         BINOP_COMMA,
 
         BINOP_ASGN,
@@ -103,9 +105,6 @@ typedef struct expression {
         BINOP_ASGN_BSHL, BINOP_ASGN_BSHR,
         BINOP_ASGN_SUB, BINOP_ASGN_ADD,
         BINOP_ASGN_REM, BINOP_ASGN_DIV, BINOP_ASGN_MUL,
-
-        BINOP_TERNBRANCH,
-        BINOP_TERNCOND,
 
         BINOP_LOR, BINOP_LAND,
         BINOP_BOR, BINOP_BXOR, BINOP_BAND,
@@ -128,15 +127,15 @@ typedef struct expression {
     } kind;
 
     union expr_info {
-        bufsl const atom;
-        struct { struct expression const* opr; } unary;
-        struct { struct expression const* lhs, * rhs; } binary;
-        struct { struct expression const* base, * args; } call;
-        struct { struct expression const* base, * off; } subscr;
-        struct { struct expression const* base; bufsl const* name; } member;
+        bufsl atom;
+        struct { struct expression* opr; } unary;
+        struct { struct expression* lhs, * rhs; } binary;
+        struct { struct expression* base, * args; } call;
+        struct { struct expression* base, * off; } subscr;
+        struct { struct expression* base; bufsl* name; } member;
     } info;
 } expression;
-typedef void on_expr(void ref usr, expression cref expr, bufsl ref tok);
+typedef void on_expr(void ref usr, expression ref expr, bufsl ref tok);
 typedef struct parse_expr_state {
     lex_state* ls;
     void* usr;
@@ -469,7 +468,7 @@ bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
 
 // parse expression {{{
 struct _capture;
-typedef void _closure_t(parse_expr_state ref ps, struct _capture ref capt, expression cref expr);
+typedef void _closure_t(parse_expr_state ref ps, struct _capture ref capt, expression ref expr);
 struct _capture {
     expression* hold;
     struct _capture ref next;
@@ -501,10 +500,10 @@ enum expr_kind _parse_is_prefix(bufsl const tok) {
 }
 enum expr_kind _parse_is_infix(bufsl const tok) {
     if (1 == tok.len) switch (tok.ptr[0]) {
-    case ',': return BINOP_COMMA;
-    case '=': return BINOP_ASGN;
     case ':': return BINOP_TERNBRANCH;
     case '?': return BINOP_TERNCOND;
+    case ',': return BINOP_COMMA;
+    case '=': return BINOP_ASGN;
     case '|': return BINOP_BOR;
     case '^': return BINOP_BXOR;
     case '&': return BINOP_BAND;
@@ -542,7 +541,7 @@ enum expr_kind _parse_is_infix(bufsl const tok) {
 }
 
 /// parse one, including the prefix: [<prefix>] (<atom> | '('<expr>')') [<postfix>]
-void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cref _) {
+void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression ref _) {
     (void)_;
     if (!ps->tok.len) return;
 
@@ -579,26 +578,26 @@ void _parse_one(parse_expr_state ref ps, struct _capture ref capt, expression cr
 }
 
 /// sets the operand (expr) of the prefix op in: <prefix> <expr> [<postfix>]
-void _parse_one_post(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
+void _parse_one_post(parse_expr_state ref ps, struct _capture ref capt, expression ref expr) {
     capt->hold->info.unary.opr = expr;
     _parse_one_after(ps, capt, capt->hold);
 }
 
 /// skip a closing parenthesis in: '('<expr>')' [<postfix>]
-void _parse_one_lext(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
+void _parse_one_lext(parse_expr_state ref ps, struct _capture ref capt, expression ref expr) {
     ps->tok = lext(ps->ls);
     _parse_one_after(ps, capt, expr);
 }
 
 /// skip a closing thingy and set the thing within (arg): <expr> ('('<arg>')' | '['<arg>']') [<postfix>]
-void _parse_one_lext_whole(parse_expr_state ref ps, struct _capture ref capt, expression cref within) {
+void _parse_one_lext_whole(parse_expr_state ref ps, struct _capture ref capt, expression ref within) {
     ps->tok = lext(ps->ls);
     capt->hold->info.call.args = within;
     _parse_one_after(ps, capt, capt->hold);
 }
 
 /// parse postfix part after expr: <expr> (<postfix> | '('<arg>')' | '['<arg>']' | ('.'|'->')<name>)
-void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, expression cref expr) {
+void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, expression ref expr) {
     enum expr_kind postfix = _parse_is_postfix(ps->tok);
     if (postfix) {
         ps->tok = lext(ps->ls);
@@ -639,7 +638,7 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
         // fall through
     case '.':
         ;
-        bufsl const name = lext(ps->ls);
+        bufsl name = lext(ps->ls);
         ps->tok = lext(ps->ls);
         expression access = {
             .kind= pmem ? UNOP_PMEMBER : UNOP_MEMBER,
@@ -653,7 +652,7 @@ void _parse_one_after(parse_expr_state ref ps, struct _capture ref capt, express
 }
 
 /// parse two with lhs, lop and rhs known: <lhs> <lop> <rhs> [<nop>]
-void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
+void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression ref rhs) {
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (!infix) {
         capt->hold->info.binary.rhs = rhs;
@@ -663,6 +662,7 @@ void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cr
     ps->tok = lext(ps->ls);
 
     if (capt->hold->kind < infix) {
+        // FIXME: is incorrect: `1 + 2 * 3 / 4`
         expression in = {.kind= infix, .info.binary.lhs= rhs};
         capt->hold->info.binary.rhs = &in;
         _parse_one(ps, &(struct _capture){
@@ -684,8 +684,8 @@ void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression cr
 }
 
 /// handle the case in parse two where nop comes before lop in precedence
-void _parse_two_after(parse_expr_state ref ps, struct _capture ref capt, expression cref rhs) {
-    *((expression const**)&capt->hold->info.binary.rhs->info.binary.rhs) = rhs; // meh :/
+void _parse_two_after(parse_expr_state ref ps, struct _capture ref capt, expression ref rhs) {
+    capt->hold->info.binary.rhs->info.binary.rhs = rhs;
 
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
@@ -706,7 +706,7 @@ void _parse_two_after(parse_expr_state ref ps, struct _capture ref capt, express
 }
 
 /// proper start the parse two loop, sets up parse exit at callback chain end
-void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression cref lhs) {
+void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression ref lhs) {
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
@@ -725,7 +725,7 @@ void _parse_entry(parse_expr_state ref ps, struct _capture ref capt, expression 
 }
 
 /// similar to parse entry for sub expr in: '('<expr>')' or arg in: <expr> ('('<arg>')' | '['<arg>'])
-void _parse_continue(parse_expr_state ref ps, struct _capture ref capt, expression cref lhs) {
+void _parse_continue(parse_expr_state ref ps, struct _capture ref capt, expression ref lhs) {
     enum expr_kind infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
@@ -742,7 +742,7 @@ void _parse_continue(parse_expr_state ref ps, struct _capture ref capt, expressi
 }
 
 /// callback chain tail end which call user code
-void _parse_exit(parse_expr_state ref ps, struct _capture ref _, expression cref expr) {
+void _parse_exit(parse_expr_state ref ps, struct _capture ref _, expression ref expr) {
     (void)_;
     if (ps->on) ps->on(ps->usr, expr, &ps->tok);
 }

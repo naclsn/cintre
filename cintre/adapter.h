@@ -15,26 +15,30 @@ static struct adpt_type {
         ADPT_KIND_CHAR, ADPT_KIND_UCHAR, ADPT_KIND_SCHAR,
         ADPT_KIND_SHORT, ADPT_KIND_INT, ADPT_KIND_LONG, ADPT_KIND_LONGLONG,
         ADPT_KIND_USHORT, ADPT_KIND_UINT, ADPT_KIND_ULONG, ADPT_KIND_ULONGLONG,
+        ADPT_KIND_ENUM,
         ADPT_KIND_FLOAT, ADPT_KIND_DOUBLE, ADPT_KIND_LONGDOUBLE,
         ADPT_KIND_STRUCT, ADPT_KIND_UNION,
-        ADPT_KIND_ENUM,
         ADPT_KIND_FUN,
         ADPT_KIND_PTR,
     } const kind;
 
     union adpt_type_info {
-        struct adpt_field_desc {
-            char const* const name;
-            struct adpt_type const* const type;
-            size_t const offset;
-        } const* const fields; // struct and union
+        struct adpt_comp_desc {
+            struct adpt_comp_field {
+                char const* const name;
+                struct adpt_type const* const type;
+                size_t const offset;
+            } const* const fields;
+            size_t const count;
+        } const comp; // struct and union
 
         struct adpt_fun_desc {
             struct adpt_type const* const ret;
-            struct adpt_fun_args {
+            struct adpt_fun_param {
                 char const* const name;
                 struct adpt_type const* const type;
-            } const* const args;
+            } const* const params;
+            size_t const count;
         } const fun; // fun
 
         struct adpt_type const* const to; // ptr

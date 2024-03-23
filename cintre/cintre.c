@@ -161,8 +161,8 @@ struct adpt_type const* typeof(expression ref expr) {
         if (cons) fail("Too many arguments: %zu provided, expected %zu", k, base->info.fun.count);
         return base->info.fun.ret;
 
-    case BINOP_TERNBRANCH:
     case BINOP_TERNCOND:
+    case BINOP_TERNBRANCH:
         fail("NIY: ternary");
 
     case BINOP_COMMA:
@@ -283,10 +283,6 @@ bool check_and_alloc_pass(expression ref expr) {
 
     struct adpt_type cref ty = typeof(expr);
     if (!ty) return false;
-
-    printf("expression is of type: ");
-    print_type(stdout, ty);
-    printf("\n");
     return true;
 }
 // }}}
@@ -309,8 +305,8 @@ void exec_pass(expression ref expr) {
         else printf("-> not found in any namespaces\n");
         break;
 
-    case BINOP_TERNBRANCH:
     case BINOP_TERNCOND:
+    case BINOP_TERNBRANCH:
     case BINOP_COMMA:
     case BINOP_ASGN:
     case BINOP_ASGN_BOR:
@@ -358,19 +354,48 @@ void exec_pass(expression ref expr) {
 }
 // }}}
 
+void print_expr(FILE* strm, expression cref expr, unsigned depth) {
+    static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
+    char const* const name = op_kind_names[expr->kind];
+    if (ATOM == expr->kind) {
+        fprintf(strm, "%*s%.*s\n", depth*3, "", bufmt(expr->info.atom));
+    } else if (!memcmp("UNOP", name, 4)) {
+        fprintf(strm, "%*s%s\n", depth*3, "", name);
+        print_expr(strm, expr->info.unary.opr, depth+1);
+    } else if (!memcmp("BINO", name, 4)) {
+        fprintf(strm, "%*s%s\n", depth*3, "", name);
+        print_expr(strm, expr->info.binary.lhs, depth+1);
+        print_expr(strm, expr->info.binary.rhs, depth+1);
+    }
+}
+
 void accept(void ref _, expression ref expr, bufsl ref tok) {
     (void)_;
+
+    char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
+
+    if (!memcmp("ast", xcmd, 3)) {
+        printf("AST of the expression:\n");
+        print_expr(stdout, expr, 1);
+        printf("\n");
+        return;
+    }
+
+    if (!memcmp("ty", xcmd, 2)) {
+        struct adpt_type cref ty = typeof(expr);
+        if (ty) {
+            printf("expression is of type: ");
+            print_type(stdout, ty);
+            printf("\n");
+        }
+        return;
+    }
 
     size_t psp = sp;
     if (!check_and_alloc_pass(expr)) {
         sp = psp;
         return;
     }
-
-    char const* xcmd = "";
-    if (tok->len && ';' == *tok->ptr)
-        xcmd = tok->ptr+1;
-    fprintf(stderr, " -- xcmd: '%s'\n", xcmd);
 
     exec_pass(expr);
 }

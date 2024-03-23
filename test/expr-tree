@@ -23,21 +23,23 @@ exit
 void print_expr(FILE* strm, expression cref expr) {
     if (ATOM != expr->kind) fprintf(strm, "(");
     switch (expr->kind) {
-    case ATOM: fprintf(strm, "%.*s", (unsigned)expr->info.atom.len, expr->info.atom.ptr); return;
+    case ATOM:             fprintf(strm, "%.*s", (unsigned)expr->info.atom.len, expr->info.atom.ptr); return;
+    case BINOP_SUBSCR:     print_expr(strm, expr->info.subscr.base); fprintf(strm, " [] "); print_expr(strm, expr->info.subscr.off); break;
+    case BINOP_CALL:       print_expr(strm, expr->info.call.base); fprintf(strm, " () "); if (expr->info.call.args) print_expr(strm, expr->info.call.args); else fprintf(strm, "()"); break;
+    case BINOP_TERNCOND:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, " ? "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_TERNBRANCH: print_expr(strm, expr->info.binary.lhs); fprintf(strm, " : "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_COMMA:      print_expr(strm, expr->info.binary.lhs); fprintf(strm, ", "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN:       print_expr(strm, expr->info.binary.lhs); fprintf(strm, " = "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_ASGN_SUB:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "-= "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_ASGN_ADD:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "+= "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_ASGN_REM:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "%%= "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_ASGN_DIV:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "/= "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_ASGN_MUL:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "*= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN_BOR:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "|= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN_BXOR:  print_expr(strm, expr->info.binary.lhs); fprintf(strm, "^= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN_BAND:  print_expr(strm, expr->info.binary.lhs); fprintf(strm, "&= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN_BSHL:  print_expr(strm, expr->info.binary.lhs); fprintf(strm, "<<= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_ASGN_BSHR:  print_expr(strm, expr->info.binary.lhs); fprintf(strm, ">>= "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_TERNBRANCH: print_expr(strm, expr->info.binary.lhs); fprintf(strm, " : "); print_expr(strm, expr->info.binary.rhs); break;
-    case BINOP_TERNCOND:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, " ? "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_ASGN_SUB:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "-= "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_ASGN_ADD:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "+= "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_ASGN_REM:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "%%= "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_ASGN_DIV:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "/= "); print_expr(strm, expr->info.binary.rhs); break;
+    case BINOP_ASGN_MUL:   print_expr(strm, expr->info.binary.lhs); fprintf(strm, "*= "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_LOR:        print_expr(strm, expr->info.binary.lhs); fprintf(strm, " || "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_LAND:       print_expr(strm, expr->info.binary.lhs); fprintf(strm, " && "); print_expr(strm, expr->info.binary.rhs); break;
     case BINOP_BOR:        print_expr(strm, expr->info.binary.lhs); fprintf(strm, "|"); print_expr(strm, expr->info.binary.rhs); break;
@@ -64,8 +66,6 @@ void print_expr(FILE* strm, expression cref expr) {
     case UNOP_PLUS:        fprintf(strm, "+"); print_expr(strm, expr->info.unary.opr); break;
     case UNOP_PRE_DEC:     fprintf(strm, "--"); print_expr(strm, expr->info.unary.opr); break;
     case UNOP_PRE_INC:     fprintf(strm, "++"); print_expr(strm, expr->info.unary.opr); break;
-    case BINOP_SUBSCR:     print_expr(strm, expr->info.subscr.base); fprintf(strm, " [] "); print_expr(strm, expr->info.subscr.off); break;
-    case BINOP_CALL:       print_expr(strm, expr->info.call.base); fprintf(strm, " () "); if (expr->info.call.args) print_expr(strm, expr->info.call.args); else fprintf(strm, "()"); break;
     case UNOP_PMEMBER:     print_expr(strm, expr->info.member.base); fprintf(strm, "->%.*s", bufmt((*expr->info.member.name))); break;
     case UNOP_MEMBER:      print_expr(strm, expr->info.member.base); fprintf(strm, ".%.*s", bufmt((*expr->info.member.name))); break;
     case UNOP_POST_DEC:    print_expr(strm, expr->info.unary.opr); fprintf(strm, "--"); break;

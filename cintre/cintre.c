@@ -1,6 +1,7 @@
 #include "common.h"
 #include "parser.h"
 #include "adapter.h"
+#include "compiler.h"
 
 #ifndef STACK_SIZE
 #define STACK_SIZE 1024*1024
@@ -48,35 +49,35 @@ struct adpt_item const* search_namespaces(bufsl const name, size_t ref out_ns) {
     return NULL;
 }
 
-char stack[STACK_SIZE];
-size_t sp = sizeof stack;
-#define top() (stack+sp)
-#define topas(ty) ((ty*)top())
-#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
-
 // print helpers {{{
-void print_expr(FILE* strm, expression cref expr, unsigned depth) {
+void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
     static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
     for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
+
     if (!expr) {
         fprintf(strm, "\x1b[31m(nil)\x1b[m\n");
         return;
     }
     char const* const name = op_kind_names[expr->kind];
+
     if (ATOM == expr->kind) {
         char c = *expr->info.atom.ptr;
         fprintf(strm, "\x1b[%dm%.*s\x1b[m\n", '"' == c ? 36 : ('0' <= c && c <= '9') || '\'' == c || '.' == c ? 33 : 0, bufmt(expr->info.atom));
-    } else if (!memcmp("UNOP", name, 4)) {
+    }
+
+    else if (!memcmp("UNOP", name, 4)) {
         fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
         print_expr(strm, expr->info.unary.opr, depth+1);
-    } else if (!memcmp("BINO", name, 4)) {
+    }
+
+    else if (!memcmp("BINO", name, 4)) {
         fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
         print_expr(strm, expr->info.binary.lhs, depth+1);
         print_expr(strm, expr->info.binary.rhs, depth+1);
     }
 }
 
-void print_type(FILE* strm, struct adpt_type cref ty) {
+void print_type(FILE ref strm, struct adpt_type cref ty) {
     switch (ty->kind) {
     case ADPT_KIND_VOID:       fprintf(strm, "\x1b[32mvoid\x1b[m");       break;
     case ADPT_KIND_CHAR:       fprintf(strm, "\x1b[32mchar\x1b[m");       break;
@@ -94,6 +95,7 @@ void print_type(FILE* strm, struct adpt_type cref ty) {
     case ADPT_KIND_FLOAT:      fprintf(strm, "\x1b[32mfloat\x1b[m");      break;
     case ADPT_KIND_DOUBLE:     fprintf(strm, "\x1b[32mdouble\x1b[m");     break;
     case ADPT_KIND_LONGDOUBLE: fprintf(strm, "\x1b[32mlongdouble\x1b[m"); break;
+
     case ADPT_KIND_STRUCT:
         fprintf(strm, "\x1b[34mstruct\x1b[m{");
         if (0)
@@ -106,6 +108,7 @@ void print_type(FILE* strm, struct adpt_type cref ty) {
         }
         fprintf(strm, "}");
         break;
+
     case ADPT_KIND_FUN:
         fprintf(strm, "\x1b[34mfun\x1b[m(");
         for (size_t k = 0; k < ty->info.fun.count; k++) {
@@ -116,6 +119,7 @@ void print_type(FILE* strm, struct adpt_type cref ty) {
         fprintf(strm, ") -> ");
         print_type(strm, ty->info.fun.ret);
         break;
+
     case ADPT_KIND_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
         print_type(strm, ty->info.to);
@@ -123,291 +127,100 @@ void print_type(FILE* strm, struct adpt_type cref ty) {
         break;
     }
 }
-// }}}
 
-// check and alloc pass {{{
-struct adpt_type const* typeof(expression ref expr) {
-#   define fail(...)  return notif(__VA_ARGS__), NULL
-#   define failforward(id, from)  for (id = typeof(from); !id; ) fail("here")
-#   define isint(__ty)  (ADPT_KIND_CHAR <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_ENUM)
-#   define isflt(__ty)  (ADPT_KIND_FLOAT <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_LONGDOUBLE)
-#   define isnum(__ty)  (isint(__ty) || isflt(__ty))
-#   define isptr(__ty)  (ADPT_KIND_PTR == (__ty)->kind)
-#   define isfun(__ty)  (ADPT_KIND_FUN == (__ty)->kind)
+void print_code(FILE ref strm, bytecode const code) {
+    for (size_t k = 0; k < code.len; k++) {
+        size_t pk = k;
+        fprintf(strm, "%5zu   ", k);
+        unsigned char c = code.ptr[k];
 
-    struct adpt_type const *opr, *lhs, *rhs, *base, *off;
+        if (0 == c) fprintf(strm, "\x1b[34mnop\x1b[m");
+        else if (1 == c) fprintf(strm, "\x1b[34mdebug\x1b[m");
 
-    switch (expr->kind) {
-    case ATOM:;
-        char c = *expr->info.atom.ptr;
-        if ('"' == c) {
-            static struct adpt_type string = {
-                .size= sizeof(void*),
-                .align= sizeof(void*),
-                .kind= ADPT_KIND_PTR,
-                .info.to= &adptb_char_type,
-            };
-            return &string;
+        else if (16/*push*/ == (c&240)) {
+            fprintf(strm, "\x1b[34mpush\x1b[m");
+            unsigned w = 1<<(c>>2&3);
+            size_t sxc = 0;
+            while (w) sxc = sxc | (code.ptr[++k]<<(--w*8));
+            while (sxc) fprintf(strm, " \x1b[33m0x%02x\x1b[m", code.ptr[sxc--, ++k]);
         }
-        if ('\'' == c) return &adptb_char_type;
-        if ('0' <= c && c <= '9') return &adptb_int_type; // yyy
-        struct adpt_item const* found = search_namespaces(expr->info.atom, NULL);
-        if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
-        return found->type;
 
-    case BINOP_SUBSCR:
-        failforward(base, expr->info.subscr.base);
-        failforward(off, expr->info.subscr.off);
-        if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
-        if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
-        return base->info.to;
+        // else if cvt, pop/copy
 
-    case BINOP_CALL:
-        failforward(base, expr->info.call.base);
-        if (!isfun(base)) fail("Base of call expression is not of a function type");
-        expression* cons = expr->info.call.args;
-        size_t k;
-        for (k = 0; k < base->info.fun.count && cons; k++) {
-            struct adpt_type const* arg;
-            if (k+1 == base->info.fun.count) {
-                failforward(arg, cons);
-                cons = NULL;
-            } else {
-                if (BINOP_COMMA != cons->kind) fail("Not enough arguments: %zu provided, expected %zu", k+1, base->info.fun.count);
-                failforward(arg, cons->info.binary.rhs);
-                cons = cons->info.binary.lhs;
-            }
-            fprintf(stderr, "  arg %zu: ", base->info.fun.count - k);
-            print_type(stderr, arg);
-            fprintf(stderr, "\n");
+        else if (64/*unop*/ == (c&64)) {
+            static char const* const names[] = {"bnot", "lnot", "minus", "plus", "dec", "inc", "xun", "yun"};
+            bool f = c>>5&1;
+            if (f && 0 == (c&3)) { // jmp/brz
+                fprintf(strm, c>>4&1 ? "\x1b[34mjmp\x1b[m" : "\x1b[34mbrz\x1b[m");
+                unsigned w = 1<<(c>>2&3);
+                size_t sxc = 0;
+                while (w) sxc = sxc | (code.ptr[++k]<<(--w*8));
+                while (sxc) fprintf(strm, " \x1b[33m0x%02x\x1b[m", code.ptr[sxc--, ++k]);
+            } else fprintf(strm, "\x1b[34m%s%s%u\x1b[m", &"f"[!f], names[c>>2&7], (1<<(c&3))*8);
         }
-        if (cons) fail("Too many arguments: %zu provided, expected %zu", k, base->info.fun.count);
-        return base->info.fun.ret;
 
-    case BINOP_TERNCOND:
-    case BINOP_TERNBRANCH:
-        fail("NIY: ternary");
+        else if (128/*binop*/ == (c&128)) {
+            static char const* const names[] = {"eq", "ne", "lt", "gt", "le", "ge", "bor", "bxor", "band", "bshl", "bshr", "sub", "add", "rem", "div", "mul"};
+            bool f = c>>6&1;
+            if (f && 0 == (c&3)) { // call
+                fprintf(strm, "\x1b[34mcall\x1b[m");
+                fprintf(strm, "(todo: parse)");
+                exitf("NIY: print_code for call");
+            } else fprintf(strm, "\x1b[34m%s%s%u\x1b[m", &"f"[!f], names[c>>2&15], (1<<(c&3))*8);
+        }
 
-    case BINOP_COMMA:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        return rhs;
+        else fprintf(strm, "\x1b[31merrop\x1b[m");
 
-    case BINOP_ASGN:
-    case BINOP_ASGN_BOR:
-    case BINOP_ASGN_BXOR:
-    case BINOP_ASGN_BAND:
-    case BINOP_ASGN_BSHL:
-    case BINOP_ASGN_BSHR:
-    case BINOP_ASGN_SUB:
-    case BINOP_ASGN_ADD:
-    case BINOP_ASGN_REM:
-    case BINOP_ASGN_DIV:
-    case BINOP_ASGN_MUL:
-        fail("NIY: assignment");
-
-    case BINOP_LOR:
-    case BINOP_LAND:
-        return &adptb_int_type; // yyy
-
-    case BINOP_EQ:
-    case BINOP_NE:
-    case BINOP_LT:
-    case BINOP_GT:
-    case BINOP_LE:
-    case BINOP_GE:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) return &adptb_int_type; // yyy
-        fail("Values are not comparable");
-
-    case BINOP_BOR:
-    case BINOP_BXOR:
-    case BINOP_BAND:
-    case BINOP_BSHL:
-    case BINOP_BSHR:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        if (isint(lhs) && isint(rhs)) return lhs; // yyy
-        fail("Both operands are not of an integral type");
-
-    case BINOP_SUB:
-    case BINOP_ADD:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        bool lnum = isnum(lhs), rnum = isnum(rhs);
-        if (lnum && rnum) return lhs; // yyy
-        if (lnum && isptr(rhs)) return rhs;
-        if (rnum && isptr(lhs)) return lhs;
-        fail("Both operands are not of an arithmetic type");
-
-    case BINOP_REM:
-    case BINOP_DIV:
-    case BINOP_MUL:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        if (isnum(lhs) && isnum(rhs)) return lhs; // yyy
-        fail("Both operands are not of an arithmetic type");
-
-    case UNOP_ADDR:
-        fail("NIY: address of");
-    case UNOP_DEREF:
-        failforward(opr, expr->info.unary.opr);
-        if (isptr(opr)) return opr->info.to;
-        fail("Operand is not of a pointer type");
-
-    case UNOP_PMEMBER:
-        failforward(opr, expr->info.unary.opr);
-        if (!isptr(opr)) fail("Operand is not of a pointer type");
-        if (0)
-    case UNOP_MEMBER:
-            failforward(opr, expr->info.unary.opr);
-        fail("NIY: member access");
-
-    case UNOP_BNOT:
-    case UNOP_LNOT:
-        failforward(opr, expr->info.unary.opr);
-        if (isint(opr)) return opr;
-        fail("Operand is not of an integral type");
-
-    case UNOP_MINUS:
-    case UNOP_PLUS:
-        failforward(opr, expr->info.unary.opr);
-        if (isnum(opr)) return opr;
-        fail("Operand is not of an arithmetic type");
-
-    case UNOP_PRE_DEC:
-    case UNOP_PRE_INC:
-    case UNOP_POST_DEC:
-    case UNOP_POST_INC:
-        failforward(opr, expr->info.unary.opr);
-        if (isnum(opr) || isptr(opr)) return opr;
-        fail("Operand is not of an arithmetic type");
-    }
-
-    return NULL;
-
-#   undef isfun
-#   undef isptr
-#   undef isnum
-#   undef isflt
-#   undef isint
-#   undef failforward
-#   undef fail
-} // typeof
-
-bool check_and_alloc_pass(expression ref expr) {
-    // TODO:
-    // - check if names exists
-    // - check if types matches
-    // - stack allocate and copy string literal
-    // - stack allocate and fill compound literals
-    // - track the allocations and found names somehow -> easiest is to modify the ast itself
-
-    struct adpt_type cref ty = typeof(expr);
-    if (!ty) return false;
-    return true;
-}
-// }}}
-
-// exec pass {{{
-void exec_pass(expression ref expr) {
-    switch (expr->kind) {
-    case ATOM:
-    case BINOP_SUBSCR:
-        break;
-
-    case BINOP_CALL:
-        ;
-        bufsl name = expr->info.call.base->info.atom;
-        printf("call to: %.*s\n", bufmt(name));
-        size_t ns;
-        struct adpt_item cref found = search_namespaces(name, &ns);
-
-        if (found) printf("-> found in namespace '%s'\n", namespaces[ns].name);
-        else printf("-> not found in any namespaces\n");
-        break;
-
-    case BINOP_TERNCOND:
-    case BINOP_TERNBRANCH:
-    case BINOP_COMMA:
-    case BINOP_ASGN:
-    case BINOP_ASGN_BOR:
-    case BINOP_ASGN_BXOR:
-    case BINOP_ASGN_BAND:
-    case BINOP_ASGN_BSHL:
-    case BINOP_ASGN_BSHR:
-    case BINOP_ASGN_SUB:
-    case BINOP_ASGN_ADD:
-    case BINOP_ASGN_REM:
-    case BINOP_ASGN_DIV:
-    case BINOP_ASGN_MUL:
-    case BINOP_LOR:
-    case BINOP_LAND:
-    case BINOP_BOR:
-    case BINOP_BXOR:
-    case BINOP_BAND:
-    case BINOP_EQ:
-    case BINOP_NE:
-    case BINOP_LT:
-    case BINOP_GT:
-    case BINOP_LE:
-    case BINOP_GE:
-    case BINOP_BSHL:
-    case BINOP_BSHR:
-    case BINOP_SUB:
-    case BINOP_ADD:
-    case BINOP_REM:
-    case BINOP_DIV:
-    case BINOP_MUL:
-    case UNOP_ADDR:
-    case UNOP_DEREF:
-    case UNOP_BNOT:
-    case UNOP_LNOT:
-    case UNOP_MINUS:
-    case UNOP_PLUS:
-    case UNOP_PRE_DEC:
-    case UNOP_PRE_INC:
-    case UNOP_PMEMBER:
-    case UNOP_MEMBER:
-    case UNOP_POST_DEC:
-    case UNOP_POST_INC:
-        break;
+        fprintf(strm, "\t\x1b[32m;");
+        while (pk <= k) fprintf(strm, " 0x%02x", code.ptr[pk++]);
+        fprintf(strm, "\x1b[m\n");
     }
 }
 // }}}
+
+char stack[STACK_SIZE];
+size_t sp = sizeof stack;
+#define top() (stack+sp)
+#define topas(ty) ((ty*)top())
+#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
+bytecode code = {0};
+
+struct adpt_item const* lookup(bufsl const name) {
+    return search_namespaces(name, NULL);
+}
 
 void accept(void ref _, expression ref expr, bufsl ref tok) {
     (void)_;
 
     char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
+#   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
-    if (!memcmp("ast", xcmd, 3)) {
+    if (xcmdis("ast")) {
         printf("AST of the expression:\n");
         print_expr(stdout, expr, 0);
+        return;
+    }
+
+    code.len = 0;
+    if (!expr) return;
+    struct adpt_type cref ty = compile_expression(&code, expr, lookup);
+    if (!ty) return;
+
+    if (xcmdis("ty")) {
+        printf("expression is of type: ");
+        print_type(stdout, ty);
         printf("\n");
         return;
     }
 
-    if (!memcmp("ty", xcmd, 2) && expr) {
-        struct adpt_type cref ty = typeof(expr);
-        if (ty) {
-            printf("expression is of type: ");
-            print_type(stdout, ty);
-            printf("\n");
-        }
+    if (xcmdis("bytec") || xcmdis("bc")) {
+        printf("resulting bytecode (%zub):\n", code.len);
+        print_code(stdout, code);
         return;
     }
 
-    if (!expr) return;
-
-    size_t psp = sp;
-    if (!check_and_alloc_pass(expr)) {
-        sp = psp;
-        return;
-    }
-
-    exec_pass(expr);
+    notif("NIY: run code");
+    //run(&code);
 }
 
 int main(void) {

@@ -663,7 +663,7 @@ bufsl lext(lex_state ref ls) {
         else if (is('\'') || is('"')) { // xxx: will not handle <backslash><backslash><newline> correctly
             char c = at();
             if (nx(), has(1)) {
-                do if (has(1) && is('\\')) nx();
+                if (!is(c)) do if (has(1) && is('\\')) nx();
                 while (nx(), has(1) && !is(c) && !is('\n'));
                 if (has(1)) nx();
             }

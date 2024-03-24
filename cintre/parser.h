@@ -663,7 +663,9 @@ void _parse_two(parse_expr_state ref ps, struct _capture ref capt, expression re
 
     enum expr_kind l = capt->hold->kind, n = infix;
     if (l < n || ( (BINOP_TERNCOND == l || BINOP_TERNBRANCH == l)
-                && (BINOP_TERNCOND == n || BINOP_TERNBRANCH == n) )) {
+                && (BINOP_TERNCOND == n || BINOP_TERNBRANCH == n) )
+              || ( (BINOP_ASGN <= l && l <= BINOP_ASGN_MUL)
+                && (BINOP_ASGN <= n && n <= BINOP_ASGN_MUL) )) {
         expression in = {.kind= infix, .info.binary.lhs= rhs};
         _parse_one(ps, &(struct _capture){
                 .next= &(struct _capture){

@@ -48,6 +48,34 @@ struct adpt_item const* search_namespaces(bufsl const name, size_t ref out_ns) {
     return NULL;
 }
 
+char stack[STACK_SIZE];
+size_t sp = sizeof stack;
+#define top() (stack+sp)
+#define topas(ty) ((ty*)top())
+#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
+
+// print helpers {{{
+void print_expr(FILE* strm, expression cref expr, unsigned depth) {
+    static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
+    for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
+    if (!expr) {
+        fprintf(strm, "\x1b[31m(nil)\x1b[m\n");
+        return;
+    }
+    char const* const name = op_kind_names[expr->kind];
+    if (ATOM == expr->kind) {
+        char c = *expr->info.atom.ptr;
+        fprintf(strm, "\x1b[%dm%.*s\x1b[m\n", '"' == c ? 36 : ('0' <= c && c <= '9') || '\'' == c || '.' == c ? 33 : 0, bufmt(expr->info.atom));
+    } else if (!memcmp("UNOP", name, 4)) {
+        fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
+        print_expr(strm, expr->info.unary.opr, depth+1);
+    } else if (!memcmp("BINO", name, 4)) {
+        fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
+        print_expr(strm, expr->info.binary.lhs, depth+1);
+        print_expr(strm, expr->info.binary.rhs, depth+1);
+    }
+}
+
 void print_type(FILE* strm, struct adpt_type cref ty) {
     switch (ty->kind) {
     case ADPT_KIND_VOID:       fprintf(strm, "\x1b[32mvoid\x1b[m");       break;
@@ -95,12 +123,7 @@ void print_type(FILE* strm, struct adpt_type cref ty) {
         break;
     }
 }
-
-char stack[STACK_SIZE];
-size_t sp = sizeof stack;
-#define top() (stack+sp)
-#define topas(ty) ((ty*)top())
-#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
+// }}}
 
 // check and alloc pass {{{
 struct adpt_type const* typeof(expression ref expr) {
@@ -354,21 +377,6 @@ void exec_pass(expression ref expr) {
 }
 // }}}
 
-void print_expr(FILE* strm, expression cref expr, unsigned depth) {
-    static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
-    char const* const name = op_kind_names[expr->kind];
-    if (ATOM == expr->kind) {
-        fprintf(strm, "%*s%.*s\n", depth*3, "", bufmt(expr->info.atom));
-    } else if (!memcmp("UNOP", name, 4)) {
-        fprintf(strm, "%*s%s\n", depth*3, "", name);
-        print_expr(strm, expr->info.unary.opr, depth+1);
-    } else if (!memcmp("BINO", name, 4)) {
-        fprintf(strm, "%*s%s\n", depth*3, "", name);
-        print_expr(strm, expr->info.binary.lhs, depth+1);
-        print_expr(strm, expr->info.binary.rhs, depth+1);
-    }
-}
-
 void accept(void ref _, expression ref expr, bufsl ref tok) {
     (void)_;
 
@@ -376,12 +384,12 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
 
     if (!memcmp("ast", xcmd, 3)) {
         printf("AST of the expression:\n");
-        print_expr(stdout, expr, 1);
+        print_expr(stdout, expr, 0);
         printf("\n");
         return;
     }
 
-    if (!memcmp("ty", xcmd, 2)) {
+    if (!memcmp("ty", xcmd, 2) && expr) {
         struct adpt_type cref ty = typeof(expr);
         if (ty) {
             printf("expression is of type: ");
@@ -390,6 +398,8 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
         }
         return;
     }
+
+    if (!expr) return;
 
     size_t psp = sp;
     if (!check_and_alloc_pass(expr)) {
@@ -407,14 +417,16 @@ int main(void) {
     printf("(%zu total)\n\n", countof(namespaces));
 
     lex_state ls = {.file= "<input>"};
+    parse_expr_state ps = {.ls= &ls, .on= accept};
 
     char* line = NULL;
     while (prompt("\x1b[35m(*^^),u~~\x1b[m ", &line)) {
         ls.line++;
         ls.slice.len = strlen(ls.slice.ptr = line);
 
-        parse_expr_state ps = {.ls= &ls, .on= accept};
-        parse_expression(&ps, lext(ps.ls));
+        bufsl tok = lext(&ls);
+        if (!tok.len || ';' == *tok.ptr) accept(NULL, NULL, &tok);
+        else parse_expression(&ps, tok);
     }
 
     return EXIT_SUCCESS;

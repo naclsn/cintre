@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>op code table</title>
+    <style>
+      body { font-family: monospace; font-size: 13pt; }
+      table { border-collapse: collapse; }
+      th, td {
+        width: 75px;
+        height: 50px;
+        border: 1px solid #888;
+        text-align: center;
+      }
+      th { border-width: 2px; }
+      thead>tr>th:first-of-type { border: none; }
+      .other  { background-color: #ff5400; }
+      .stack  { background-color: #47b37b; }
+      .cvt    { background-color: #c8c52d; }
+      .flow   { background-color: #d73636; }
+      .unary  { background-color: #4c3eb9; }
+      .binary { background-color: #3474b9; }
+      .--arith  { background-color: #f0f; }
+      .--float  { background-color: #64b93d; }
+      .--int    { background-color: #4279ce; }
+      .--sxc    { background-color: #a21ca2; }
+      .invalid { text-decoration: red wavy underline; }
+    </style>
+  </head>
+  <body>
+    <script>/*-*/;(function(){
+      var mk = document.createElement.bind(document);
+      var table = document.currentScript.insertAdjacentElement('afterend', mk('table'));
+      document.currentScript.remove();
+      var head = table.appendChild(mk('thead')).appendChild(mk('tr'));
+      var body = table.appendChild(mk('tbody'));
+      head.appendChild(mk('th'));
+      for (var i of '0123456789abcdef') {
+        head.appendChild(mk('th')).textContent = '0x-'+i;
+        var row = body.appendChild(mk('tr'));
+        row.appendChild(mk('th')).textContent = '0x'+i+'-';
+        for (var j of '0123456789abcdef') {
+          var c = parseInt('0x'+i+j)
+            , w = (1<<(c&3))*8
+            , x = (1<<(c>>2&3))*8
+            , u = c>>2&7
+            , b = c>>2&15;
+          if (0 == c) se('nop', ['other']);
+          else if (1 == c) se('debug', ['other']);
+          else if (2 == c) se('', []);
+          else if (3 == c) se('', []);
+          else if (1 == c) se('debug', ['other']);
+          else if (1 == c) se('debug', ['other']);
+          else if (c < 0b00100000) se('push'+(c&0b00010000?'i':'')+w+'<br/>+'+x, ['stack', 'sxc']);
+          else if (c < 0b01000000) {
+            var f = c&0b00010000;
+            if (x == w) se((f?'copy':'pop')+'<br/>+'+x, ['stack', 'sxc']);
+            else if (f && (x < 32 || w < 32)) se('', []);
+            else se((f?'f':'')+x+'to'+w, ['cvt', 'arith', f?'float':'int']);
+          } else if (c < 0b10000000) {
+            var f = c&0b00100000;
+            if (f && 8 == w) se((c&0b00010000?'jmp':'brz')+'<br/>+'+x, ['flow']);
+            //else if (f && 16 == w) se((c&0b00010000?'brn':'brc')+x, ['flow']);
+            else if (f && w < 32) se('', []);
+            else se((f?'f':'')+["bnot", "lnot", "minus", "banys", "dec", "inc", "xun", "yun"][u]+w, ['arith', f?'float':'int', 'unary']);
+          } else {
+            var f = c&0b01000000;
+            if (f && 8 == w) se('call'+b, ['flow']);
+            //else if (f && 16 == w) se('call'+(16+b), ['flow']);
+            else if (f && w < 32) se('', []);
+            else se((f?'f':'')+["eq", "ne", "lt", "gt", "le", "ge", "bor", "bxor", "band", "bshl", "bshr", "sub", "add", "rem", "div", "mul"][b]+w, ['arith', f?'float':'int', 'binary']);
+          }
+          function se(t, c) {
+            var e = row.appendChild(mk('td'));
+            if (t.startsWith('fb')) c.push(['invalid']);
+            if (t.startsWith('zun') || t.startsWith('xun') || t.startsWith('yun') || t.startsWith('fzun') || t.startsWith('fxun') || t.startsWith('fyun')) t = '', c = [];
+            e.innerHTML = t;
+            e.setAttribute('class', c.join(' '));
+          }
+        }
+      }
+    })();</script>
+  </body>
+</html>

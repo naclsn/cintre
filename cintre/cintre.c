@@ -137,10 +137,9 @@ void print_code(FILE ref strm, bytecode const code) {
         unsigned x = c>>2&3;           // ....[]..
         unsigned u = c>>2&7;           // ...[-]..
         unsigned b = c>>2&15;          // ..[--]..
-#       define rsxc() \
+#       define rsxc()        \
             size_t sxc = 0;  \
-            unsigned xx = 1<<x;  \
-            while (xx) sxc = sxc | (code.ptr[++k]<<(--xx*8));
+            for (unsigned xx = 1<<x; xx; sxc = sxc | (code.ptr[++k]<<(--xx*8)))
 
         if (0 == c) fprintf(strm, "\x1b[34mnop\x1b[m");
         else if (1 == c) fprintf(strm, "\x1b[34mdebug\x1b[m");
@@ -150,7 +149,7 @@ void print_code(FILE ref strm, bytecode const code) {
         else if (c < 32) {
             bool i = c>>4&1;
             rsxc();
-            fprintf(strm, "\x1b[34mpush%s%u\x1b[m \x1b[33m%zu\x1b[m", i?"i":"", (1<<2)*8, sxc);
+            fprintf(strm, "\x1b[34mpush%s%u\x1b[m \x1b[33m%zu\x1b[m", i?"i":"", (1<<w)*8, sxc);
             if (i) while (sxc) fprintf(strm, ", \x1b[33m0x%02x\x1b[m", code.ptr[sxc--, ++k]);
         }
 
@@ -178,7 +177,7 @@ void print_code(FILE ref strm, bytecode const code) {
         else {
             static char const* const names[] = {"eq", "ne", "lt", "gt", "le", "ge", "bor", "bxor", "band", "bshl", "bshr", "sub", "add", "rem", "div", "mul"};
             bool f = c>>6&1;
-            if (f && 0 == w) { // call
+            if (f && 0 == w) {
                 fprintf(strm, "\x1b[34mcall%u\x1b[m", b);
             } else if (!(f && w < 2)) {
                 fprintf(strm, "\x1b[34m%s%s%u\x1b[m", f?"f":"", names[b], (1<<w)*8);
@@ -190,16 +189,102 @@ void print_code(FILE ref strm, bytecode const code) {
         fprintf(strm, "\t\x1b[32m;");
         while (pk <= k) fprintf(strm, " 0x%02x", code.ptr[pk++]);
         fprintf(strm, "\x1b[m\n");
+#       undef rsxc
     }
 }
 // }}}
 
 char stack[STACK_SIZE];
 size_t sp = sizeof stack;
-#define top() (stack+sp)
-#define topas(ty) ((ty*)top())
-#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
+#define top(ty) ((ty*)(stack+sp))
+//#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
 bytecode code = {0};
+
+void run(bytecode const code) {
+    for (size_t k = 0; k < code.len; k++) {
+        unsigned char c = code.ptr[k]; // ........
+        unsigned w = c&3;              // ......[]
+        unsigned x = c>>2&3;           // ....[]..
+        enum _bc_op_un u = c>>2&7;     // ...[-]..
+        enum _bc_op_bin b = c>>2&15;   // ..[--]..
+#       define rsxc()        \
+            size_t sxc = 0;  \
+            for (unsigned xx = 1<<x; xx; sxc = sxc | (code.ptr[++k]<<(--xx*8)))
+
+        if (1 == c) notif("NIY: debug (probably just show 32b stack for now)");
+
+        else if (c < 32) {
+            bool i = c>>4&1;
+            rsxc();
+            sp-= sxc; // alloc sxc
+            sp&= ~(size_t)0<<w; // align to w
+            if (i) {
+                memcpy(top(char), code.ptr+k+1, sxc);
+                k+= sxc;
+            }
+        }
+
+        else if (c < 64) {
+            bool f = c>>4&1;
+            if (x == w) {
+                rsxc();
+                if (f) notif("NIY copy"); //memmove(,, sxc); // copy
+                else sp+= sxc;
+            } else if (!(f && (x < 2 || w < 2))) {
+                notif("NIY: cvt x to w");
+            }
+        }
+
+        else if (c < 128) {
+            bool f = c>>5&1;
+            if (f && 0 == w) {
+                rsxc();
+                //if (c>>4&1) k+= (signed)sxc;
+                //else { .. }
+                notif("NIY: %s by sxc", c>>4&1 ? "jmp" : "brz");
+            } else if (!(f && w < 2)) {
+                // yyy: w
+                switch (u) {
+                case BC_UNOP_BNOT:  top(unsigned)[0] =  ~top(unsigned)[0]; break;
+                case BC_UNOP_LNOT:  top(unsigned)[0] =  !top(unsigned)[0]; break;
+                case BC_UNOP_MINUS: top(unsigned)[0] =  -top(unsigned)[0]; break;
+                case BC_UNOP_BANYS: top(unsigned)[0] = !!top(unsigned)[0]; break;
+                case BC_UNOP_DEC:   top(unsigned)[0]--;               break;
+                case BC_UNOP_INC:   top(unsigned)[0]++;               break;
+                }
+            }
+        }
+
+        else {
+            bool f = c>>6&1;
+            if (f && 0 == w) {
+                notif("NIY: call");
+            } else if (!(f && w < 2)) {
+                // yyy: w
+                switch (b) {
+                case BC_BINOP_EQ:   top(unsigned)[1] = top(unsigned)[1] == top(unsigned)[0]; break;
+                case BC_BINOP_NE:   top(unsigned)[1] = top(unsigned)[1] != top(unsigned)[0]; break;
+                case BC_BINOP_LT:   top(unsigned)[1] = top(unsigned)[1] <  top(unsigned)[0]; break;
+                case BC_BINOP_GT:   top(unsigned)[1] = top(unsigned)[1] >  top(unsigned)[0]; break;
+                case BC_BINOP_LE:   top(unsigned)[1] = top(unsigned)[1] <= top(unsigned)[0]; break;
+                case BC_BINOP_GE:   top(unsigned)[1] = top(unsigned)[1] >= top(unsigned)[0]; break;
+                case BC_BINOP_BOR:  top(unsigned)[1] = top(unsigned)[1] |  top(unsigned)[0]; break;
+                case BC_BINOP_BXOR: top(unsigned)[1] = top(unsigned)[1] ^  top(unsigned)[0]; break;
+                case BC_BINOP_BAND: top(unsigned)[1] = top(unsigned)[1] &  top(unsigned)[0]; break;
+                case BC_BINOP_BSHL: top(unsigned)[1] = top(unsigned)[1] << top(unsigned)[0]; break;
+                case BC_BINOP_BSHR: top(unsigned)[1] = top(unsigned)[1] >> top(unsigned)[0]; break;
+                case BC_BINOP_SUB:  top(unsigned)[1] = top(unsigned)[1] -  top(unsigned)[0]; break;
+                case BC_BINOP_ADD:  top(unsigned)[1] = top(unsigned)[1] +  top(unsigned)[0]; break;
+                case BC_BINOP_REM:  top(unsigned)[1] = top(unsigned)[1] %  top(unsigned)[0]; break;
+                case BC_BINOP_DIV:  top(unsigned)[1] = top(unsigned)[1] /  top(unsigned)[0]; break;
+                case BC_BINOP_MUL:  top(unsigned)[1] = top(unsigned)[1] *  top(unsigned)[0]; break;
+                }
+                sp+= 4;
+            }
+        }
+#       undef rsxc
+    }
+}
 
 struct adpt_item const* lookup(bufsl const name) {
     return search_namespaces(name, NULL);
@@ -230,13 +315,13 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
     }
 
     if (xcmdis("bytec") || xcmdis("bc")) {
-        printf("resulting bytecode (%zub):\n", code.len);
+        printf("resulting bytecode (%zuB):\n", code.len);
         print_code(stdout, code);
         return;
     }
 
-    notif("NIY: run code");
-    //run(&code);
+    run(code);
+    printf("result: %u\n", top(unsigned)[0]); // yyy: type
 }
 
 int main(void) {

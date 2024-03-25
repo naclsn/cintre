@@ -17,8 +17,8 @@
 /// ........
 /// 00000000 -> nop
 /// 00000001 -> debug
-/// 0000.... -> 2+4+8 free op codes
-/// 0001[][] -> push(log2width_of_sxc:2, align:2)
+/// 0000[][] -> push(log2width_of_sxc:2, align:2) (and sxc it at least 01 ie 2 bytes)
+/// 0001[][] -> pushi(log2width_of_sxc:2, align:2)
 /// 001f[][] -> cvt(f:1, from:2, to:2) -> 4*2 free op codes: same type conversions -> (pop(f=0)/copy(f=1))(log2width_of_sxc:2)
 /// 01f[-][] -> unops(f:1, which:3, width:2) -> some free op codes (invalid float ops)
 /// 011c[]00 -> (jmp(c=1)/brz(c=0))(log2width_of_sxc:2)
@@ -27,7 +27,8 @@
 /// 11[--]00 -> call(n:4) (limit of 16 arguments)
 /// 11....01 -> 16 free op codes -> reserved maybe for >16 arguments
 ///
-/// fcvtNto8 will probably be the isanyset (ie `!!some`)
+/// fcvt8toN will probably be the isanysetN (ie `!!some`)
+/// (and fcvt16toN could be ffsN)
 ///
 /// log2width - width is in bytes, so:
 ///   uchar(u8): 0
@@ -51,7 +52,7 @@ enum _bc_op_un {
     BC_UNOP_BNOT,
     BC_UNOP_LNOT,
     BC_UNOP_MINUS,
-    BC_UNOP_PLUS,
+    BC_UNOP_BANYS,
     BC_UNOP_DEC,
     BC_UNOP_INC,
 };
@@ -240,7 +241,7 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case UNOP_PLUS:
         failforward(opr, expr->info.unary.opr);
         if (isnum(opr)) {
-            *dyarr_push(res) = 64/*unop*/ | 0/*int*/<<5 | (UNOP_PLUS==expr->kind?BC_UNOP_PLUS:BC_UNOP_MINUS)<<2 | 2/*log2 sizeof(int)*/;
+            if (UNOP_MINUS==expr->kind) *dyarr_push(res) = 64/*unop*/ | 0/*int*/<<5 | BC_UNOP_MINUS<<2 | 2/*log2 sizeof(int)*/;
             return opr;
         }
         fail("Operand is not of an arithmetic type");

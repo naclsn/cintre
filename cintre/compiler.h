@@ -75,11 +75,11 @@ enum _bc_op_bin {
     BC_BINOP_MUL,
 };
 
-struct adpt_type const* compile_expression(bytecode ref res, expression ref expr, struct adpt_item const* lookup(bufsl const name));
+void compile_expression(bytecode ref res, expression ref expr, struct adpt_type const** const inout_ty, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect));
 
-struct adpt_type const* compile_expression(bytecode ref res, expression ref expr, struct adpt_item const* lookup(bufsl const name)) {
-#   define fail(...)  return notif(__VA_ARGS__), NULL
-#   define failforward(id, from)  for (id = compile_expression(res, from, lookup); !id; ) fail("here")
+void compile_expression(bytecode ref res, expression ref expr, struct adpt_type const** const inout_ty, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect)) {
+#   define fail(...)  do { *inout_ty = NULL; notif(__VA_ARGS__); return; } while (1)
+#   define failforward(id, from)  for (compile_expression(res, from, &id, lookup, typehole); !id; ) fail("here")
 #   define isint(__ty)  (ADPT_KIND_CHAR <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_ENUM)
 #   define isflt(__ty)  (ADPT_KIND_FLOAT <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_LONGDOUBLE)
 #   define isnum(__ty)  (isint(__ty) || isflt(__ty))
@@ -99,9 +99,13 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
                 .kind= ADPT_KIND_PTR,
                 .info.to= &adptb_char_type,
             };
-            return &string;
+            *inout_ty = &string;
+            return;
         }
-        if ('\'' == c) return &adptb_char_type;
+        if ('\'' == c) {
+            *inout_ty = &adptb_char_type;
+            return;
+        }
         if ('0' <= c && c <= '9') {
             co* w = dyarr_insert(res, res->len, 1+1+4);
             if (!w) fail("OOM");
@@ -109,18 +113,26 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
             w[1] = 4; /* this '1' above ^ and the 4 below v */
             int v = atoi(expr->info.atom.ptr);
             memcpy(w+2, (char*)&v, 4);
-            return &adptb_int_type; // yyy
+            *inout_ty = &adptb_int_type; // yyy
+            return;
+        }
+        if (1 == expr->info.atom.len && '_' == c) {
+            typehole(*inout_ty);
+            *inout_ty = NULL;
+            return;
         }
         struct adpt_item const* found = lookup(expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
-        return found->type;
+        *inout_ty = found->type;
+        return;
 
     case BINOP_SUBSCR:
         failforward(base, expr->info.subscr.base);
         failforward(off, expr->info.subscr.off);
         if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
         if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
-        return base->info.to;
+        *inout_ty = base->info.to;
+        return;
 
     case BINOP_CALL:
         failforward(base, expr->info.call.base);
@@ -130,17 +142,21 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
         for (k = 0; k < base->info.fun.count && cons; k++) {
             struct adpt_type const* arg;
             if (k+1 == base->info.fun.count) {
+                if (BINOP_COMMA == cons->kind) {
+                    while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
+                    fail("Too many arguments: %zu provided, expected %zu", k, base->info.fun.count);
+                }
                 failforward(arg, cons);
-                cons = NULL;
             } else {
-                if (BINOP_COMMA != cons->kind) fail("Not enough arguments: %zu provided, expected %zu", k+1, base->info.fun.count);
+                if (BINOP_COMMA != cons->kind) break;
                 failforward(arg, cons->info.binary.rhs);
                 cons = cons->info.binary.lhs;
             }
             // TODO: check assignable-to: arg to base->info.fun.params[base->info.fun.count-1-k].type
         }
-        if (cons) fail("Too many arguments: %zu provided, expected %zu", k, base->info.fun.count);
-        return base->info.fun.ret;
+        if (k < base->info.fun.count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
+        *inout_ty = base->info.fun.ret;
+        return;
 
     case BINOP_TERNCOND:
     case BINOP_TERNBRANCH:
@@ -149,7 +165,8 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case BINOP_COMMA:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        return rhs;
+        *inout_ty = rhs;
+        return;
 
     case BINOP_ASGN:
     case BINOP_ASGN_BOR:
@@ -169,7 +186,8 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
 
     case BINOP_LOR:
     case BINOP_LAND:
-        return &adptb_int_type; // yyy
+        *inout_ty = &adptb_int_type; // yyy
+        return;
 
     case BINOP_EQ:
     case BINOP_NE:
@@ -179,7 +197,10 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case BINOP_GE:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) return &adptb_int_type; // yyy
+        if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) {
+            *inout_ty = &adptb_int_type; // yyy
+            return;
+        }
         fail("Values are not comparable");
 
     case BINOP_BOR:
@@ -189,7 +210,10 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case BINOP_BSHR:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if (isint(lhs) && isint(rhs)) return lhs; // yyy
+        if (isint(lhs) && isint(rhs)) {
+            *inout_ty = lhs; // yyy
+            return;
+        }
         fail("Both operands are not of an integral type");
 
     case BINOP_SUB:
@@ -199,10 +223,17 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
         bool lnum = isnum(lhs), rnum = isnum(rhs);
         if (lnum && rnum) {
             *dyarr_push(res) = 128/*binop*/ | 0/*int*/<<6 | (BINOP_ADD==expr->kind?BC_BINOP_ADD:BC_BINOP_SUB)<<2 | 2/*log2 sizeof(int)*/;
-            return lhs; // yyy
+            *inout_ty = lhs; // yyy
+            return;
         }
-        if (lnum && isptr(rhs)) return rhs;
-        if (rnum && isptr(lhs)) return lhs;
+        if (lnum && isptr(rhs)) {
+            *inout_ty = rhs;
+            return;
+        }
+        if (rnum && isptr(lhs)) {
+            *inout_ty = lhs;
+            return;
+        }
         fail("Both operands are not of an arithmetic type");
 
     case BINOP_REM:
@@ -212,7 +243,8 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
         failforward(rhs, expr->info.binary.rhs);
         if (isnum(lhs) && isnum(rhs)) {
             *dyarr_push(res) = 128/*binop*/ | 0/*int*/<<6 | (BINOP_MUL==expr->kind?BC_BINOP_MUL:BINOP_DIV==expr->kind?BC_BINOP_DIV:BC_BINOP_REM)<<2 | 2/*log2 sizeof(int)*/;
-            return lhs; // yyy
+            *inout_ty = lhs; // yyy
+            return;
         }
         fail("Both operands are not of an arithmetic type");
 
@@ -220,7 +252,10 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
         fail("NIY: address of");
     case UNOP_DEREF:
         failforward(opr, expr->info.unary.opr);
-        if (isptr(opr)) return opr->info.to;
+        if (isptr(opr)) {
+            *inout_ty = opr->info.to;
+            return;
+        }
         fail("Operand is not of a pointer type");
 
     case UNOP_PMEMBER:
@@ -234,7 +269,10 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case UNOP_BNOT:
     case UNOP_LNOT:
         failforward(opr, expr->info.unary.opr);
-        if (isint(opr)) return opr; // yyy (lnot)
+        if (isint(opr)) {
+            *inout_ty = opr; // yyy (lnot)
+            return;
+        }
         fail("Operand is not of an integral type");
 
     case UNOP_MINUS:
@@ -242,7 +280,8 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
         failforward(opr, expr->info.unary.opr);
         if (isnum(opr)) {
             if (UNOP_MINUS==expr->kind) *dyarr_push(res) = 64/*unop*/ | 0/*int*/<<5 | BC_UNOP_MINUS<<2 | 2/*log2 sizeof(int)*/;
-            return opr;
+            *inout_ty = opr;
+            return;
         }
         fail("Operand is not of an arithmetic type");
 
@@ -251,11 +290,14 @@ struct adpt_type const* compile_expression(bytecode ref res, expression ref expr
     case UNOP_POST_DEC:
     case UNOP_POST_INC:
         failforward(opr, expr->info.unary.opr);
-        if (isnum(opr) || isptr(opr)) return opr;
+        if (isnum(opr) || isptr(opr)) {
+            *inout_ty = opr;
+            return;
+        }
         fail("Operand is not of an arithmetic type");
     }
 
-    return NULL;
+    fail("Broken tree: expression kind %d", expr->kind);
 
 #   undef isfun
 #   undef isptr

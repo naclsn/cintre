@@ -32,7 +32,10 @@ bool prompt(char const* prompt, char** res) {
         clear_history();
         return false;
     }
-    add_history(*res);
+    if (strspn(*res, " \t\n") != strlen(*res)) {
+        HIST_ENTRY* h = history_get(history_length);
+        if (!h || strcmp(h->line, *res)) add_history(*res);
+    }
     return true;
 }
 #undef hist_file
@@ -69,7 +72,7 @@ struct adpt_item const* search_namespaces(bufsl const name, size_t ref out_ns) {
     return NULL;
 }
 
-char stack[STACK_SIZE];
+char stack[STACK_SIZE] = {0};
 size_t sp = sizeof stack;
 #define top(ty) ((ty*)(stack+sp))
 //#define stalloc(size, align, count) (&stack[sp = (sp-size*count)/align*align])
@@ -84,9 +87,13 @@ void run(bytecode const code) {
         enum _bc_op_bin b = c>>2&15;   // ..[--]..
 #       define rsxc()        \
             size_t sxc = 0;  \
-            for (unsigned xx = 1<<x; xx; sxc = sxc | (code.ptr[++k]<<(--xx*8)))
+            for (unsigned xx = 0; xx < (unsigned)1<<x; sxc = sxc | (code.ptr[++k]<<(xx++*8)))
 
         if (1 == c) notif("NIY: debug (probably just show 32b stack for now)");
+
+        else if (3 == c) {
+            memcpy(top(void*), stack+sp, sizeof(void*));
+        }
 
         else if (c < 32) {
             bool i = c>>4&1;
@@ -177,6 +184,28 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
     char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
+    if (xcmdis("h")) {
+        printf("List of commands:\n");
+        printf("   names[paces] or ns  -  list names in namespaces\n");
+        printf("   ast  -  ast of the expression\n");
+        printf("   ty[pe]  -  type of the expression, eg. `strlen; ty`\n");
+        printf("   bytec[ode] or bc  -  internal bytecode from compilation\n");
+        printf("no command after the ; (or no ;) will simply execute the expression\n");
+        return;
+    }
+
+    if (xcmdis("names") || xcmdis("ns")) {
+        printf("List of names:\n");
+        for (size_t ns = 0; ns < countof(namespaces); ns++)
+            for (size_t k = 0; k < namespaces[ns].count; k++) {
+                struct adpt_item const* const it = &namespaces[ns].items[k];
+                printf("   [%p] %s::%-8s\t", it->as.object, namespaces[ns].name, it->name);
+                print_type(stdout, it->type);
+                printf("\n");
+            }
+        return;
+    }
+
     if (xcmdis("ast")) {
         printf("AST of the expression:\n");
         print_expr(stdout, expr, 0);
@@ -185,32 +214,29 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
 
     code.len = 0;
     if (!expr) return;
-    struct adpt_type const* ty;
+    struct adpt_type const* ty = NULL;
     compile_expression(&code, expr, &ty, lookup, typehole);
     if (!ty) return;
 
     if (xcmdis("ty")) {
-        printf("expression is of type: ");
+        printf("Expression is of type: ");
         print_type(stdout, ty);
         printf("\n");
         return;
     }
 
     if (xcmdis("bytec") || xcmdis("bc")) {
-        printf("resulting bytecode (%zuB):\n", code.len);
+        printf("Resulting bytecode (%zuB):\n", code.len);
         print_code(stdout, code);
         return;
     }
 
     run(code);
-    printf("result: %u\n", top(unsigned)[0]); // yyy: type
+    printf("Result: %u\n", top(unsigned)[0]); // yyy: type
 }
 
 int main(void) {
-    printf("namespaces:\n");
-    for (size_t k = 0; k < countof(namespaces); k++)
-        printf("   %s (%zu items)\n", namespaces[k].name, namespaces[k].count);
-    printf("(%zu total)\n\n", countof(namespaces));
+    printf("Type `;help` for a list of command\n");
 
     lex_state ls = {.file= "<input>"};
     parse_expr_state ps = {.ls= &ls, .on= accept};

@@ -47,9 +47,7 @@
           if (0 == c) se('nop', ['other']);
           else if (1 == c) se('debug', ['other']);
           else if (2 == c) se('', []);
-          else if (3 == c) se('', []);
-          else if (1 == c) se('debug', ['other']);
-          else if (1 == c) se('debug', ['other']);
+          else if (3 == c) se('putsp', ['stack']);
           else if (c < 0b00100000) se('push'+(c&0b00010000?'i':'')+w+'<br/>+'+x, ['stack', 'sxc']);
           else if (c < 0b01000000) {
             var f = c&0b00010000;

@@ -77,6 +77,34 @@ enum _bc_op_bin {
 
 void compile_expression(bytecode ref res, expression ref expr, struct adpt_type const** const inout_ty, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect));
 
+unsigned _l2(size_t n) {
+    for (unsigned k = 0; k < 8*sizeof n; k++) {
+        if (n&1) return k;
+        n>>= 1;
+    }
+    return -1;
+}
+
+#define _push_one(v) do {                                           \
+    unsigned char* w = dyarr_insert(res, res->len, 1+1+sizeof(v));  \
+    if (!w) fail("OOM");                                            \
+    w[0] = 16/*pushi*/                                              \
+         | _l2(1)/*sxc is 1B*/<<2                                   \
+         | _l2(sizeof(v))/*really should be alignof*/;              \
+    w[1] = sizeof(v);                                               \
+    memcpy(w+2, (char*)&(v), sizeof(v));                            \
+} while (0)
+
+#define _alloc_ty(ty) do {                                          \
+    unsigned char* w = dyarr_insert(res, res->len, 1+2);            \
+    if (!w) fail("OOM");                                            \
+    w[0] = 0/*push*/                                                \
+         | _l2(2)/*sxc is 2B (the mininum) for now*/<<2             \
+         | _l2((ty)->align)/*really should be alignof*/;            \
+    w[1] = (ty)->size & 0xff;                                       \
+    w[2] = (ty)->size>>8 & 0xff;                                    \
+} while (0)
+
 void compile_expression(bytecode ref res, expression ref expr, struct adpt_type const** const inout_ty, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect)) {
 #   define fail(...)  do { *inout_ty = NULL; notif(__VA_ARGS__); return; } while (1)
 #   define failforward(id, from)  for (compile_expression(res, from, &id, lookup, typehole); !id; ) fail("here")
@@ -86,7 +114,6 @@ void compile_expression(bytecode ref res, expression ref expr, struct adpt_type 
 #   define isptr(__ty)  (ADPT_KIND_PTR == (__ty)->kind)
 #   define isfun(__ty)  (ADPT_KIND_FUN == (__ty)->kind)
 
-    typedef unsigned char co;
     struct adpt_type const *opr, *lhs, *rhs, *base, *off;
 
     switch (expr->kind) {
@@ -99,30 +126,51 @@ void compile_expression(bytecode ref res, expression ref expr, struct adpt_type 
                 .kind= ADPT_KIND_PTR,
                 .info.to= &adptb_char_type,
             };
+            notif("NIY: put string under and push string's pointer here");
             *inout_ty = &string;
             return;
         }
+
         if ('\'' == c) {
+            char v = expr->info.atom.ptr[1];
+            if ('\\' == v) switch (expr->info.atom.ptr[2]) {
+            case '0': v = '\0'; break;
+            case'\'': v = '\''; break;
+            case '"': v = '\"'; break;
+            case '?': v = '\?'; break;
+            case'\\': v = '\\'; break;
+            case 'a': v = '\a'; break;
+            case 'b': v = '\b'; break;
+            case 'f': v = '\f'; break;
+            case 'n': v = '\n'; break;
+            case 'r': v = '\r'; break;
+            case 't': v = '\t'; break;
+            case 'v': v = '\v'; break;
+            }
+            _push_one(v);
             *inout_ty = &adptb_char_type;
             return;
         }
+
         if ('0' <= c && c <= '9') {
-            co* w = dyarr_insert(res, res->len, 1+1+4);
-            if (!w) fail("OOM");
-            w[0] = 16/*push*/ | 0/*log2 1*/<<2 | 2/*log2 alignof(int)*/;
-            w[1] = 4; /* this '1' above ^ and the 4 below v */
             int v = atoi(expr->info.atom.ptr);
-            memcpy(w+2, (char*)&v, 4);
+            _push_one(v);
             *inout_ty = &adptb_int_type; // yyy
             return;
         }
+
         if (1 == expr->info.atom.len && '_' == c) {
             typehole(*inout_ty);
             *inout_ty = NULL;
             return;
         }
+
         struct adpt_item const* found = lookup(expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
+
+        void* v = found->as.object;
+        //while (isptr(base)) base = base->info.to; // XXX: automatic fun to ptr something something..?
+        _push_one(v);
         *inout_ty = found->type;
         return;
 
@@ -137,14 +185,15 @@ void compile_expression(bytecode ref res, expression ref expr, struct adpt_type 
     case BINOP_CALL:
         failforward(base, expr->info.call.base);
         if (!isfun(base)) fail("Base of call expression is not of a function type");
+        _alloc_ty(base->info.fun.ret);
         expression* cons = expr->info.call.args;
-        size_t k;
-        for (k = 0; k < base->info.fun.count && cons; k++) {
-            struct adpt_type const* arg;
-            if (k+1 == base->info.fun.count) {
+        size_t k, count = base->info.fun.count;
+        for (k = 0; k < count && cons; k++) {
+            struct adpt_type const* arg = base->info.fun.params[count-1-k].type;
+            if (k+1 == count) {
                 if (BINOP_COMMA == cons->kind) {
                     while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
-                    fail("Too many arguments: %zu provided, expected %zu", k, base->info.fun.count);
+                    fail("Too many arguments: %zu provided, expected %zu", k, count);
                 }
                 failforward(arg, cons);
             } else {
@@ -152,9 +201,11 @@ void compile_expression(bytecode ref res, expression ref expr, struct adpt_type 
                 failforward(arg, cons->info.binary.rhs);
                 cons = cons->info.binary.lhs;
             }
-            // TODO: check assignable-to: arg to base->info.fun.params[base->info.fun.count-1-k].type
+            // TODO: assignment
         }
-        if (k < base->info.fun.count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
+        if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
+        // TODO: simulate rewind and fill address, result and arguments registers
+        *dyarr_push(res) = 0xc0/*call*/ | (count<<2&60);
         *inout_ty = base->info.fun.ret;
         return;
 
@@ -181,7 +232,7 @@ void compile_expression(bytecode ref res, expression ref expr, struct adpt_type 
     case BINOP_ASGN_MUL:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        // TODO: check assignable-to: rhs to lhs
+        // TODO: assignment
         fail("NIY: assignment");
 
     case BINOP_LOR:

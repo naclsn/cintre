@@ -203,7 +203,6 @@ int main(int argc, char** argv) {
         fprintf(result, "    struct adpt_item const* const items;\n");
         fprintf(result, "} const namespaces[] = {\n");
         for (char** it = first; it < last-1; it++) {
-            printf("it: '%s'\n", *it);
             bufsl itns = {.ptr= *it, .len= strlen(*it)};
             {
                 char const* basename = strrchr(itns.ptr, '/');

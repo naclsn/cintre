@@ -99,12 +99,12 @@ void print_code(FILE ref strm, bytecode const code) {
         unsigned b = c>>2&15;          // ..[--]..
 #       define rsxc()        \
             size_t sxc = 0;  \
-            for (unsigned xx = 1<<x; xx; sxc = sxc | (code.ptr[++k]<<(--xx*8)))
+            for (unsigned xx = 0; xx < (unsigned)1<<x; sxc = sxc | (code.ptr[++k]<<(xx++*8)))
 
         if (0 == c) fprintf(strm, "\x1b[34mnop\x1b[m");
         else if (1 == c) fprintf(strm, "\x1b[34mdebug\x1b[m");
-        else if (2 == c) fprintf(strm, "\x1b[34m(exit0)\x1b[m"); // yyy
-        else if (3 == c) fprintf(strm, "\x1b[34m(exit1)\x1b[m"); // yyy
+        else if (2 == c) fprintf(strm, "\x1b[34m(exit?)\x1b[m");
+        else if (3 == c) fprintf(strm, "\x1b[34mputsp\x1b[m");
 
         else if (c < 32) {
             bool i = c>>4&1;

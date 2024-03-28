@@ -92,64 +92,117 @@ void print_code(FILE ref strm, bytecode const code) {
     for (size_t k = 0; k < code.len; k++) {
         size_t pk = k;
         fprintf(strm, "%5zu   ", k);
-        unsigned char c = code.ptr[k]; // ........
-        unsigned w = c&3;              // ......[]
-        unsigned x = c>>2&3;           // ....[]..
-        unsigned u = c>>2&7;           // ...[-]..
-        unsigned b = c>>2&15;          // ..[--]..
-#       define rsxc()        \
-            size_t sxc = 0;  \
-            for (unsigned xx = 0; xx < (unsigned)1<<x; sxc = sxc | (code.ptr[++k]<<(xx++*8)))
+        unsigned char c = code.ptr[k];
+        unsigned hi = c>>4&0xf, lo = c&0xf, w = c&3;
 
-        if (0 == c) fprintf(strm, "\x1b[34mnop\x1b[m");
-        else if (1 == c) fprintf(strm, "\x1b[34mdebug\x1b[m");
-        else if (2 == c) fprintf(strm, "\x1b[34m(exit?)\x1b[m");
-        else if (3 == c) fprintf(strm, "\x1b[34mputsp\x1b[m");
+        size_t src, dst, lhs, rhs, opr, sze, val, ret, fun, arg, slt, ptr;
+#       define imm(nm) for (                        \
+            unsigned xx = (nm = code.ptr[++k], 0);  \
+            code.ptr[k]&0x80  \
+                ? true  \
+                : (fprintf(strm, " " #nm ":\x1b[33m%zu\x1b[m", nm), false);                   \
+            nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
 
-        else if (c < 32) {
-            bool i = c>>4&1;
-            rsxc();
-            fprintf(strm, "\x1b[34mpush%s%u\x1b[m \x1b[33m%zu\x1b[m", i?"i":"", (1<<w)*8, sxc);
-            if (i) while (sxc) fprintf(strm, ", \x1b[33m0x%02x\x1b[m", code.ptr[sxc--, ++k]);
-        }
-
-        else if (c < 64) {
-            bool f = c>>4&1;
-            if (x == w) {
-                rsxc();
-                fprintf(strm, f ? "\x1b[34mcopy\x1b[m \x1b[33m%zu\x1b[m" : "\x1b[34mpop\x1b[m \x1b[33m%zu\x1b[m", sxc);
-            } else if (!(f && (x < 2 || w < 2))) {
-                fprintf(strm, "\x1b[34m%s%uto%u\x1b[m", f?"f":"", (1<<x)*8, (1<<w)*8);
+        if (2 < hi && (lo < 8 || 0xd == lo || 0xf == lo)) {
+            static char const* const fops[] = {"add", "sub", "mul", "div", "rem", "addi", "subi", "muli", "divi", "remi", "rsubi", "rdivi", "rremi"};
+            static char const* const iops[] = {"bor", "bxor", "bshl", "bshr", "band", "bori", "bxori", "bshli", "bshri", "bandi", "", "rbshli", "rbshri"};
+            char const* name = (lo < 4 || 7 < lo ? fops : iops)[hi-3];
+            fprintf(strm, "\x1b[34m%s%c\x1b[m", name, (lo < 8 ? "0123" : " d f")[w]);
+            imm(dst);
+            if (hi < 8) {
+                imm(lhs);
+                imm(rhs);
+            } else {
+                imm(val);
+                if (hi < 0xd) imm(rhs);
+                else imm(lhs);
             }
-        }
+        } // arith
 
-        else if (c < 128) {
-            static char const* const names[] = {"bnot", "lnot", "minus", "banys", "dec", "inc", "xun", "yun"};
-            bool f = c>>5&1;
-            if (f && 0 == w) {
-                rsxc();
-                fprintf(strm, c>>4&1 ? "\x1b[34mjmp\x1b[m \x1b[33m%zu\x1b[m" : "\x1b[34mbrz\x1b[m \x1b[33m%zu\x1b[m", sxc);
-            } else if (!(f && w < 2)) {
-                fprintf(strm, "\x1b[34m%s%s%u\x1b[m", f?"f":"", names[u], (1<<w)*8);
-            }
-        }
+        else if (0xc == lo) {
+            fprintf(strm, "\x1b[34mcall%u\x1b[m", hi);
+            imm(ret);
+            imm(fun);
+            for (unsigned yy = 0; yy < lo; yy++) imm(arg);
+        } // call
 
-        else {
-            static char const* const names[] = {"eq", "ne", "lt", "gt", "le", "ge", "bor", "bxor", "band", "bshl", "bshr", "sub", "add", "rem", "div", "mul"};
-            bool f = c>>6&1;
-            if (f && 0 == w) {
-                fprintf(strm, "\x1b[34mcall%u\x1b[m", b);
-            } else if (!(f && w < 2)) {
-                fprintf(strm, "\x1b[34m%s%s%u\x1b[m", f?"f":"", names[b], (1<<w)*8);
-            }
-        }
+        else if (hi < w && lo < 8) {
+            fprintf(strm, "\x1b[34m%cx%dto%d\x1b[m", lo < 4 ? 's' : 'z', hi, w);
+            imm(dst);
+            imm(src);
+        } // cvt
 
-        //else fprintf(strm, "\x1b[31merrop\x1b[m"); // yyy: everywhere else
+        else switch (c) {
+        case 0x11: fprintf(strm, "\x1b[34mftoi\x1b[m"); goto sw_cvt;
+        case 0x22: fprintf(strm, "\x1b[34mdtol\x1b[m"); goto sw_cvt;
+        case 0x15: fprintf(strm, "\x1b[34mitof\x1b[m"); goto sw_cvt;
+        case 0x26: fprintf(strm, "\x1b[34mltod\x1b[m"); goto sw_cvt;
+        case 0x21: fprintf(strm, "\x1b[34mdtof\x1b[m"); goto sw_cvt;
+        case 0x25: fprintf(strm, "\x1b[34mftod\x1b[m"); goto sw_cvt;
+        sw_cvt:
+            imm(dst);
+            imm(src);
+            break;
+
+        case 0x00: fprintf(strm, "\x1b[34mnop\x1b[m"); break;
+        case 0x20: fprintf(strm, "\x1b[34mdebug\x1b[m"); break;
+
+        case 0x04:
+            fprintf(strm, "\x1b[34mnot\x1b[m");
+            break;
+        case 0x14:
+            fprintf(strm, "\x1b[34mcmp1\x1b[m");
+            imm(opr);
+            break;
+        case 0x24:
+            fprintf(strm, "\x1b[34mcmp2\x1b[m");
+            imm(lhs);
+            imm(rhs);
+            break;
+
+        case 0x0b: fprintf(strm, "\x1b[34mjmp\x1b[m");  goto sw_jmp;
+        case 0x1b: fprintf(strm, "\x1b[34mbreq\x1b[m"); goto sw_jmp;
+        case 0x2b: fprintf(strm, "\x1b[34mbrlt\x1b[m"); goto sw_jmp;
+        case 0x3b: fprintf(strm, "\x1b[34mbrle\x1b[m"); goto sw_jmp;
+        case 0x4b: fprintf(strm, "\x1b[34mjmb\x1b[m");  goto sw_jmp;
+        sw_jmp:
+            imm(sze);
+            break;
+
+        case 0x0d: fprintf(strm, "\x1b[34mpop\x1b[m"); if (0)
+        case 0x0f: fprintf(strm, "\x1b[34mpush\x1b[m");
+            imm(sze);
+            break;
+
+        case 0x1d:
+            fprintf(strm, "\x1b[34mdata\x1b[m");
+            imm(dst);
+            imm(sze);
+            fprintf(strm, " bytes:\x1b[33m\"");
+            for (unsigned yy = 0; yy < sze; yy++) fprintf(strm, "\\x%02x", code.ptr[++k]);
+            fprintf(strm, "\"\x1b[m");
+            break;
+        case 0x1f:
+            fprintf(strm, "\x1b[34mmove\x1b[m");
+            imm(dst);
+            imm(sze);
+            imm(src);
+            break;
+
+        case 0x2d: fprintf(strm, "\x1b[34mwrite\x1b[m"); if (0)
+        case 0x2f: fprintf(strm, "\x1b[34mread\x1b[m");
+            imm(ptr);
+            imm(sze);
+            imm(slt);
+            break;
+
+        default: fprintf(strm, "\x1b[31merrop\x1b[m");
+        } // other
 
         fprintf(strm, "\t\x1b[32m;");
         while (pk <= k) fprintf(strm, " 0x%02x", code.ptr[pk++]);
         fprintf(strm, "\x1b[m\n");
-#       undef rsxc
+#       undef imm
     }
 }
 

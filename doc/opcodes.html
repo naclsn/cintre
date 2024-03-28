@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>op code table</title>
+    <title>op code table (3.5)</title>
     <style>
       body { font-family: monospace; font-size: 13pt; }
       table { border-collapse: collapse; }
@@ -15,6 +15,7 @@
       thead>tr>th:first-of-type { border: none; }
       .other  { background-color: #ff5400; }
       .stack  { background-color: #47b37b; }
+      .memory { background-color: #f0f; }
       .cvt    { background-color: #c8c52d; }
       .flow   { background-color: #d73636; }
       .unary  { background-color: #4c3eb9; }
@@ -39,38 +40,64 @@
         var row = body.appendChild(mk('tr'));
         row.appendChild(mk('th')).textContent = '0x'+i+'-';
         for (var j of '0123456789abcdef') {
-          var c = parseInt('0x'+i+j)
-            , w = (1<<(c&3))*8
-            , x = (1<<(c>>2&3))*8
-            , u = c>>2&7
-            , b = c>>2&15;
-          if (0 == c) se('nop', ['other']);
-          else if (1 == c) se('debug', ['other']);
-          else if (2 == c) se('', []);
-          else if (3 == c) se('putsp', ['stack']);
-          else if (c < 0b00100000) se('push'+(c&0b00010000?'i':'')+w+'<br/>+'+x, ['stack', 'sxc']);
-          else if (c < 0b01000000) {
-            var f = c&0b00010000;
-            if (x == w) se((f?'copy':'pop')+'<br/>+'+x, ['stack', 'sxc']);
-            else if (f && (x < 32 || w < 32)) se('', []);
-            else se((f?'f':'')+x+'to'+w, ['cvt', 'arith', f?'float':'int']);
-          } else if (c < 0b10000000) {
-            var f = c&0b00100000;
-            if (f && 8 == w) se((c&0b00010000?'jmp':'brz')+'<br/>+'+x, ['flow']);
-            //else if (f && 16 == w) se((c&0b00010000?'brn':'brc')+x, ['flow']);
-            else if (f && w < 32) se('', []);
-            else se((f?'f':'')+["bnot", "lnot", "minus", "banys", "dec", "inc", "xun", "yun"][u]+w, ['arith', f?'float':'int', 'unary']);
-          } else {
-            var f = c&0b01000000;
-            if (f && 8 == w) se('call'+b, ['flow']);
-            //else if (f && 16 == w) se('call'+(16+b), ['flow']);
-            else if (f && w < 32) se('', []);
-            else se((f?'f':'')+["eq", "ne", "lt", "gt", "le", "ge", "bor", "bxor", "band", "bshl", "bshr", "sub", "add", "rem", "div", "mul"][b]+w, ['arith', f?'float':'int', 'binary']);
+          var c = parseInt('0x'+i+j);
+          var hi = c>>4&0xf, lo = c&0xf, w = c&3;
+
+          if (2 < hi && (lo < 8 || 0xd == lo || 0xf == lo)) {
+            var name = (lo < 4 || 7 < lo
+              ? [ 'add', 'sub', 'mul', 'div', 'rem'
+                , 'addi', 'subi', 'muli', 'divi', 'remi'
+                , 'rsubi', 'rdivi', 'rremi' ]
+              : [ 'bor', 'bxor', 'bshl', 'bshr', 'band'
+                , 'bori', 'bxori', 'bshli', 'bshri', 'bandi'
+                , '', 'rbshli', 'rbshri' ]
+            )[hi-3];
+            if (name) se(name+(lo < 8 ? w : ' d f'[w]), [hi < 8 ? 'binary' : 'unary']);
+            else se('', []);
+            continue;
           }
+
+          if (0xc == lo) {
+            se('call'+hi, ['flow']);
+            continue;
+          }
+
+          if (hi < w && lo < 8) {
+            se((lo < 4 ? 's' : 'z')+'x'+hi+'to'+w, ['cvt']);
+            continue;
+          }
+
+          switch (c) {
+          case 0x11: se('ftoi', ['cvt']); continue;
+          case 0x22: se('dtol', ['cvt']); continue;
+          case 0x15: se('itof', ['cvt']); continue;
+          case 0x26: se('ltod', ['cvt']); continue;
+          case 0x21: se('dtof', ['cvt']); continue;
+          case 0x25: se('ftod', ['cvt']); continue;
+
+          case 0x00: se('nop', ['other']); continue;
+          case 0x20: se('debug', ['other']); continue;
+
+          case 0x0d: se('pop', ['stack']); continue;
+          case 0x0f: se('push', ['stack']); continue;
+          case 0x1d: se('data', ['stack']); continue;
+          case 0x1f: se('move', ['stack']); continue;
+          case 0x2d: se('write', ['stack']); continue;
+          case 0x2f: se('read', ['stack']); continue;
+
+          case 0x0b: se('jmp', ['flow']); continue;
+          case 0x1b: se('breq', ['flow']); continue;
+          case 0x2b: se('brlt', ['flow']); continue;
+          case 0x3b: se('brle', ['flow']); continue;
+          case 0x4b: se('jmb', ['flow']); continue;
+          case 0x04: se('not', ['other']); continue;
+          case 0x14: se('cmp1', ['other']); continue;
+          case 0x24: se('cmp2', ['other']); continue;
+          }
+
+          se('', []);
           function se(t, c) {
             var e = row.appendChild(mk('td'));
-            if (t.startsWith('fb')) c.push(['invalid']);
-            if (t.startsWith('zun') || t.startsWith('xun') || t.startsWith('yun') || t.startsWith('fzun') || t.startsWith('fxun') || t.startsWith('fyun')) t = '', c = [];
             e.innerHTML = t;
             e.setAttribute('class', c.join(' '));
           }

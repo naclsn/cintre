@@ -79,93 +79,10 @@ size_t sp = sizeof stack;
 bytecode code = {0};
 
 void run(bytecode const code) {
-    for (size_t k = 0; k < code.len; k++) {
-        unsigned char c = code.ptr[k]; // ........
-        unsigned w = c&3;              // ......[]
-        unsigned x = c>>2&3;           // ....[]..
-        enum _bc_op_un u = c>>2&7;     // ...[-]..
-        enum _bc_op_bin b = c>>2&15;   // ..[--]..
-#       define rsxc()        \
-            size_t sxc = 0;  \
-            for (unsigned xx = 0; xx < (unsigned)1<<x; sxc = sxc | (code.ptr[++k]<<(xx++*8)))
-
-        if (1 == c) notif("NIY: debug (probably just show 32b stack for now)");
-
-        else if (3 == c) {
-            memcpy(top(void*), stack+sp, sizeof(void*));
-        }
-
-        else if (c < 32) {
-            bool i = c>>4&1;
-            rsxc();
-            sp-= sxc; // alloc sxc
-            sp&= ~(size_t)0<<w; // align to w
-            if (i) {
-                memcpy(top(char), code.ptr+k+1, sxc);
-                k+= sxc;
-            }
-        }
-
-        else if (c < 64) {
-            bool f = c>>4&1;
-            if (x == w) {
-                rsxc();
-                if (f) notif("NIY copy"); //memmove(,, sxc); // copy
-                else sp+= sxc;
-            } else if (!(f && (x < 2 || w < 2))) {
-                notif("NIY: cvt x to w");
-            }
-        }
-
-        else if (c < 128) {
-            bool f = c>>5&1;
-            if (f && 0 == w) {
-                rsxc();
-                //if (c>>4&1) k+= (signed)sxc;
-                //else { .. }
-                notif("NIY: %s by sxc", c>>4&1 ? "jmp" : "brz");
-            } else if (!(f && w < 2)) {
-                // yyy: w
-                switch (u) {
-                case BC_UNOP_BNOT:  top(unsigned)[0] =  ~top(unsigned)[0]; break;
-                case BC_UNOP_LNOT:  top(unsigned)[0] =  !top(unsigned)[0]; break;
-                case BC_UNOP_MINUS: top(unsigned)[0] =  -top(unsigned)[0]; break;
-                case BC_UNOP_BANYS: top(unsigned)[0] = !!top(unsigned)[0]; break;
-                case BC_UNOP_DEC:   top(unsigned)[0]--;               break;
-                case BC_UNOP_INC:   top(unsigned)[0]++;               break;
-                }
-            }
-        }
-
-        else {
-            bool f = c>>6&1;
-            if (f && 0 == w) {
-                notif("NIY: call");
-            } else if (!(f && w < 2)) {
-                // yyy: w
-                switch (b) {
-                case BC_BINOP_EQ:   top(unsigned)[1] = top(unsigned)[1] == top(unsigned)[0]; break;
-                case BC_BINOP_NE:   top(unsigned)[1] = top(unsigned)[1] != top(unsigned)[0]; break;
-                case BC_BINOP_LT:   top(unsigned)[1] = top(unsigned)[1] <  top(unsigned)[0]; break;
-                case BC_BINOP_GT:   top(unsigned)[1] = top(unsigned)[1] >  top(unsigned)[0]; break;
-                case BC_BINOP_LE:   top(unsigned)[1] = top(unsigned)[1] <= top(unsigned)[0]; break;
-                case BC_BINOP_GE:   top(unsigned)[1] = top(unsigned)[1] >= top(unsigned)[0]; break;
-                case BC_BINOP_BOR:  top(unsigned)[1] = top(unsigned)[1] |  top(unsigned)[0]; break;
-                case BC_BINOP_BXOR: top(unsigned)[1] = top(unsigned)[1] ^  top(unsigned)[0]; break;
-                case BC_BINOP_BAND: top(unsigned)[1] = top(unsigned)[1] &  top(unsigned)[0]; break;
-                case BC_BINOP_BSHL: top(unsigned)[1] = top(unsigned)[1] << top(unsigned)[0]; break;
-                case BC_BINOP_BSHR: top(unsigned)[1] = top(unsigned)[1] >> top(unsigned)[0]; break;
-                case BC_BINOP_SUB:  top(unsigned)[1] = top(unsigned)[1] -  top(unsigned)[0]; break;
-                case BC_BINOP_ADD:  top(unsigned)[1] = top(unsigned)[1] +  top(unsigned)[0]; break;
-                case BC_BINOP_REM:  top(unsigned)[1] = top(unsigned)[1] %  top(unsigned)[0]; break;
-                case BC_BINOP_DIV:  top(unsigned)[1] = top(unsigned)[1] /  top(unsigned)[0]; break;
-                case BC_BINOP_MUL:  top(unsigned)[1] = top(unsigned)[1] *  top(unsigned)[0]; break;
-                }
-                sp+= 4;
-            }
-        }
-#       undef rsxc
-    }
+    notif("NIY: run");
+    //for (size_t k = 0; k < code.len; k++) {
+    //    unsigned char c = code.ptr[k];
+    //}
 }
 
 struct adpt_item const* lookup(bufsl const name) {
@@ -214,13 +131,17 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
 
     code.len = 0;
     if (!expr) return;
-    struct adpt_type const* ty = NULL;
-    compile_expression(&code, expr, &ty, lookup, typehole);
-    if (!ty) return;
+    struct slot slot = {.ty= &adptb_int_type/*TODO: NULL to indicate unconstrained*/, .loc= 0};
+    compile_expression(&code, expr, &slot, lookup, typehole);
+    if (!slot.ty) return;
+    if (!slot.info.used) {
+        printf("Slot not used (constant expression), result: %i\n", slot.info.or_value.si);
+        return;
+    }
 
     if (xcmdis("ty")) {
         printf("Expression is of type: ");
-        print_type(stdout, ty);
+        print_type(stdout, slot.ty);
         printf("\n");
         return;
     }

@@ -52,54 +52,61 @@
                 , 'bori', 'bxori', 'bshli', 'bshri', 'bandi'
                 , '', 'rbshli', 'rbshri' ]
             )[hi-3];
-            if (name) se(name+(lo < 8 ? w : ' d f'[w]), [hi < 8 ? 'binary' : 'unary']);
-            else se('', []);
+            if (name) se(name+(lo < 8 ? w : ' d f'[w]), [hi < 8 ? 'binary' : 'unary'],
+              `op <dst> <${hi < 8 ? "lhs" : "val"}> <${hi < 0xd ? "rhs" : "lhs"}>`);
+            else se('', [], "(reserved for a potential binary/unary op)");
             continue;
           }
 
           if (0xc == lo) {
-            se('call'+hi, ['flow']);
+            se('call'+hi, ['flow'], "callK <ret> <fun> <... K args>");
+            continue;
+          }
+          if (0xe == lo) {
+            se('', [], "(reserved for potential extending call)");
             continue;
           }
 
           if (hi < w && lo < 8) {
-            se((lo < 4 ? 's' : 'z')+'x'+hi+'to'+w, ['cvt']);
+            se((lo < 4 ? 's' : 'z')+'x'+hi+'to'+w, ['cvt'],
+              lo < 4 ? "integer sign extend conversion" : "integer zero extend conversion");
             continue;
           }
 
           switch (c) {
-          case 0x11: se('ftoi', ['cvt']); continue;
-          case 0x22: se('dtol', ['cvt']); continue;
-          case 0x15: se('itof', ['cvt']); continue;
-          case 0x26: se('ltod', ['cvt']); continue;
-          case 0x21: se('dtof', ['cvt']); continue;
-          case 0x25: se('ftod', ['cvt']); continue;
+          case 0x11: se('ftoi', ['cvt'], "floating point -> integer conversion"); continue;
+          case 0x22: se('dtol', ['cvt'], "floating point -> integer conversion"); continue;
+          case 0x15: se('itof', ['cvt'], "integer -> floating point conversion"); continue;
+          case 0x26: se('ltod', ['cvt'], "integer -> floating point conversion"); continue;
+          case 0x21: se('dtof', ['cvt'], "floating point conversion"); continue;
+          case 0x25: se('ftod', ['cvt'], "floating point conversion"); continue;
 
-          case 0x00: se('nop', ['other']); continue;
-          case 0x20: se('debug', ['other']); continue;
+          case 0x00: se('nop', ['other'], "do nothing"); continue;
+          case 0x2a: se('debug', ['other'], "facilitate debugger breakpoint"); continue;
 
-          case 0x0d: se('pop', ['stack']); continue;
-          case 0x0f: se('push', ['stack']); continue;
-          case 0x1d: se('data', ['stack']); continue;
-          case 0x1f: se('move', ['stack']); continue;
-          case 0x2d: se('write', ['stack']); continue;
-          case 0x2f: se('read', ['stack']); continue;
+          case 0x0d: se('pop', ['stack'], "stack dealloc <sze>"); continue;
+          case 0x0f: se('push', ['stack'], "stack alloc <sze>"); continue;
+          case 0x1d: se('data', ['stack'], "copy to stack <dst> <sze> <... sze bytes>"); continue;
+          case 0x1f: se('move', ['stack'], "move on stack <dst> <sze> <src>"); continue;
+          case 0x2d: se('write', ['stack'], "far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
+          case 0x2f: se('read', ['stack'], "far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
 
-          case 0x0b: se('jmp', ['flow']); continue;
-          case 0x1b: se('breq', ['flow']); continue;
-          case 0x2b: se('brlt', ['flow']); continue;
-          case 0x3b: se('brle', ['flow']); continue;
-          case 0x4b: se('jmb', ['flow']); continue;
-          case 0x04: se('not', ['other']); continue;
-          case 0x14: se('cmp1', ['other']); continue;
-          case 0x24: se('cmp2', ['other']); continue;
+          case 0x0a: se('jmp', ['flow'], "jump forward <sze>"); continue;
+          case 0x1a: se('jmb', ['flow'], "jump backward <sze>"); continue;
+          case 0x0b: se('breq', ['flow'], "branch <sze> if equal"); continue;
+          case 0x1b: se('brlt', ['flow'], "branch <sze> if less than"); continue;
+          case 0x2b: se('brle', ['flow'], "branch <sze> if less or equal"); continue;
+          case 0x04: se('not', ['other'], "flip both flags"); continue;
+          case 0x14: se('cmp1', ['other'], "set flags comparing <opr> to 0"); continue;
+          case 0x24: se('cmp2', ['other'], "set flags comparing <lhs> to <rhs>"); continue;
           }
 
-          se('', []);
-          function se(t, c) {
+          se('', [], "(reserved or invalid)");
+          function se(n, c, t) {
             var e = row.appendChild(mk('td'));
-            e.innerHTML = t;
+            e.innerHTML = n;
             e.setAttribute('class', c.join(' '));
+            e.setAttribute('title', t);
           }
         }
       }

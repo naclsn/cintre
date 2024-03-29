@@ -527,7 +527,8 @@ bufsl lext(lex_state ref ls) {
             return lext(ls);
         }
 
-        if (isin('0', '9')) {
+        if (isin('0', '9') || is('.')) {
+            // TODO: double and suffixes
             char const* dgts = "0123456789";
             if (has(2) && is('0')) switch (nx(), at()) {
             case 'b': nx(); dgts = "01";               break;

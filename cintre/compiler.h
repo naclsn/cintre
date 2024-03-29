@@ -10,8 +10,8 @@
 typedef dyarr(unsigned char) bytecode;
 
 struct slot {
-  struct adpt_type const* ty;
-  size_t loc; // yyy
+  struct adpt_type const* /*const*/ ty;
+  size_t /*const*/ loc;
   struct _use_info {
       bool used;
       union {
@@ -30,38 +30,232 @@ struct slot {
   } info;
 };
 
-bool compile_expression(bytecode ref res, expression ref expr, struct slot ref slot, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect));
+typedef struct compile_state {
+    bytecode res;
+    size_t vsp;
+    struct adpt_item const* (*lookup)(bufsl const name);
+    void (*typehole)(struct adpt_type cref expect);
+} compile_state;
 
-enum _fops {
-    _fops_add =3,
-    _fops_sub,
-    _fops_mul,
-    _fops_div,
-    _fops_rem,
-    _fops_addi,
-    _fops_subi,
-    _fops_muli,
-    _fops_divi,
-    _fops_remi,
-    _fops_rsubi,
-    _fops_rdivi,
-    _fops_rremi
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
+void compile_expression(compile_state ref cs, expression ref expr, struct slot ref slot);
+
+bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
+    //cs->vsp = 0;
+    struct slot slot = {.ty= check_expression(cs, expr)};
+    if (!slot.ty) return false;
+
+    // yyy: say (because slot.ty is int)
+    *dyarr_push(&cs->res) = 0x0f;
+    *dyarr_push(&cs->res) = slot.ty->size;
+    cs->vsp-= slot.ty->size;
+    slot.loc = cs->vsp;
+
+    compile_expression(cs, expr, &slot);
+    if (slot.info.used) return true;
+
+    // yyy: say (wrong in many places)
+    unsigned char* r = dyarr_insert(&cs->res, cs->res.len, 1+1+1+4);
+    if (!r) exitf("OOM");
+    r[0] = 0x1d;
+    r[1] = slot.loc-cs->vsp;
+    r[2] = slot.ty->size;
+    memcpy(r+3, (char*)&slot.info.value.ul, slot.ty->size); // (yyy: endianness shortcut)
+    slot.info.used = true;
+    return true;
+}
+
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
+#   define fail(...)  return notif(__VA_ARGS__), NULL
+#   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
+#   define isint(__ty)  (ADPT_KIND_CHAR <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_ENUM)
+#   define isflt(__ty)  (ADPT_KIND_FLOAT <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_DOUBLE)
+#   define isnum(__ty)  (isint(__ty) || isflt(__ty))
+#   define isptr(__ty)  (ADPT_KIND_PTR == (__ty)->kind)
+#   define isfun(__ty)  (ADPT_KIND_FUN == (__ty)->kind)
+
+    struct adpt_type const *opr, *lhs, *rhs, *base, *off;
+
+    switch (expr->kind) {
+    case ATOM:;
+        char c = *expr->info.atom.ptr;
+        if ('"' == c) {
+            static struct adpt_type string = {
+                .size= sizeof(void*),
+                .align= sizeof(void*),
+                .kind= ADPT_KIND_PTR,
+                .info.to= &adptb_char_type,
+            };
+            return &string;
+        }
+        if ('\'' == c) return &adptb_char_type;
+        if ('0' <= c && c <= '9') return &adptb_int_type; // TODO: double and suffixes
+        struct adpt_item const* found = cs->lookup(expr->info.atom);
+        if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
+        return found->type;
+
+    case BINOP_SUBSCR:
+        failforward(base, expr->info.subscr.base);
+        failforward(off, expr->info.subscr.off);
+        if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
+        if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
+        return base->info.to;
+
+    case BINOP_CALL:
+        failforward(base, expr->info.call.base);
+        if (!isfun(base)) fail("Base of call expression is not of a function type");
+        expression* cons = expr->info.call.args;
+        size_t k, count = base->info.fun.count;
+        for (k = 0; k < count && cons; k++) {
+            struct adpt_type const* arg = base->info.fun.params[count-1-k].type;
+            if (k+1 == count) {
+                if (BINOP_COMMA == cons->kind) {
+                    while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
+                    fail("Too many arguments: %zu provided, expected %zu", k, count);
+                }
+                failforward(arg, cons);
+            } else {
+                if (BINOP_COMMA != cons->kind) break;
+                failforward(arg, cons->info.binary.rhs);
+                cons = cons->info.binary.lhs;
+            }
+            // TODO: assignable
+        }
+        if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
+        return base->info.fun.ret;
+
+
+    case BINOP_TERNCOND:
+    case BINOP_TERNBRANCH:
+        fail("NIY: ternary");
+
+    case BINOP_COMMA:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        return rhs;
+
+    case BINOP_ASGN:
+    case BINOP_ASGN_BOR:
+    case BINOP_ASGN_BXOR:
+    case BINOP_ASGN_BAND:
+    case BINOP_ASGN_BSHL:
+    case BINOP_ASGN_BSHR:
+    case BINOP_ASGN_SUB:
+    case BINOP_ASGN_ADD:
+    case BINOP_ASGN_REM:
+    case BINOP_ASGN_DIV:
+    case BINOP_ASGN_MUL:
+        // TODO: assignable
+        fail("NIY: assignment");
+
+    case BINOP_LOR:
+    case BINOP_LAND:
+        return &adptb_int_type; // yyy
+
+    case BINOP_EQ:
+    case BINOP_NE:
+    case BINOP_LT:
+    case BINOP_GT:
+    case BINOP_LE:
+    case BINOP_GE:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) return &adptb_int_type; // yyy
+        fail("Values are not comparable");
+
+    case BINOP_BOR:
+    case BINOP_BXOR:
+    case BINOP_BAND:
+    case BINOP_BSHL:
+    case BINOP_BSHR:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        if (isint(lhs) && isint(rhs)) return lhs; // yyy
+        fail("Both operands are not of an integral type");
+
+    case BINOP_SUB:
+    case BINOP_ADD:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        bool lnum = isnum(lhs), rnum = isnum(rhs);
+        if (lnum && rnum) return lhs; // yyy
+        if (lnum && isptr(rhs)) return rhs;
+        if (rnum && isptr(lhs)) return lhs;
+        fail("Both operands are not of an arithmetic type");
+
+    case BINOP_REM:
+    case BINOP_DIV:
+    case BINOP_MUL:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        if (isnum(lhs) && isnum(rhs)) return lhs; // yyy
+        fail("Both operands are not of an arithmetic type");
+
+    case UNOP_ADDR:
+        fail("NIY: address of");
+    case UNOP_DEREF:
+        failforward(opr, expr->info.unary.opr);
+        if (isptr(opr)) return opr->info.to;
+        fail("Operand is not of a pointer type");
+
+    case UNOP_PMEMBER:
+        failforward(opr, expr->info.unary.opr);
+        if (!isptr(opr)) fail("Operand is not of a pointer type");
+        if (0)
+    case UNOP_MEMBER:
+            failforward(opr, expr->info.unary.opr);
+        fail("NIY: member access");
+
+    case UNOP_BNOT:
+    case UNOP_LNOT:
+        failforward(opr, expr->info.unary.opr);
+        if (isint(opr)) return opr;
+        fail("Operand is not of an integral type");
+
+    case UNOP_MINUS:
+    case UNOP_PLUS:
+        failforward(opr, expr->info.unary.opr);
+        if (isnum(opr)) return opr;
+        fail("Operand is not of an arithmetic type");
+
+    case UNOP_PRE_DEC:
+    case UNOP_PRE_INC:
+    case UNOP_POST_DEC:
+    case UNOP_POST_INC:
+        failforward(opr, expr->info.unary.opr);
+        if (isnum(opr) || isptr(opr)) return opr;
+        fail("Operand is not of an arithmetic type");
+    }
+
+    fail("Broken tree with unknown expression kind %d", expr->kind);
+
+#   undef isfun
+#   undef isptr
+#   undef isnum
+#   undef isflt
+#   undef isint
+#   undef failforward
+#   undef fail
+} // typeof
+
+// compile utils {{{
+enum _arith_op {
+    _ops_add=   0x30, _ops_bor=    0x34,
+    _ops_sub=   0x40, _ops_bxor=   0x44,
+    _ops_mul=   0x50, _ops_bshl=   0x54,
+    _ops_div=   0x60, _ops_bshr=   0x64,
+    _ops_rem=   0x70, _ops_band=   0x74,
+    _ops_addi=  0x80, _ops_bori=   0x84,
+    _ops_subi=  0x90, _ops_bxori=  0x94,
+    _ops_muli=  0xa0, _ops_bshli=  0xa4,
+    _ops_divi=  0xb0, _ops_bshri=  0xb4,
+    _ops_remi=  0xc0, _ops_bandi=  0xc4,
+    _ops_rsubi= 0xd0,
+    _ops_rdivi= 0xe0, _ops_rbshli= 0xe4,
+    _ops_rremi= 0xf0, _ops_rbshri= 0xf4,
 };
-enum _iops {
-    _iops_bor =3,
-    _iops_bxor,
-    _iops_bshl,
-    _iops_bshr,
-    _iops_band,
-    _iops_bori,
-    _iops_bxori,
-    _iops_bshli,
-    _iops_bshri,
-    _iops_bandi,
-    _iops_rbshli= 0xe,
-    _iops_rbshri
-};
-enum _oprw {
+
+enum _arith_w {
     _oprw_8,
     _oprw_16,
     _oprw_32,
@@ -70,21 +264,20 @@ enum _oprw {
     _oprw_d= 0xd
 };
 
-bool _emit_fop(bytecode ref res, enum _fops fop, enum _oprw w, size_t d, size_t a, size_t b) {
+void _emit_arith(bytecode ref res, enum _arith_op fop, enum _arith_w w, size_t d, size_t a, size_t b) {
     unsigned c = 1;
     if (d) for (size_t k = d; k; c++) k>>= 7; else c++;
     if (a) for (size_t k = a; k; c++) k>>= 7; else c++;
     if (b) for (size_t k = b; k; c++) k>>= 7; else c++;
     unsigned char* op = dyarr_insert(res, res->len, c);
-    if (!op) return notif("OOM"), false;
-    *op = fop<<4 | w;
+    if (!op) exitf("OOM");
+    *op = fop + w;
     do { unsigned char k = d&127; *++op = !!(d>>= 7)<<7 | k; } while (d);
     do { unsigned char k = a&127; *++op = !!(a>>= 7)<<7 | k; } while (a);
     do { unsigned char k = b&127; *++op = !!(b>>= 7)<<7 | k; } while (b);
-    return true;
 }
 
-enum _oprw _slot_oprw(struct slot cref slot) {
+enum _arith_w _slot_arith_w(struct slot cref slot) {
     switch (slot->ty->kind) {
     case ADPT_KIND_CHAR:   return _oprw_8;
     case ADPT_KIND_UCHAR:  return _oprw_8;
@@ -102,7 +295,26 @@ enum _oprw _slot_oprw(struct slot cref slot) {
     }
 }
 
-#define _cfold_disp_un(dst, op, opr)  \
+size_t _slot_v_bytes(struct slot cref slot) {
+    return slot->info.value.ul; // XXX
+    //switch (slot->ty->kind) {
+    //case ADPT_KIND_CHAR:   return *(size_t*)&slot->info.value.c;
+    //case ADPT_KIND_UCHAR:  return *(size_t*)&slot->info.value.uc;
+    //case ADPT_KIND_SCHAR:  return *(size_t*)&slot->info.value.sc;
+    //case ADPT_KIND_SHORT:  return *(size_t*)&slot->info.value.ss;
+    //case ADPT_KIND_INT:    return *(size_t*)&slot->info.value.si;
+    //case ADPT_KIND_LONG:   return *(size_t*)&slot->info.value.sl;
+    //case ADPT_KIND_USHORT: return *(size_t*)&slot->info.value.us;
+    //case ADPT_KIND_UINT:   return *(size_t*)&slot->info.value.ui;
+    //case ADPT_KIND_ULONG:  return *(size_t*)&slot->info.value.ul;
+    //case ADPT_KIND_ENUM:   return *(size_t*)&slot->info.value.si;
+    //case ADPT_KIND_FLOAT:  return *(size_t*)&slot->info.value.f;
+    //case ADPT_KIND_DOUBLE: return *(size_t*)&slot->info.value.d;
+    //default: return 0;
+    //}
+}
+
+#define _cfold_arith_unary(dst, op, opr)  \
     do switch ((dst)->ty->kind) {  \
     case ADPT_KIND_CHAR:   (dst)->info.value.c  = op (opr)->info.value.c;  break;  \
     case ADPT_KIND_UCHAR:  (dst)->info.value.uc = op (opr)->info.value.uc; break;  \
@@ -116,11 +328,11 @@ enum _oprw _slot_oprw(struct slot cref slot) {
     case ADPT_KIND_ENUM:   (dst)->info.value.si = op (opr)->info.value.si; break;  \
     case ADPT_KIND_FLOAT:  (dst)->info.value.f  = op (opr)->info.value.f;  break;  \
     case ADPT_KIND_DOUBLE: (dst)->info.value.d  = op (opr)->info.value.d;  break;  \
-    case ADPT_KIND_PTR: return false;  \
-    default: return false;  \
+    case ADPT_KIND_PTR: return;  \
+    default: return;  \
     } while (0)
 
-#define _cfold_disp_bin(dst, op, lhs, rhs)  \
+#define _cfold_arith_binary(dst, op, lhs, rhs)  \
     do switch ((dst)->ty->kind) {  \
     case ADPT_KIND_CHAR:   (dst)->info.value.c  = (lhs)->info.value.c  op (rhs)->info.value.c;  break;  \
     case ADPT_KIND_UCHAR:  (dst)->info.value.uc = (lhs)->info.value.uc op (rhs)->info.value.uc; break;  \
@@ -134,11 +346,10 @@ enum _oprw _slot_oprw(struct slot cref slot) {
     case ADPT_KIND_ENUM:   (dst)->info.value.si = (lhs)->info.value.si op (rhs)->info.value.si; break;  \
     case ADPT_KIND_FLOAT:  (dst)->info.value.f  = (lhs)->info.value.f  op (rhs)->info.value.f;  break;  \
     case ADPT_KIND_DOUBLE: (dst)->info.value.d  = (lhs)->info.value.d  op (rhs)->info.value.d;  break;  \
-    case ADPT_KIND_PTR: return false;  \
-    default: return false;  \
+    case ADPT_KIND_PTR: return;  \
+    default: return;  \
     } while (0)
 
-// yyy: USL?
 unsigned _l2(size_t n) {
     for (unsigned k = 0; k < 8*sizeof n; k++) {
         if (n&1) return k;
@@ -146,32 +357,19 @@ unsigned _l2(size_t n) {
     }
     return -1;
 }
+// }}}
 
-bool compile_expression(bytecode ref res, expression ref expr, struct slot ref slot, struct adpt_item const* lookup(bufsl const name), void typehole(struct adpt_type cref expect)) {
-#   define fail(...)  do { slot->ty = NULL; notif(__VA_ARGS__); return false; } while (1)
-#   define failforward(id, from)  for (compile_expression(res, from, &id, lookup, typehole); !id; ) fail("here")
-#   define isint(__ty)  (ADPT_KIND_CHAR <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_ENUM)
-#   define isflt(__ty)  (ADPT_KIND_FLOAT <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_LONGDOUBLE)
-#   define isnum(__ty)  (isint(__ty) || isflt(__ty))
-#   define isptr(__ty)  (ADPT_KIND_PTR == (__ty)->kind)
-#   define isfun(__ty)  (ADPT_KIND_FUN == (__ty)->kind)
-
-    static char const* const ty_kind_names[] = {"void", "char", "uchar", "schar", "short", "int", "long", "longlong", "ushort", "uint", "ulong", "ulonglong", "enum", "float", "double", "longdouble", "struct", "union", "fun", "ptr"};
-    struct slot opr, lhs, rhs, base, off;
+void compile_expression(compile_state ref cs, expression ref expr, struct slot ref slot) {
+    size_t pvsp = cs->vsp;
+#   define at(__slt)  ((__slt)->loc - cs->vsp)
 
     switch (expr->kind) {
     case ATOM:;
         char c = *expr->info.atom.ptr;
         if ('"' == c) {
-            static struct adpt_type string = {
-                .size= sizeof(void*),
-                .align= sizeof(void*),
-                .kind= ADPT_KIND_PTR,
-                .info.to= &adptb_char_type,
-            };
-            notif("NIY: put string under and push string's slot here");
-            slot->ty = &string;
-            return false;
+            slot->info.value.ul = -1;
+            //exitf("should have been replaced with its slot during checking");
+            return;
         }
 
         if ('\'' == c) {
@@ -190,88 +388,42 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
             case 't': v = '\t'; break;
             case 'v': v = '\v'; break;
             }
-            slot->ty = &adptb_char_type;
-            return false;
+            slot->info.value.c = v;
+            // TODO: conversion to slot->ty
+            return;
         }
 
         if ('0' <= c && c <= '9') {
-            if (!isint(slot->ty)) {
-                notif("Expected %s, found integer literal", ty_kind_names[slot->ty->kind]);
-                return false;
-            }
-
-            if(1) {
             slot->info.value.si = atoi(expr->info.atom.ptr);
-            return true;
-            }
-
-            int v = atoi(expr->info.atom.ptr);
-            // data <dst> <sze> <...b>
-            unsigned char* r = dyarr_insert(res, res->len, 1+1+1+4);
-            if (!r) fail("OOM");
-            r[0] = 0x1d;
-            r[1] = slot->loc; // yyy: obviously wrong
-            r[2] = slot->ty->size; // yyy: conv if slot type doesn't match (which may require a temp slot on the stack)
-            memcpy(r+3, (char*)&v, slot->ty->size); // yyy: endianness shortcut
-            slot->info.used = true;
-            return true;
+            // XXX: double and suffixes
+            // TODO: conversion to slot->ty
+            return;
         }
 
-        if (1 == expr->info.atom.len && '_' == c) {
-            typehole(slot->ty);
-            return false;
-        }
+        //// xxx: remove
+        //if (1 == expr->info.atom.len && '_' == c) {
+        //    cs->typehole(slot->ty);
+        //    return;
+        //}
 
-        struct adpt_item const* found = lookup(expr->info.atom);
-        if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
-
-        void* v = found->as.object;
-        //while (isptr(base)) base = base->info.to; // XXX: automatic fun to ptr something something..?
-        slot->ty = found->type;
-        return false;
+        //struct adpt_item const* found = cs->lookup(expr->info.atom);
+        //void* v = found->as.object;
+        ////while (isptr(base)) base = base->info.to; // XXX: automatic fun to ptr something something..?
+        //slot->ty = found->type;
+        return;
 
     case BINOP_SUBSCR:
-        //failforward(base, expr->info.subscr.base);
-        //failforward(off, expr->info.subscr.off);
-        //if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
-        //if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
-        //slot->ty = base->info.to;
-        return false;
+        return;
 
     case BINOP_CALL:
-        //failforward(base, expr->info.call.base);
-        //if (!isfun(base)) fail("Base of call expression is not of a function type");
-        //expression* cons = expr->info.call.args;
-        //size_t k, count = base->info.fun.count;
-        //for (k = 0; k < count && cons; k++) {
-        //    struct adpt_type const* arg = base->info.fun.params[count-1-k].type;
-        //    if (k+1 == count) {
-        //        if (BINOP_COMMA == cons->kind) {
-        //            while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
-        //            fail("Too many arguments: %zu provided, expected %zu", k, count);
-        //        }
-        //        failforward(arg, cons);
-        //    } else {
-        //        if (BINOP_COMMA != cons->kind) break;
-        //        failforward(arg, cons->info.binary.rhs);
-        //        cons = cons->info.binary.lhs;
-        //    }
-        //    // TODO: assignment
-        //}
-        //if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
-        //*dyarr_push(res) = (count<<4) | 0xc;
-        //slot->ty = base->info.fun.ret;
-        return false;
+        return;
 
     case BINOP_TERNCOND:
     case BINOP_TERNBRANCH:
-        fail("NIY: ternary");
+        return;
 
     case BINOP_COMMA:
-        //failforward(lhs, expr->info.binary.lhs);
-        //failforward(rhs, expr->info.binary.rhs);
-        //slot->ty = rhs;
-        return false;
+        return;
 
     case BINOP_ASGN:
     case BINOP_ASGN_BOR:
@@ -284,15 +436,11 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
     case BINOP_ASGN_REM:
     case BINOP_ASGN_DIV:
     case BINOP_ASGN_MUL:
-        //failforward(lhs, expr->info.binary.lhs);
-        //failforward(rhs, expr->info.binary.rhs);
-        //// TODO: assignment
-        fail("NIY: assignment");
+        return;
 
     case BINOP_LOR:
     case BINOP_LAND:
-        slot->ty = &adptb_int_type; // yyy
-        return false;
+        return;
 
     case BINOP_EQ:
     case BINOP_NE:
@@ -300,126 +448,90 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
     case BINOP_GT:
     case BINOP_LE:
     case BINOP_GE:
-        //failforward(lhs, expr->info.binary.lhs);
-        //failforward(rhs, expr->info.binary.rhs);
-        //if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) {
-        //    slot->ty = &adptb_int_type; // yyy
-        //    return false;
-        //}
-        fail("Values are not comparable");
+        return;
 
     case BINOP_BOR:
     case BINOP_BXOR:
     case BINOP_BAND:
     case BINOP_BSHL:
     case BINOP_BSHR:
-        //failforward(lhs, expr->info.binary.lhs);
-        //failforward(rhs, expr->info.binary.rhs);
-        //if (isint(lhs) && isint(rhs)) {
-        //    slot->ty = lhs; // yyy
-        //    return false;
-        //}
-        fail("Both operands are not of an integral type");
+        return;
 
     case BINOP_SUB:
-    case BINOP_ADD:
-        lhs = rhs = *slot;
-        if (!compile_expression(res, expr->info.binary.lhs, &lhs, lookup, typehole)) return false;
+    case BINOP_ADD:;
+        // (TODO: when one is pointer)
+        struct slot lhs = *slot, rhs = *slot;
+        compile_expression(cs, expr->info.binary.lhs, &lhs);
         if (lhs.info.used) {
-            *dyarr_push(res) = 0x0f;
-            *dyarr_push(res) = 4;
-            rhs.loc+= 4; // yyy: obviously wrong
+            cs->vsp = (cs->vsp-4) & (~(size_t)0<<_l2(4));
+            *dyarr_push(&cs->res) = 0x0f;
+            *dyarr_push(&cs->res) = pvsp-cs->vsp;
+            rhs.loc = cs->vsp;
         }
-        if (!compile_expression(res, expr->info.binary.rhs, &rhs, lookup, typehole)) return false;
+        compile_expression(cs, expr->info.binary.rhs, &rhs);
         switch (lhs.info.used << 1 | rhs.info.used) {
         case 3: // both used
-            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_sub : _fops_add, _slot_oprw(slot), slot->loc, lhs.loc, rhs.loc)) return false;
+            _emit_arith(&cs->res,
+                    BINOP_SUB == expr->kind ? _ops_sub : _ops_add, _slot_arith_w(slot),
+                    at(slot), at(&lhs), at(&rhs));
             slot->info.used = true;
-            *dyarr_push(res) = 0x0d;
-            *dyarr_push(res) = 4;
-            break;
+            *dyarr_push(&cs->res) = 0x0d;
+            *dyarr_push(&cs->res) = pvsp-cs->vsp;
+            cs->vsp = pvsp;
+            return;
         case 2: // only lhs used
-            res->len-= 2; // undo push
-            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_subi : _fops_addi, _slot_oprw(slot), slot->loc, rhs.info.value.si, lhs.loc)) return false;
+            cs->res.len-= 2; // yyy: undo push
+            cs->vsp = pvsp;
+            _emit_arith(&cs->res,
+                    BINOP_SUB == expr->kind ? _ops_rsubi : _ops_addi, _slot_arith_w(slot),
+                    at(slot), _slot_v_bytes(&rhs), at(&lhs));
             slot->info.used = true;
-            break;
+            return;
         case 1: // only rhs used
-            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_rsubi : _fops_addi, _slot_oprw(slot), slot->loc, lhs.info.value.si, rhs.loc)) return false;
+            _emit_arith(&cs->res,
+                    BINOP_SUB == expr->kind ? _ops_subi : _ops_addi, _slot_arith_w(slot),
+                    at(slot), _slot_v_bytes(&lhs), at(&rhs));
             slot->info.used = true;
-            break;
+            return;
         case 0:
-            if (BINOP_SUB == expr->kind) _cfold_disp_bin(slot, -, &lhs, &rhs);
-            else                         _cfold_disp_bin(slot, +, &lhs, &rhs);
+            if (BINOP_SUB == expr->kind) _cfold_arith_binary(slot, -, &lhs, &rhs);
+            else                         _cfold_arith_binary(slot, +, &lhs, &rhs);
         }
-        return true;
+        return;
 
     case BINOP_REM:
     case BINOP_DIV:
     case BINOP_MUL:
-        //failforward(lhs, expr->info.binary.lhs);
-        //failforward(rhs, expr->info.binary.rhs);
-        //if (isnum(lhs) && isnum(rhs)) {
-        //    slot->ty = lhs; // yyy
-        //    return false;
-        //}
-        fail("Both operands are not of an arithmetic type");
+        return;
 
     case UNOP_ADDR:
-        fail("NIY: address of");
     case UNOP_DEREF:
-        //failforward(opr, expr->info.unary.opr);
-        //if (isptr(opr)) {
-        //    slot->ty = opr->info.to;
-        //    return false;
-        //}
-        fail("Operand is not of a pointer type");
+        return;
 
     case UNOP_PMEMBER:
-        //failforward(opr, expr->info.unary.opr);
-        //if (!isptr(opr)) fail("Operand is not of a pointer type");
-        //if (0)
     case UNOP_MEMBER:
-        //    failforward(opr, expr->info.unary.opr);
-        fail("NIY: member access");
+        return;
 
     case UNOP_BNOT:
     case UNOP_LNOT:
-        //failforward(opr, expr->info.unary.opr);
-        //if (isint(opr)) {
-        //    slot->ty = opr; // yyy (lnot)
-        //    return false;
-        //}
-        fail("Operand is not of an integral type");
+        return;
 
     case UNOP_MINUS:
     case UNOP_PLUS:
-        if (!compile_expression(res, expr->info.unary.opr, slot, lookup, typehole)) return false;
-        if (UNOP_PLUS == expr->kind) return true;
-        if (!slot->info.used) _cfold_disp_un(slot, -, slot);
-        else if (!_emit_fop(res, _fops_subi, _slot_oprw(slot), slot->loc, 0, slot->loc)) return false;
-        return true;
+        compile_expression(cs, expr->info.unary.opr, slot);
+        if (UNOP_PLUS == expr->kind) return;
+        if (!slot->info.used) _cfold_arith_unary(slot, -, slot);
+        else _emit_arith(&cs->res, _ops_subi, _slot_arith_w(slot), slot->loc, 0, slot->loc);
+        return;
 
     case UNOP_PRE_DEC:
     case UNOP_PRE_INC:
     case UNOP_POST_DEC:
     case UNOP_POST_INC:
-        //failforward(opr, expr->info.unary.opr);
-        //if (isnum(opr) || isptr(opr)) {
-        //    slot->ty = opr;
-        //    return false;
-        //}
-        fail("Operand is not of an arithmetic type");
+        return;
     }
 
-    fail("Broken tree: expression kind %d", expr->kind);
-
-#   undef isfun
-#   undef isptr
-#   undef isnum
-#   undef isflt
-#   undef isint
-#   undef failforward
-#   undef fail
+#   undef at
 }
 
 #endif // CINTRE_COMPILER_H

@@ -90,16 +90,17 @@ void print_code(FILE ref strm, bytecode const code) {
         unsigned hi = c>>4&0xf, lo = c&0xf, w = c&3;
 
         size_t src, dst, lhs, rhs, opr, sze, val, ret, fun, arg, slt, ptr;
-#       define imm(nm) for (                        \
-            unsigned xx = (nm = code.ptr[++k], 0);  \
-            code.ptr[k]&0x80  \
-                ? true  \
-                : (fprintf(strm, "\t" #nm ":\x1b[33m%zu\x1b[m", nm), false);                   \
+#       define imm(nm) for (                                          \
+            unsigned xx = (nm = code.ptr[++k], 0);                    \
+            code.ptr[k]&0x80                                          \
+                ? true                                                \
+                : ( fprintf(strm, "\t" #nm ":\x1b[33m%zu\x1b[m", nm)  \
+                  , false);                                           \
             nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
 
         if (2 < hi && (lo < 8 || 0xd == lo || 0xf == lo)) {
             static char const* const fops[] = {"add", "sub", "mul", "div", "rem", "addi", "subi", "muli", "divi", "remi", "rsubi", "rdivi", "rremi"};
-            static char const* const iops[] = {"bor", "bxor", "bshl", "bshr", "band", "bori", "bxori", "bshli", "bshri", "bandi", "", "rbshli", "rbshri"};
+            static char const* const iops[] = {"bor", "bxor", "bshl", "bshr", "band", "bori", "bxori", "bshli", "bshri", "bandi", "???", "rbshli", "rbshri"};
             char const* name = (lo < 4 || 7 < lo ? fops : iops)[hi-3];
             fprintf(strm, "\x1b[34m%s%c\x1b[m", name, (lo < 8 ? "0123" : " d f")[w]);
             imm(dst);
@@ -139,7 +140,7 @@ void print_code(FILE ref strm, bytecode const code) {
             break;
 
         case 0x00: fprintf(strm, "\x1b[34mnop\x1b[m"); break;
-        case 0x20: fprintf(strm, "\x1b[34mdebug\x1b[m"); break;
+        case 0x2a: fprintf(strm, "\x1b[34mdebug\x1b[m"); break;
 
         case 0x04:
             fprintf(strm, "\x1b[34mnot\x1b[m");
@@ -154,11 +155,11 @@ void print_code(FILE ref strm, bytecode const code) {
             imm(rhs);
             break;
 
-        case 0x0b: fprintf(strm, "\x1b[34mjmp\x1b[m");  goto sw_jmp;
-        case 0x1b: fprintf(strm, "\x1b[34mbreq\x1b[m"); goto sw_jmp;
-        case 0x2b: fprintf(strm, "\x1b[34mbrlt\x1b[m"); goto sw_jmp;
-        case 0x3b: fprintf(strm, "\x1b[34mbrle\x1b[m"); goto sw_jmp;
-        case 0x4b: fprintf(strm, "\x1b[34mjmb\x1b[m");  goto sw_jmp;
+        case 0x0a: fprintf(strm, "\x1b[34mjmp\x1b[m");  goto sw_jmp;
+        case 0x1a: fprintf(strm, "\x1b[34mjmb\x1b[m");  goto sw_jmp;
+        case 0x0b: fprintf(strm, "\x1b[34mbreq\x1b[m"); goto sw_jmp;
+        case 0x1b: fprintf(strm, "\x1b[34mbrlt\x1b[m"); goto sw_jmp;
+        case 0x2b: fprintf(strm, "\x1b[34mbrle\x1b[m"); goto sw_jmp;
         sw_jmp:
             imm(sze);
             break;

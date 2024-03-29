@@ -131,20 +131,20 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
 
     code.len = 0;
     if (!expr) return;
-    struct slot slot = {.ty= &adptb_int_type/*TODO: NULL to indicate unconstrained*/, .loc= 0};
-    compile_expression(&code, expr, &slot, lookup, typehole);
-    if (!slot.ty) return;
-    if (!slot.info.used) {
-        printf("Slot not used (constant expression), result: %i\n", slot.info.value.si);
-        return;
-    }
+    compile_state cs = {.res= code, .lookup= lookup, .typehole= typehole};
 
     if (xcmdis("ty")) {
+        struct adpt_type const* ty = check_expression(&cs, expr);
+        if (!ty) return;
         printf("Expression is of type: ");
-        print_type(stdout, slot.ty);
+        print_type(stdout, ty);
         printf("\n");
         return;
     }
+
+    bool r = compile_expression_tmp_wrap(&cs, expr);
+    code = cs.res;
+    if (!r) return;
 
     if (xcmdis("bytec") || xcmdis("bc")) {
         printf("Resulting bytecode (%zuB):\n", code.len);

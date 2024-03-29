@@ -39,28 +39,22 @@ void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
 
 void print_type(FILE ref strm, struct adpt_type cref ty) {
     switch (ty->kind) {
-    case ADPT_KIND_VOID:       fprintf(strm, "\x1b[32mvoid\x1b[m");       break;
-    case ADPT_KIND_CHAR:       fprintf(strm, "\x1b[32mchar\x1b[m");       break;
-    case ADPT_KIND_UCHAR:      fprintf(strm, "\x1b[32muchar\x1b[m");      break;
-    case ADPT_KIND_SCHAR:      fprintf(strm, "\x1b[32mschar\x1b[m");      break;
-    case ADPT_KIND_SHORT:      fprintf(strm, "\x1b[32mshort\x1b[m");      break;
-    case ADPT_KIND_INT:        fprintf(strm, "\x1b[32mint\x1b[m");        break;
-    case ADPT_KIND_LONG:       fprintf(strm, "\x1b[32mlong\x1b[m");       break;
-    case ADPT_KIND_LONGLONG:   fprintf(strm, "\x1b[32mlonglong\x1b[m");   break;
-    case ADPT_KIND_USHORT:     fprintf(strm, "\x1b[32mushort\x1b[m");     break;
-    case ADPT_KIND_UINT:       fprintf(strm, "\x1b[32muint\x1b[m");       break;
-    case ADPT_KIND_ULONG:      fprintf(strm, "\x1b[32mulong\x1b[m");      break;
-    case ADPT_KIND_ULONGLONG:  fprintf(strm, "\x1b[32mulonglong\x1b[m");  break;
-    case ADPT_KIND_ENUM:       fprintf(strm, "\x1b[32menum\x1b[m");       break;
-    case ADPT_KIND_FLOAT:      fprintf(strm, "\x1b[32mfloat\x1b[m");      break;
-    case ADPT_KIND_DOUBLE:     fprintf(strm, "\x1b[32mdouble\x1b[m");     break;
-    case ADPT_KIND_LONGDOUBLE: fprintf(strm, "\x1b[32mlongdouble\x1b[m"); break;
+    case ADPT_KIND_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
+    case ADPT_KIND_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
+    case ADPT_KIND_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
+    case ADPT_KIND_SCHAR:  fprintf(strm, "\x1b[32mschar\x1b[m");  break;
+    case ADPT_KIND_SHORT:  fprintf(strm, "\x1b[32mshort\x1b[m");  break;
+    case ADPT_KIND_INT:    fprintf(strm, "\x1b[32mint\x1b[m");    break;
+    case ADPT_KIND_LONG:   fprintf(strm, "\x1b[32mlong\x1b[m");   break;
+    case ADPT_KIND_USHORT: fprintf(strm, "\x1b[32mushort\x1b[m"); break;
+    case ADPT_KIND_UINT:   fprintf(strm, "\x1b[32muint\x1b[m");   break;
+    case ADPT_KIND_ULONG:  fprintf(strm, "\x1b[32mulong\x1b[m");  break;
+    case ADPT_KIND_ENUM:   fprintf(strm, "\x1b[32menum\x1b[m");   break;
+    case ADPT_KIND_FLOAT:  fprintf(strm, "\x1b[32mfloat\x1b[m");  break;
+    case ADPT_KIND_DOUBLE: fprintf(strm, "\x1b[32mdouble\x1b[m"); break;
 
-    case ADPT_KIND_STRUCT:
-        fprintf(strm, "\x1b[34mstruct\x1b[m{");
-        if (0)
-    case ADPT_KIND_UNION:
-            fprintf(strm, "\x1b[34munion\x1b[m{");
+    case ADPT_KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m{"); if (0)
+    case ADPT_KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m{");
         for (size_t k = 0; k < ty->info.comp.count; k++) {
             struct adpt_comp_field const* it = ty->info.comp.fields+k;
             fprintf(strm, k ? ", [%zu]%s: " : "[%zu]%s: ", it->offset, it->name);
@@ -100,7 +94,7 @@ void print_code(FILE ref strm, bytecode const code) {
             unsigned xx = (nm = code.ptr[++k], 0);  \
             code.ptr[k]&0x80  \
                 ? true  \
-                : (fprintf(strm, " " #nm ":\x1b[33m%zu\x1b[m", nm), false);                   \
+                : (fprintf(strm, "\t" #nm ":\x1b[33m%zu\x1b[m", nm), false);                   \
             nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
 
         if (2 < hi && (lo < 8 || 0xd == lo || 0xf == lo)) {
@@ -178,7 +172,7 @@ void print_code(FILE ref strm, bytecode const code) {
             fprintf(strm, "\x1b[34mdata\x1b[m");
             imm(dst);
             imm(sze);
-            fprintf(strm, " bytes:\x1b[33m\"");
+            fprintf(strm, "\tbytes:\x1b[33m\"");
             for (unsigned yy = 0; yy < sze; yy++) fprintf(strm, "\\x%02x", code.ptr[++k]);
             fprintf(strm, "\"\x1b[m");
             break;

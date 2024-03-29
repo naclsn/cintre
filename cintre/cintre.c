@@ -135,7 +135,7 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
     compile_expression(&code, expr, &slot, lookup, typehole);
     if (!slot.ty) return;
     if (!slot.info.used) {
-        printf("Slot not used (constant expression), result: %i\n", slot.info.or_value.si);
+        printf("Slot not used (constant expression), result: %i\n", slot.info.value.si);
         return;
     }
 

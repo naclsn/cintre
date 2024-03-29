@@ -20,11 +20,8 @@ void emit_type(struct decl_type cref type) {
     switch (type->kind) {
     case KIND_NOTAG: fprintf(result, "%.*s ", bufmt(type->name)); break;
 
-    case KIND_STRUCT:
-        fprintf(result, "struct ");
-        if (0)
-    case KIND_UNION:
-            fprintf(result, "union ");
+    case KIND_STRUCT: fprintf(result, "struct "); if (0)
+    case KIND_UNION:  fprintf(result, "union ");
         //if (type->name.len) {
             notif("NIY: emit struct/union extra info");
         //}

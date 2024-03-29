@@ -26,7 +26,7 @@ struct slot {
           unsigned long ul;
           float f;
           double d;
-      } or_value;
+      } value;
   } info;
 };
 
@@ -66,9 +66,10 @@ enum _oprw {
     _oprw_16,
     _oprw_32,
     _oprw_64,
-    _oprw_float= 0xf,
-    _oprw_double= 0xd
+    _oprw_f= 0xf,
+    _oprw_d= 0xd
 };
+
 bool _emit_fop(bytecode ref res, enum _fops fop, enum _oprw w, size_t d, size_t a, size_t b) {
     unsigned c = 1;
     if (d) for (size_t k = d; k; c++) k>>= 7; else c++;
@@ -82,6 +83,60 @@ bool _emit_fop(bytecode ref res, enum _fops fop, enum _oprw w, size_t d, size_t 
     do { unsigned char k = b&127; *++op = !!(b>>= 7)<<7 | k; } while (b);
     return true;
 }
+
+enum _oprw _slot_oprw(struct slot cref slot) {
+    switch (slot->ty->kind) {
+    case ADPT_KIND_CHAR:   return _oprw_8;
+    case ADPT_KIND_UCHAR:  return _oprw_8;
+    case ADPT_KIND_SCHAR:  return _oprw_8;
+    case ADPT_KIND_SHORT:  return _oprw_16;
+    case ADPT_KIND_INT:    return _oprw_32;
+    case ADPT_KIND_LONG:   return _oprw_64;
+    case ADPT_KIND_USHORT: return _oprw_16;
+    case ADPT_KIND_UINT:   return _oprw_32;
+    case ADPT_KIND_ULONG:  return _oprw_64;
+    case ADPT_KIND_ENUM:   return _oprw_32;
+    case ADPT_KIND_FLOAT:  return _oprw_f;
+    case ADPT_KIND_DOUBLE: return _oprw_d;
+    default: return 0;
+    }
+}
+
+#define _cfold_disp_un(dst, op, opr)  \
+    do switch ((dst)->ty->kind) {  \
+    case ADPT_KIND_CHAR:   (dst)->info.value.c  = op (opr)->info.value.c;  break;  \
+    case ADPT_KIND_UCHAR:  (dst)->info.value.uc = op (opr)->info.value.uc; break;  \
+    case ADPT_KIND_SCHAR:  (dst)->info.value.sc = op (opr)->info.value.sc; break;  \
+    case ADPT_KIND_SHORT:  (dst)->info.value.ss = op (opr)->info.value.ss; break;  \
+    case ADPT_KIND_INT:    (dst)->info.value.si = op (opr)->info.value.si; break;  \
+    case ADPT_KIND_LONG:   (dst)->info.value.sl = op (opr)->info.value.sl; break;  \
+    case ADPT_KIND_USHORT: (dst)->info.value.us = op (opr)->info.value.us; break;  \
+    case ADPT_KIND_UINT:   (dst)->info.value.ui = op (opr)->info.value.ui; break;  \
+    case ADPT_KIND_ULONG:  (dst)->info.value.ul = op (opr)->info.value.ul; break;  \
+    case ADPT_KIND_ENUM:   (dst)->info.value.si = op (opr)->info.value.si; break;  \
+    case ADPT_KIND_FLOAT:  (dst)->info.value.f  = op (opr)->info.value.f;  break;  \
+    case ADPT_KIND_DOUBLE: (dst)->info.value.d  = op (opr)->info.value.d;  break;  \
+    case ADPT_KIND_PTR: return false;  \
+    default: return false;  \
+    } while (0)
+
+#define _cfold_disp_bin(dst, op, lhs, rhs)  \
+    do switch ((dst)->ty->kind) {  \
+    case ADPT_KIND_CHAR:   (dst)->info.value.c  = (lhs)->info.value.c  op (rhs)->info.value.c;  break;  \
+    case ADPT_KIND_UCHAR:  (dst)->info.value.uc = (lhs)->info.value.uc op (rhs)->info.value.uc; break;  \
+    case ADPT_KIND_SCHAR:  (dst)->info.value.sc = (lhs)->info.value.sc op (rhs)->info.value.sc; break;  \
+    case ADPT_KIND_SHORT:  (dst)->info.value.ss = (lhs)->info.value.ss op (rhs)->info.value.ss; break;  \
+    case ADPT_KIND_INT:    (dst)->info.value.si = (lhs)->info.value.si op (rhs)->info.value.si; break;  \
+    case ADPT_KIND_LONG:   (dst)->info.value.sl = (lhs)->info.value.sl op (rhs)->info.value.sl; break;  \
+    case ADPT_KIND_USHORT: (dst)->info.value.us = (lhs)->info.value.us op (rhs)->info.value.us; break;  \
+    case ADPT_KIND_UINT:   (dst)->info.value.ui = (lhs)->info.value.ui op (rhs)->info.value.ui; break;  \
+    case ADPT_KIND_ULONG:  (dst)->info.value.ul = (lhs)->info.value.ul op (rhs)->info.value.ul; break;  \
+    case ADPT_KIND_ENUM:   (dst)->info.value.si = (lhs)->info.value.si op (rhs)->info.value.si; break;  \
+    case ADPT_KIND_FLOAT:  (dst)->info.value.f  = (lhs)->info.value.f  op (rhs)->info.value.f;  break;  \
+    case ADPT_KIND_DOUBLE: (dst)->info.value.d  = (lhs)->info.value.d  op (rhs)->info.value.d;  break;  \
+    case ADPT_KIND_PTR: return false;  \
+    default: return false;  \
+    } while (0)
 
 // yyy: USL?
 unsigned _l2(size_t n) {
@@ -145,19 +200,21 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
                 return false;
             }
 
-            slot->info.or_value.si = atoi(expr->info.atom.ptr);
+            if(1) {
+            slot->info.value.si = atoi(expr->info.atom.ptr);
             return true;
+            }
 
-            //int v = atoi(expr->info.atom.ptr);
-            //// data <dst> <sze> <...b>
-            //unsigned char* r = dyarr_insert(res, res->len, 1+1+1+4);
-            //if (!r) fail("OOM");
-            //r[0] = 0x1d;
-            //r[1] = slot->loc; // yyy: obviously wrong
-            //r[2] = slot->ty->size; // yyy: conv if slot type doesn't match (which may require a temp slot on the stack)
-            //memcpy(r+3, (char*)&v, slot->ty->size); // yyy: endianness shortcut
-            //slot->info.used = true;
-            //return true;
+            int v = atoi(expr->info.atom.ptr);
+            // data <dst> <sze> <...b>
+            unsigned char* r = dyarr_insert(res, res->len, 1+1+1+4);
+            if (!r) fail("OOM");
+            r[0] = 0x1d;
+            r[1] = slot->loc; // yyy: obviously wrong
+            r[2] = slot->ty->size; // yyy: conv if slot type doesn't match (which may require a temp slot on the stack)
+            memcpy(r+3, (char*)&v, slot->ty->size); // yyy: endianness shortcut
+            slot->info.used = true;
+            return true;
         }
 
         if (1 == expr->info.atom.len && '_' == c) {
@@ -269,26 +326,30 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
         lhs = rhs = *slot;
         if (!compile_expression(res, expr->info.binary.lhs, &lhs, lookup, typehole)) return false;
         if (lhs.info.used) {
-            // align 4
-            // push 4
+            *dyarr_push(res) = 0x0f;
+            *dyarr_push(res) = 4;
             rhs.loc+= 4; // yyy: obviously wrong
         }
         if (!compile_expression(res, expr->info.binary.rhs, &rhs, lookup, typehole)) return false;
-        if (!rhs.info.used) {
-            // undo push 4 and align 4
-        }
-        slot->info.used = lhs.info.used || rhs.info.used;
         switch (lhs.info.used << 1 | rhs.info.used) {
         case 3: // both used
-            return _emit_fop(res, BINOP_SUB ? _fops_sub : _fops_add, _oprw_32, slot->loc, lhs.loc, rhs.loc);
+            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_sub : _fops_add, _slot_oprw(slot), slot->loc, lhs.loc, rhs.loc)) return false;
+            slot->info.used = true;
+            *dyarr_push(res) = 0x0d;
+            *dyarr_push(res) = 4;
+            break;
         case 2: // only lhs used
-            return _emit_fop(res, BINOP_SUB ? _fops_subi : _fops_addi, _oprw_32, slot->loc, rhs.info.or_value.si, lhs.loc);
+            res->len-= 2; // undo push
+            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_subi : _fops_addi, _slot_oprw(slot), slot->loc, rhs.info.value.si, lhs.loc)) return false;
+            slot->info.used = true;
+            break;
         case 1: // only rhs used
-            return _emit_fop(res, BINOP_SUB ? _fops_rsubi : _fops_addi, _oprw_32, slot->loc, lhs.info.or_value.si, rhs.loc);
+            if (!_emit_fop(res, BINOP_SUB == expr->kind ? _fops_rsubi : _fops_addi, _slot_oprw(slot), slot->loc, lhs.info.value.si, rhs.loc)) return false;
+            slot->info.used = true;
+            break;
         case 0:
-            slot->info.or_value.si = BINOP_SUB == expr->kind
-                ? lhs.info.or_value.si - rhs.info.or_value.si
-                : lhs.info.or_value.si + rhs.info.or_value.si;
+            if (BINOP_SUB == expr->kind) _cfold_disp_bin(slot, -, &lhs, &rhs);
+            else                         _cfold_disp_bin(slot, +, &lhs, &rhs);
         }
         return true;
 
@@ -332,12 +393,11 @@ bool compile_expression(bytecode ref res, expression ref expr, struct slot ref s
 
     case UNOP_MINUS:
     case UNOP_PLUS:
-        //failforward(opr, expr->info.unary.opr);
-        //if (isnum(opr)) {
-        //    slot->ty = opr;
-        //    return false;
-        //}
-        fail("Operand is not of an arithmetic type");
+        if (!compile_expression(res, expr->info.unary.opr, slot, lookup, typehole)) return false;
+        if (UNOP_PLUS == expr->kind) return true;
+        if (!slot->info.used) _cfold_disp_un(slot, -, slot);
+        else if (!_emit_fop(res, _fops_subi, _slot_oprw(slot), slot->loc, 0, slot->loc)) return false;
+        return true;
 
     case UNOP_PRE_DEC:
     case UNOP_PRE_INC:

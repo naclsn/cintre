@@ -134,6 +134,9 @@ typedef struct expression {
         struct { struct expression* base, * off; } subscr;
         struct { struct expression* base; bufsl* name; } member;
     } info;
+
+    // reserved for user
+    void* usr;
 } expression;
 typedef void on_expr(void ref usr, expression ref expr, bufsl ref tok);
 typedef struct parse_expr_state {

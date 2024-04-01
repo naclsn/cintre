@@ -50,8 +50,9 @@
                 , 'rsubi', 'rdivi', 'rremi' ]
               : [ 'bor', 'bxor', 'bshl', 'bshr', 'band'
                 , 'bori', 'bxori', 'bshli', 'bshri', 'bandi'
-                , '', 'rbshli', 'rbshri' ]
+                , 'rbshli', 'rbshri', '' ]
             )[hi-3];
+            if (0x7d == c || 0x7f == c || 0xcd == c || 0xcf == c || 0xfd == c || 0xff == c) name = '';
             if (name) se(name+(lo < 8 ? w : ' d f'[w]), [hi < 8 ? 'binary' : 'unary'],
               `op <dst> <${hi < 8 ? "lhs" : "val"}> <${hi < 0xd ? "rhs" : "lhs"}>`);
             else se('', [], "(reserved for a potential binary/unary op)");

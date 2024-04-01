@@ -100,8 +100,9 @@ void print_code(FILE ref strm, bytecode const code) {
 
         if (2 < hi && (lo < 8 || 0xd == lo || 0xf == lo)) {
             static char const* const fops[] = {"add", "sub", "mul", "div", "rem", "addi", "subi", "muli", "divi", "remi", "rsubi", "rdivi", "rremi"};
-            static char const* const iops[] = {"bor", "bxor", "bshl", "bshr", "band", "bori", "bxori", "bshli", "bshri", "bandi", "???", "rbshli", "rbshri"};
+            static char const* const iops[] = {"bor", "bxor", "bshl", "bshr", "band", "bori", "bxori", "bshli", "bshri", "bandi", "rbshli", "rbshri", "???"};
             char const* name = (lo < 4 || 7 < lo ? fops : iops)[hi-3];
+            if (0x7d == c || 0x7f == c || 0xcd == c || 0xcf == c || 0xfd == c || 0xff == c) name = "???";
             fprintf(strm, "\x1b[34m%s%c\x1b[m", name, (lo < 8 ? "0123" : " d f")[w]);
             imm(dst);
             if (hi < 8) {

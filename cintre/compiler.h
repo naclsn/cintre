@@ -13,7 +13,7 @@ struct slot {
   struct adpt_type const* /*const*/ ty;
 
   size_t /*const*/ loc;
-  //size_t /*const*/ end;
+  size_t /*const*/ end;
 
   enum {
       _slot_value,
@@ -279,6 +279,18 @@ unsigned _l2(size_t n) {
     }                                                                \
 } while (0)
 
+void _alloc_slot(compile_state ref cs, struct slot ref slot) {
+    slot->end = cs->vsp;
+    cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->size));
+    _emit_instr_w_opr(0x0f, slot->end - cs->vsp);
+    slot->loc = cs->vsp;
+}
+
+void _rewind_slot(compile_state ref cs, struct slot ref slot) {
+    _emit_instr_w_opr(0x0d, slot->end - cs->vsp);
+    cs->vsp = slot->end;
+}
+
 void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data) {
     _emit_instr_w_opr(0x1d, dst, width);
     unsigned char* dt = dyarr_insert(&cs->res, cs->res.len, width);
@@ -315,8 +327,8 @@ enum _arith_w {
     _oprw_d= 0xd
 };
 
-void _emit_arith(compile_state ref cs, enum _arith_op fop, enum _arith_w w, size_t dst, size_t a, size_t b) {
-    _emit_instr_w_opr(fop+w, dst, a, b);
+void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size_t dst, size_t a, size_t b) {
+    _emit_instr_w_opr(aop+w, dst, a, b);
 }
 
 enum _arith_w _slot_arith_w(struct slot cref slot) {
@@ -545,58 +557,56 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
 
     case BINOP_SUB:
     case BINOP_ADD:
-        /*{
-            // TODO: all wrong if the types of lhr/rhs (in their .usr) are not compatible with the slot
-            struct slot lhs = *slot, rhs = *slot;
-            compile_expression(cs, expr->info.binary.lhs, &lhs);
-
-            // if lhs used the slot, alloc a new one for rhs
-            bool alloc = _slot_used == lhs.info.usage;
-            if (alloc) _alloc_slot(cs, &rhs);
-                //cs->vsp = (cs->vsp-4) & (~(size_t)0<<_l2(4));
-                // *dyarr_push(&cs->res) = 0x0f;
-                // *dyarr_push(&cs->res) = pvsp-cs->vsp;
-                //rhs.loc = cs->vsp;
-
-            compile_expression(cs, expr->info.binary.rhs, &rhs);
-
-            // if we allocated for rhs but it didn't use it, take it back
-            bool used = _slot_used == rhs.info.usage;
-            if (alloc && !used) {
-                // undo push
-                cs->res.len = plen;
-                cs->vsp = pvsp;
-            }
-
-            if (_slot_value == lhs.info.usage && _slot_value == rhs.info.usage) {
-                if (BINOP_SUB == expr->kind) _cfold_arith(slot, &lhs, -, &rhs);
-                else                         _cfold_arith(slot, &lhs, +, &rhs);
-                return;
-            }
-
-            slot->info.usage = _slot_used;
-
-            if (_slot_value == lhs.info.usage)
-                _emit_arith(cs,
-                        BINOP_SUB == expr->kind ? _ops_subi : _ops_addi, _slot_arith_w(slot),
-                        at(slot), _slot_v_bytes(&lhs), at(&rhs));
-            else if (_slot_value == rhs.info.usage)
-                _emit_arith(cs,
-                        BINOP_SUB == expr->kind ? _ops_rsubi : _ops_addi, _slot_arith_w(slot),
-                        at(slot), _slot_v_bytes(&rhs), at(&lhs));
-            else
-                _emit_arith(cs,
-                        BINOP_SUB == expr->kind ? _ops_sub : _ops_add, _slot_arith_w(slot),
-                        at(slot), at(&lhs), at(&rhs));
-
-            if (alloc && used) _rewind_slot(cs, &rhs);
-        }
-        */
-        return;
-
     case BINOP_REM:
     case BINOP_DIV:
-    case BINOP_MUL:
+    case BINOP_MUL: {
+            // TODO: so there is a lot of room for improvement and less moving the data around
+            //       but this was to get off the ground with a straightforward version
+            struct adpt_type const* lhs_ty = expr->info.binary.lhs->usr;
+            struct adpt_type const* rhs_ty = expr->info.binary.rhs->usr;
+
+            // figure out in which type is the calculation performed in
+            // TODO: no floating points for now
+            // (yyy: gross approximation of implicit conversions' "common real type" with ints only)
+            struct adpt_type const* const ty = lhs_ty->size < rhs_ty->size ? rhs_ty : lhs_ty;
+            struct slot res = {.ty= ty};
+            _alloc_slot(cs, &res); // res in the comon type
+
+            struct slot lr[2] = {0};
+            for (size_t k = 0; k < 2; k++) {
+                struct adpt_type const* const xhs_ty = !k ? lhs_ty : rhs_ty;
+                // push and do xhs
+                struct slot xhs = {.ty= xhs_ty};
+                _alloc_slot(cs, &xhs);
+                compile_expression(cs, !k ? expr->info.binary.lhs : expr->info.binary.rhs, &xhs);
+                // (todo: if _slot_value, if _slot_variable)
+                lr[k].ty = ty;
+                if (xhs_ty->size < ty->size) {
+                    // then (if needed) push and cvt xhs
+                    _alloc_slot(cs, lr+k);
+                    _emit_extend(cs, lr+k, &xhs);
+                } else lr[k] = xhs;
+            }
+
+            // do the operation
+            switch (expr->kind) {
+            case BINOP_SUB: _emit_arith(cs, _ops_sub, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
+            case BINOP_ADD: _emit_arith(cs, _ops_add, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
+            case BINOP_REM: _emit_arith(cs, _ops_rem, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
+            case BINOP_DIV: _emit_arith(cs, _ops_div, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
+            case BINOP_MUL: _emit_arith(cs, _ops_mul, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
+            default:;
+            }
+
+            // cvt copy into slot
+            if (ty->size < slot->ty->size)
+                _emit_extend(cs, slot, &res);
+            else
+                _emit_move(cs, at(slot), slot->ty->size, at(&res));
+            slot->usage = _slot_used;
+
+            _rewind_slot(cs, &res);
+        }
         return;
 
     case UNOP_ADDR:

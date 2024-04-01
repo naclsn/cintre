@@ -119,7 +119,7 @@ void print_code(FILE ref strm, bytecode const code) {
             fprintf(strm, "\x1b[34mcall%u\x1b[m", hi);
             imm(ret);
             imm(fun);
-            for (unsigned yy = 0; yy < lo; yy++) imm(arg);
+            for (unsigned yy = 0; yy < hi; yy++) imm(arg);
         } // call
 
         else if (hi < w && lo < 8) {

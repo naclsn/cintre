@@ -147,7 +147,17 @@ void run(bytecode const code) {
         unsigned const hi = code.ptr[k]>>4 & 0xf, lo = code.ptr[k] & 0xf;
 
         if (0xc == lo) {
-            exitf("NIY: (run) call%u", hi);
+            imm(a);
+            char* ret = at(a, char);
+            imm(b);
+            typedef void (*fun_t)(char* ret, char** args);
+            fun_t fun = *at(b, fun_t);
+            char* args[15];
+            for (unsigned l = 0; l < hi; l++) {
+                imm(c);
+                args[l] = at(c, char);
+            }
+            fun(ret, args);
             continue;
         }
 

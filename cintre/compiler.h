@@ -14,6 +14,7 @@ struct slot {
 
   size_t /*const*/ loc;
   size_t /*const*/ end;
+  size_t /*const*/ codeat;
 
   enum {
       _slot_value,
@@ -115,6 +116,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (!isfun(base)) fail("Base of call expression is not of a function type");
         expression* cons = expr->info.call.args;
         size_t k, count = base->info.fun.count;
+        if (15 < count) fail("NIY: function call with more than 15 arguments");
         for (k = 0; k < count && cons; k++) {
             struct adpt_type const* arg = base->info.fun.params[count-1-k].type;
             if (k+1 == count) {
@@ -248,6 +250,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   undef fail
 } // typeof
 
+#define at(__slt)  ((__slt)->loc - cs->vsp)
+
 // compile utils {{{
 unsigned _l2(size_t n) {
     for (unsigned k = 0; k < 8*sizeof n; k++) {
@@ -280,13 +284,18 @@ unsigned _l2(size_t n) {
 } while (0)
 
 void _alloc_slot(compile_state ref cs, struct slot ref slot) {
+    slot->codeat = cs->res.len;
     slot->end = cs->vsp;
     cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->size));
     _emit_instr_w_opr(0x0f, slot->end - cs->vsp);
     slot->loc = cs->vsp;
 }
 
-void _rewind_slot(compile_state ref cs, struct slot ref slot) {
+void _cancel_slot(compile_state ref cs, struct slot cref slot) {
+    cs->res.len = slot->codeat;
+}
+
+void _rewind_slot(compile_state ref cs, struct slot cref slot) {
     _emit_instr_w_opr(0x0d, slot->end - cs->vsp);
     cs->vsp = slot->end;
 }
@@ -300,6 +309,28 @@ void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char co
 
 void _emit_move(compile_state ref cs, size_t dst, size_t width, size_t src) {
     _emit_instr_w_opr(0x1f, dst, width, src);
+}
+
+//void _emit_slot_value(compile_state ref cs, struct slot cref slot) {
+//    _emit_data(cs, at(slot), slot->ty->size, (unsigned char*)&slot->as.value.ul);
+//}
+
+void _emit_call_base(compile_state ref cs, unsigned argc, size_t ret, size_t fun) {
+    _emit_instr_w_opr(argc<<4 | 0xc, ret, fun);
+}
+
+void _emit_call_arg(compile_state ref cs, size_t argv) {
+    unsigned count = 0;
+    if (argv) for (size_t it = argv; it; count++) it>>= 7;
+    else count = 1;
+
+    unsigned char* w = dyarr_insert(&cs->res, cs->res.len, count);
+    if (!w) exitf("OOM");
+
+    do {
+        unsigned char l = argv&127;
+        *(w++) = !!(argv>>= 7)<<7 | l;
+    } while (argv);
 }
 
 enum _arith_op {
@@ -368,8 +399,6 @@ size_t _slot_v_bytes(struct slot cref slot) {
     //}
 }
 
-//#   define at(__slt)  ((_slot_variable == (__slt)->usage ? (__slt)->as.variable : (__slt))->loc - cs->vsp)
-#   define at(__slt)  ((__slt)->loc - cs->vsp)
 void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cref small_src) {
     // XXX: sign/zero
     *dyarr_push(&cs->res) = _l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size);
@@ -466,54 +495,55 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
             return;
         }
 
-        //struct adpt_item const* found = cs->lookup(expr->info.atom);
-        //void* v = found->as.object;
-        ////while (isptr(base)) base = base->info.to; // XXX: automatic fun to ptr something something..?
-        //slot->ty = found->type;
+        struct adpt_item const* found = cs->lookup(expr->info.atom);
+        slot->as.value.ul = (size_t)found->as.object;
+        slot->usage = _slot_value;
         return;
 
     case BINOP_SUBSCR:
         return;
 
-    case BINOP_CALL:;
-        /*
-        struct slot fun = {.ty= &(struct adpt_type){.kind= ADPT_KIND_FUN},};
-        _alloc_slot(cs, &fun); //.end = cs->vsp; cs->vsp = blabla; .loc = cs->vsp;
-        compile_expression(cs, expr->info.call.base, &fun);
+    case BINOP_CALL: {
+            struct slot fun = {.ty= expr->info.call.base->usr};
+            _alloc_slot(cs, &fun);
 
-        if (_slot_value == fun.info.usage)
-            _emit_value(cs, &fun);
-        else if (_slot_variable == fun.info.usage) {
-            _rewind_slot(cs, &fun); //cs->vsp = (&fun)->end;
-            fun = *fun.info.as.variable;
-        }
-
-        _emit_call_base(cs, at(slot), at(&fun));
-
-        expression* cons = expr->info.call.args;
-        size_t k, count = fun.ty->info.fun.count;
-        for (k = 0; k < count; k++) {
-            struct slot arg = {.ty= fun.ty->info.fun.params[count-1-k].type};
-            _alloc_slot(cs, &arg);
-            if (k+1 == count) {
-                compile_expression(cs, cons, &arg);
-            } else {
-                compile_expression(cs, cons->info.binary.rhs, &arg);
-                cons = cons->info.binary.lhs;
+            compile_expression(cs, expr->info.call.base, &fun);
+            if (_slot_value == fun.usage) {
+                _emit_data(cs, at(&fun), sizeof(void*), (unsigned char*)&fun.as.value.ul); // (yyy: endianness)
+                fun.usage = _slot_used;
             }
 
-            if (_slot_value == arg.info.usage)
-                _emit_value(cs, &arg);
-            else if (_slot_variable == arg.info.usage) {
-                _rewind_slot(cs, &arg);
-                arg = *arg.info.as.variable;
+            struct slot args[15] = {0};
+            expression* cons = expr->info.call.args;
+            size_t count = fun.ty->info.fun.count;
+            for (size_t k = 0; k < count; k++) {
+                args[k].ty = fun.ty->info.fun.params[count-1-k].type;
+                _alloc_slot(cs, args+k);
+
+                if (k+1 == count) {
+                    compile_expression(cs, cons, args+k);
+                } else {
+                    compile_expression(cs, cons->info.binary.rhs, args+k);
+                    cons = cons->info.binary.lhs;
+                }
+
+                // TODO: size/zero extend and float conversions as needed
+
+                if (_slot_value == args[k].usage) {
+                    _emit_data(cs, at(args+k), args[k].ty->size, (unsigned char*)&args[k].as.value.ul); // (yyy: endianness)
+                    args[k].usage = _slot_used;
+                } else if (_slot_variable == args[k].usage) {
+                    _cancel_slot(cs, args+k);
+                    args[k] = *args[k].as.variable;
+                }
             }
 
-            _emit_call_arg(cs, at(&arg));
-        }
+            _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? at(fun.as.variable) : at(&fun));
+            for (size_t k = count; k; k--) _emit_call_arg(cs, at(args+k-1));
 
-        _rewind_slot(cs, &fun); //cs->vsp = pvsp;
-        */
+            slot->usage = _slot_used;
+            _rewind_slot(cs, &fun);
+        }
         return;
 
     case BINOP_TERNCOND:
@@ -654,7 +684,8 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
         return;
     }
 
-#   undef at
 } // compile_expression
+
+#undef at
 
 #endif // CINTRE_COMPILER_H

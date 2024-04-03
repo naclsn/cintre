@@ -6,9 +6,85 @@
 #include "adapter.h"
 #include "compiler.h"
 
+void print_decl(FILE ref strm, declaration cref decl);
 void print_expr(FILE ref strm, expression cref expr, unsigned depth);
 void print_type(FILE ref strm, struct adpt_type cref ty);
 void print_code(FILE ref strm, bytecode const code);
+
+void print_decl_type(FILE ref strm, struct decl_type cref ty) {
+    for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+    case QUAL_END:                                                  break;
+    case QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
+    case QUAL_RESTRICT:  fprintf(strm, "\x1b[34mrestrict\x1b[m ");  break;
+    case QUAL_VOLATILE:  fprintf(strm, "\x1b[34mvolatile\x1b[m ");  break;
+    case QUAL_INLINE:    fprintf(strm, "\x1b[34minline\x1b[m ");    break;
+    case QUAL_SIGNED:    fprintf(strm, "\x1b[34msigned\x1b[m ");    break;
+    case QUAL_UNSIGNED:  fprintf(strm, "\x1b[34munsigned\x1b[m ");  break;
+    case QUAL_SHORT:     fprintf(strm, "\x1b[34mshort\x1b[m ");     break;
+    case QUAL_LONG:      fprintf(strm, "\x1b[34mlong\x1b[m ");      break;
+    case QUAL_COMPLEX:   fprintf(strm, "\x1b[34mcomplex\x1b[m ");   break;
+    case QUAL_IMAGINARY: fprintf(strm, "\x1b[34mimaginary\x1b[m "); break;
+    }
+
+    switch (ty->kind) {
+    case KIND_NOTAG: fprintf(strm, "\x1b[32m%.*s\x1b[m", bufmt(ty->name)); break;
+
+    case KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
+    case KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
+        if (ty->name.len) fprintf(strm, " %.*s", bufmt(ty->name));
+        if ((size_t)-1 != ty->info.obj.count) {
+            fprintf(strm, " {");
+            for (struct decl_type_field const* it = ty->info.obj.first; it; it = it->next)
+                print_decl(strm, it->decl);
+            fprintf(strm, "}");
+        }
+        break;
+
+    case KIND_ENUM:
+        // TODO: enum
+        fprintf(strm, "\x1b[34menum\x1b[m");
+        if (ty->name.len) fprintf(strm, " %.*s", bufmt(ty->name));
+        break;
+
+    case KIND_PTR:
+        fprintf(strm, "\x1b[34mptr\x1b[m[");
+        print_decl_type(strm, ty->info.ptr);
+        fprintf(strm, "]");
+        break;
+
+    case KIND_FUN:
+        fprintf(strm, "\x1b[34mfun\x1b[m(");
+        if ((size_t)-1 == ty->info.fun.count) ;
+        else if (!ty->info.fun.count) fprintf(strm, "\x1b[36mvoid\x1b[m");
+        else for (struct decl_type_param const* it = ty->info.fun.first; it; it = it->next)
+            print_decl(strm, it->decl);
+        fprintf(strm, ") -> ");
+        print_decl_type(strm, ty->info.fun.ret);
+        break;
+
+    case KIND_ARR:
+        fprintf(strm, "\x1b[34marr\x1b[m[");
+        if ((size_t)-1 == ty->info.arr.count) fprintf(strm, "*, ");
+        else if (!ty->info.arr.count) fprintf(strm, "_, ");
+        else fprintf(strm, "%zu, ", ty->info.arr.count);
+        print_decl_type(strm, ty->info.arr.item);
+        fprintf(strm, "]");
+        break;
+    }
+}
+
+void print_decl(FILE ref strm, declaration cref decl) {
+    switch (decl->spec) {
+    case SPEC_NONE:                                               break;
+    case SPEC_TYPEDEF:  fprintf(strm, "\x1b[36mtypedef\x1b[m ");  break;
+    case SPEC_EXTERN:   fprintf(strm, "\x1b[36mextern\x1b[m ");   break;
+    case SPEC_STATIC:   fprintf(strm, "\x1b[36mstatic\x1b[m ");   break;
+    case SPEC_AUTO:     fprintf(strm, "\x1b[36mauto\x1b[m ");     break;
+    case SPEC_REGISTER: fprintf(strm, "\x1b[36mregister\x1b[m "); break;
+    }
+    fprintf(strm, "%.*s: ", bufmt(decl->name));
+    print_decl_type(strm, &decl->type);
+}
 
 void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
     static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
@@ -27,7 +103,11 @@ void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
 
     else if (!memcmp("UNOP", name, 4)) {
         fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
-        print_expr(strm, expr->info.unary.opr, depth+1);
+        if (strstr(name, "MEMBER")) {
+            print_expr(strm, expr->info.member.base, depth+1);
+            for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
+            fprintf(strm, "%s%.*s\n", UNOP_MEMBER == expr->kind ? "." : "->", bufmt(*expr->info.member.name));
+        } else print_expr(strm, expr->info.unary.opr, depth+1);
     }
 
     else if (!memcmp("BINO", name, 4)) {

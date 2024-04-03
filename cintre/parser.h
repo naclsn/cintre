@@ -47,7 +47,7 @@ typedef struct declaration {
         union type_info {
             struct decl_type const* ptr;
             struct decl_type_obj {
-                size_t count;
+                size_t count; // -1 if no body
                 struct decl_type_field {
                     struct declaration const* decl;
                     struct decl_type_field* next;
@@ -70,7 +70,7 @@ typedef struct declaration {
             } fun;
             struct {
                 struct decl_type const* item;
-                size_t count; // -1 when [] or [*], 0 when (void), n otherwise
+                size_t count; // -1 when [*], 0 when [], n otherwise
             } arr;
         } info;
 
@@ -79,11 +79,11 @@ typedef struct declaration {
 
     bufsl name;
 } declaration;
-typedef void on_decl(void ref usr, declaration cref decl, bufsl ref tok);
+typedef void on_decl_t(void ref usr, declaration cref decl, bufsl ref tok);
 typedef struct parse_decl_state {
     lex_state* ls;
     void* usr;
-    on_decl* on;
+    on_decl_t* on;
     declaration base;
 } parse_decl_state;
 // }}}
@@ -138,11 +138,11 @@ typedef struct expression {
     // reserved for user
     void* usr;
 } expression;
-typedef void on_expr(void ref usr, expression ref expr, bufsl ref tok);
+typedef void on_expr_t(void ref usr, expression ref expr, bufsl ref tok);
 typedef struct parse_expr_state {
     lex_state* ls;
     void* usr;
-    on_expr* on;
+    on_expr_t* on;
     bufsl tok;
 } parse_expr_state;
 // }}}
@@ -155,13 +155,13 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
 #define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
 #define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
 
-bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const tok1, bufsl const tok2, declaration cref base);
+bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl_t on, bufsl const tok1, bufsl const tok2, declaration cref base);
 
 // [struct|union] <name>? { <decls> } {{{
 struct _parse_put_field_capt {
     lex_state* ls;
     void* usr;
-    on_decl* on;
+    on_decl_t* on;
     declaration* objc;
 };
 
@@ -195,7 +195,7 @@ void _decl_put_field(struct _parse_put_field_capt ref capt, declaration cref dec
 struct _parse_put_param_capt {
     lex_state* ls;
     void* usr;
-    on_decl* on;
+    on_decl_t* on;
     declaration* func;
 };
 
@@ -229,7 +229,7 @@ void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref dec
 struct _parse_par_decl_capt {
     lex_state* ls;
     void* usr;
-    on_decl* on;
+    on_decl_t* on;
     declaration const* outer;
 };
 
@@ -275,7 +275,7 @@ void _parse_par_decl(struct _parse_par_decl_capt ref capt, declaration cref inne
 }
 // }}}
 
-bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl on, bufsl const tok1, bufsl const tok2, declaration cref base) {
+bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl_t on, bufsl const tok1, bufsl const tok2, declaration cref base) {
     if (!tok1.len) return tok1;
 
     bufsl tok;

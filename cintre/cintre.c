@@ -8,6 +8,19 @@
 #define STACK_SIZE 1024*1024
 #endif
 
+typedef struct cintre_state {
+    lex_state lexr;
+    parse_decl_state decl;
+    parse_expr_state expr;
+
+    struct adpt_item const* (*lookup)(bufsl const name);
+
+    char stack[STACK_SIZE];
+    size_t sp;
+    bytecode code;
+} cintre_state;
+
+// readline {{{
 #ifdef USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -49,7 +62,9 @@ bool prompt(char const* prompt, char** res) {
     return true;
 }
 #endif
+// }}}
 
+// compile time (lookup and random helpers) {{{
 #ifndef CINTRE_NAMESPACES_DEFINED
 static struct {
     char const* const name;
@@ -72,17 +87,38 @@ struct adpt_item const* search_namespaces(bufsl const name, size_t ref out_ns) {
     return NULL;
 }
 
-char stack[STACK_SIZE] = {0};
-size_t sp = sizeof stack;
-bytecode code = {0};
+struct adpt_item const* lookup(bufsl const name) {
+    return search_namespaces(name, NULL);
+}
 
-void run(bytecode const code) {
+bool is_decl_keyword(bufsl const tok) {
+#   define tokis(l) (strlen(l) == tok.len && !memcmp(l, tok.ptr, strlen(l)))
+    return tokis("char")
+        || tokis("short")
+        || tokis("int")
+        || tokis("long")
+        || tokis("signed")
+        || tokis("unsigned")
+        || tokis("float")
+        || tokis("double")
+        || tokis("struct")
+        || tokis("union")
+        || tokis("enum")
+        || tokis("typedef")
+        || tokis("const")
+        ;
+#   undef tokis
+}
+// }}}
+
+// run time (run and decl) {{{
+void run(cintre_state ref gs, bytecode const code) {
     size_t a, b, c;
 #   define imm(nm) for (                           \
         unsigned xx = (nm = code.ptr[++k], 0);     \
         code.ptr[k]&0x80;                          \
         nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
-#   define at(off, ty) ((ty*)(stack+sp+off))
+#   define at(off, ty) ((ty*)(gs->stack+gs->sp+off))
 
     for (size_t k = 0; k < code.len; k++) switch (code.ptr[k]) {
     case 0x2a:
@@ -91,8 +127,8 @@ void run(bytecode const code) {
     case 0x00:
         continue;
 
-    case 0x0d: imm(a); sp+= a; continue; // pop
-    case 0x0f: imm(a); sp-= a; continue; // push
+    case 0x0d: imm(a); gs->sp+= a; continue; // pop
+    case 0x0f: imm(a); gs->sp-= a; continue; // push
     case 0x1d: // data
         imm(a);
         imm(b);
@@ -210,20 +246,22 @@ void run(bytecode const code) {
 
 #   undef at
 #   undef imm
-}
+} // run
+// }}}
 
-struct adpt_item const* lookup(bufsl const name) {
-    return search_namespaces(name, NULL);
-}
+// accept parsed input {{{
+void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
+    cintre_state ref gs = usr;
 
-void typehole(struct adpt_type cref expect) {
-    printf("type hold found, expecting: ");
-    print_type(stdout, expect);
+    printf("got declaration:\n");
+    print_decl(stdout, decl);
     printf("\n");
+
+    gs->decl.base = (declaration){0};
 }
 
-void accept(void ref _, expression ref expr, bufsl ref tok) {
-    (void)_;
+void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
+    cintre_state ref gs = usr;
 
     char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
@@ -256,9 +294,9 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
         return;
     }
 
-    code.len = 0;
+    gs->code.len = 0;
     if (!expr) return;
-    compile_state cs = {.res= code, .lookup= lookup, .typehole= typehole};
+    compile_state cs = {.res= gs->code, .lookup= gs->lookup};
 
     if (xcmdis("ty")) {
         struct adpt_type const* ty = check_expression(&cs, expr);
@@ -270,33 +308,40 @@ void accept(void ref _, expression ref expr, bufsl ref tok) {
     }
 
     bool r = compile_expression_tmp_wrap(&cs, expr);
-    code = cs.res;
+    gs->code = cs.res;
     if (!r) return;
 
     if (xcmdis("bytec") || xcmdis("bc")) {
-        printf("Resulting bytecode (%zuB):\n", code.len);
-        print_code(stdout, code);
+        printf("Resulting bytecode (%zuB):\n", gs->code.len);
+        print_code(stdout, gs->code);
         return;
     }
 
-    run(code);
-    printf("Result: %u\n", *(unsigned*)(stack+sp)); // yyy: type
-}
+    run(gs, gs->code);
+    printf("Result: %u\n", *(unsigned*)(gs->stack+gs->sp)); // yyy: type
+} // accept_expr
+// }}}
 
 int main(void) {
     printf("Type `;help` for a list of command\n");
 
-    lex_state ls = {.file= "<input>"};
-    parse_expr_state ps = {.ls= &ls, .on= accept};
+    cintre_state gs = {
+        .lexr= {.file= "<input>"},
+        .decl= {.ls= &gs.lexr, .usr= &gs, .on= accept_decl},
+        .expr= {.ls= &gs.lexr, .usr= &gs, .on= accept_expr},
+        .lookup= lookup,
+        .sp= STACK_SIZE,
+    };
 
     char* line = NULL;
     while (prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line)) {
-        ls.line++;
-        ls.slice.len = strlen(ls.slice.ptr = line);
+        gs.lexr.line++;
+        gs.lexr.slice.len = strlen(gs.lexr.slice.ptr = line);
 
-        bufsl tok = lext(&ls);
-        if (!tok.len || ';' == *tok.ptr) accept(NULL, NULL, &tok);
-        else parse_expression(&ps, tok);
+        bufsl tok = lext(&gs.lexr);
+        if (!tok.len || ';' == *tok.ptr) accept_expr(NULL, NULL, &tok);
+        else if (is_decl_keyword(tok)) parse_declaration(&gs.decl, tok);
+        else parse_expression(&gs.expr, tok);
     }
 
     return EXIT_SUCCESS;

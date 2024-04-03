@@ -34,6 +34,7 @@ struct slot {
           unsigned long ul;
           float f;
           double d;
+          unsigned char bytes[8];
       } value;
       struct slot const* variable; // XXX: say
   } as;
@@ -43,37 +44,12 @@ typedef struct compile_state {
     bytecode res;
     size_t vsp;
     struct adpt_item const* (*lookup)(bufsl const name);
-    void (*typehole)(struct adpt_type cref expect);
 } compile_state;
 
-/// does modify the expression by at least adding a typing info (ADPT_KIND) in the usr fields
+/// does modify the expression by at least adding a typing info in the usr fields
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
 /// the expression should have been sieved through `check_expression` first
 void compile_expression(compile_state ref cs, expression ref expr, struct slot ref slot);
-
-bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
-    //cs->vsp = 0;
-    struct slot slot = {.ty= check_expression(cs, expr)};
-    if (!slot.ty) return false;
-
-    *dyarr_push(&cs->res) = 0x0f;
-    *dyarr_push(&cs->res) = slot.ty->size;
-    cs->vsp-= slot.ty->size;
-    slot.loc = cs->vsp;
-
-    compile_expression(cs, expr, &slot);
-    if (_slot_used == slot.usage) return true;
-
-    // yyy: say (wrong in many ways)
-    unsigned char* r = dyarr_insert(&cs->res, cs->res.len, 1+1+1+4);
-    if (!r) exitf("OOM");
-    r[0] = 0x1d;
-    r[1] = slot.loc-cs->vsp;
-    r[2] = slot.ty->size;
-    memcpy(r+3, (char*)&slot.as.value.ul, slot.ty->size); // (yyy: endianness shortcut)
-    slot.usage = _slot_used;
-    return true;
-}
 
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
@@ -685,6 +661,31 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     }
 
 } // compile_expression
+
+bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
+    //cs->vsp = 0;
+
+    struct slot slot = {.ty= check_expression(cs, expr)};
+    if (!slot.ty) return false;
+    _alloc_slot(cs, &slot);
+
+    compile_expression(cs, expr, &slot);
+    switch (slot.usage) {
+    case _slot_value:
+        _emit_data(cs, at(&slot), slot.ty->size, slot.as.value.bytes);
+        break;
+
+    case _slot_used:
+        break;
+
+    case _slot_variable:
+        _emit_move(cs, at(&slot), slot.ty->size, at(slot.as.variable));
+        break;
+    }
+    slot.usage = _slot_used;
+
+    return true;
+}
 
 #undef at
 

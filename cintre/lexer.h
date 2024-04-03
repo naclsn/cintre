@@ -528,14 +528,26 @@ bufsl lext(lex_state ref ls) {
         }
 
         if (isin('0', '9') || is('.')) {
-            // TODO: double and suffixes
-            char const* dgts = "0123456789";
+            bool fp = is('.'), inte = false;
+            char const* dgts = "'0123456789";
             if (has(2) && is('0')) switch (nx(), at()) {
-            case 'b': nx(); dgts = "01";               break;
-            case 'o': nx(); dgts = "01234567";         break;
-            case 'x': nx(); dgts = "0123456789abcdef"; break;
+            case 'B': case 'b': nx(); dgts = "'01";        inte = true; break;
+            case 'O': case 'o': nx(); dgts = "'01234567";  inte = true; break;
+            case 'X': case 'x': nx(); dgts = "'0123456789ABCDEFabcdef"; break;
             }
-            skip(strchr(dgts, at()|32));
+            skip(strchr(dgts, at()));
+            if (!inte) {
+                if (fp || (has(1) && is('.'))) {
+                    nx();
+                    skip(strchr(dgts, at()));
+                }
+                if (has(2) && strchr("EPep", at())) {
+                    nx();
+                    if (is('-') || is('+')) nx();
+                    skip(strchr("'0123456789", at()));
+                }
+            }
+            skip(strchr("FLUflu", at()));
         }
 
         else if (isid()) {

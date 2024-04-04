@@ -112,7 +112,7 @@ void emit_decl(declaration cref decl) {
 
         fprintf(result, "static struct adpt_type const %.*s_adapt_type = {\n", bufmt(decl->name));
         fprintf(result, "    .size= %zu, .align= %zu,\n", sizeof&fprintf, sizeof&fprintf);
-        fprintf(result, "    .kind= ADPT_KIND_FUN,\n");
+        fprintf(result, "    .tyty= TYPE_FUN,\n");
         fprintf(result, "    .info.fun= {\n");
         fprintf(result, "        .ret= &%s,\n", ret_void ? "adptb_void_type" : "adptb_int_type");
         fprintf(result, "        .params= (struct adpt_fun_param[]){\n");
@@ -126,13 +126,13 @@ void emit_decl(declaration cref decl) {
                     ? "(struct adpt_type){\n"
                       "                          .size= sizeof(char*),\n"
                       "                          .align= sizeof(char*),\n"
-                      "                          .kind= ADPT_KIND_PTR,\n"
+                      "                          .tyty= TYPE_PTR,\n"
                       "                          .info.to= &adptb_char_type,\n"
                       "                      }"
                     : "(struct adpt_type){\n"
                       "                          .size= sizeof(int*),\n"
                       "                          .align= sizeof(int*),\n"
-                      "                          .kind= ADPT_KIND_PTR,\n"
+                      "                          .tyty= TYPE_PTR,\n"
                       "                          .info.to= &adptb_int_type,\n"
                       "                      }"
                     ;
@@ -194,11 +194,7 @@ int main(int argc, char** argv) {
             fprintf(result, "#include \"%s\"\n", *it);
         fprintf(result, "\n");
 
-        fprintf(result, "static struct {\n");
-        fprintf(result, "    char const* const name;\n");
-        fprintf(result, "    size_t const count;\n");
-        fprintf(result, "    struct adpt_item const* const items;\n");
-        fprintf(result, "} const namespaces[] = {\n");
+        fprintf(result, "static struct adpt_namespace const namespaces[] = {\n");
         for (char** it = first; it < last-1; it++) {
             bufsl itns = {.ptr= *it, .len= strlen(*it)};
             {

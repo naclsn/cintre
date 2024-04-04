@@ -10,17 +10,17 @@
 static struct adpt_type {
     size_t const size, align;
 
-    enum adpt_type_kind {
-        ADPT_KIND_VOID,
-        ADPT_KIND_CHAR, ADPT_KIND_UCHAR, ADPT_KIND_SCHAR,
-        ADPT_KIND_SHORT, ADPT_KIND_INT, ADPT_KIND_LONG,
-        ADPT_KIND_USHORT, ADPT_KIND_UINT, ADPT_KIND_ULONG,
-        ADPT_KIND_ENUM,
-        ADPT_KIND_FLOAT, ADPT_KIND_DOUBLE,
-        ADPT_KIND_STRUCT, ADPT_KIND_UNION,
-        ADPT_KIND_FUN,
-        ADPT_KIND_PTR,
-    } const kind;
+    enum adpt_type_tag {
+        TYPE_VOID,
+        TYPE_CHAR, TYPE_UCHAR, TYPE_SCHAR,
+        TYPE_SHORT, TYPE_INT, TYPE_LONG,
+        TYPE_USHORT, TYPE_UINT, TYPE_ULONG,
+        TYPE_FLOAT, TYPE_DOUBLE,
+        TYPE_STRUCT, TYPE_UNION,
+        TYPE_FUN,
+        TYPE_PTR,
+        TYPE_ARR,
+    } const tyty;
 
     union adpt_type_info {
         struct adpt_comp_desc {
@@ -42,38 +42,46 @@ static struct adpt_type {
         } const fun; // fun
 
         struct adpt_type const* const to; // ptr
+
+        struct adpt_arr_desc {
+            struct adpt_type const* const item;
+            size_t const count;
+        } const arr; // arr
     } const info;
-
-} const adptb_void_type = {0}
-, adptb_char_type       = {.size= sizeof(char),               .align= sizeof(char),               .kind= ADPT_KIND_CHAR  }
-, adptb_uchar_type      = {.size= sizeof(unsigned char),      .align= sizeof(unsigned char),      .kind= ADPT_KIND_UCHAR }
-, adptb_schar_type      = {.size= sizeof(signed char),        .align= sizeof(signed char),        .kind= ADPT_KIND_SCHAR }
-, adptb_short_type      = {.size= sizeof(short),              .align= sizeof(short),              .kind= ADPT_KIND_SHORT }
-, adptb_int_type        = {.size= sizeof(int),                .align= sizeof(int),                .kind= ADPT_KIND_INT   }
-, adptb_long_type       = {.size= sizeof(long),               .align= sizeof(long),               .kind= ADPT_KIND_LONG  }
-, adptb_ushort_type     = {.size= sizeof(unsigned short),     .align= sizeof(unsigned short),     .kind= ADPT_KIND_USHORT}
-, adptb_uint_type       = {.size= sizeof(unsigned int),       .align= sizeof(unsigned int),       .kind= ADPT_KIND_UINT  }
-, adptb_ulong_type      = {.size= sizeof(unsigned long),      .align= sizeof(unsigned long),      .kind= ADPT_KIND_ULONG }
-, adptb_float_type      = {.size= sizeof(float),              .align= sizeof(float),              .kind= ADPT_KIND_FLOAT }
-, adptb_double_type     = {.size= sizeof(double),             .align= sizeof(double),             .kind= ADPT_KIND_DOUBLE}
+}
+const adptb_void_type = {0}
+, adptb_char_type     = {.size= sizeof(char),           .align= sizeof(char),           .tyty= TYPE_CHAR  }
+, adptb_uchar_type    = {.size= sizeof(unsigned char),  .align= sizeof(unsigned char),  .tyty= TYPE_UCHAR }
+, adptb_schar_type    = {.size= sizeof(signed char),    .align= sizeof(signed char),    .tyty= TYPE_SCHAR }
+, adptb_short_type    = {.size= sizeof(short),          .align= sizeof(short),          .tyty= TYPE_SHORT }
+, adptb_int_type      = {.size= sizeof(int),            .align= sizeof(int),            .tyty= TYPE_INT   }
+, adptb_long_type     = {.size= sizeof(long),           .align= sizeof(long),           .tyty= TYPE_LONG  }
+, adptb_ushort_type   = {.size= sizeof(unsigned short), .align= sizeof(unsigned short), .tyty= TYPE_USHORT}
+, adptb_uint_type     = {.size= sizeof(unsigned int),   .align= sizeof(unsigned int),   .tyty= TYPE_UINT  }
+, adptb_ulong_type    = {.size= sizeof(unsigned long),  .align= sizeof(unsigned long),  .tyty= TYPE_ULONG }
+, adptb_float_type    = {.size= sizeof(float),          .align= sizeof(float),          .tyty= TYPE_FLOAT }
+, adptb_double_type   = {.size= sizeof(double),         .align= sizeof(double),         .tyty= TYPE_DOUBLE}
 ;
-
-/*
-#define adptb_ptr_type(__to) (struct adpt_type){  \
-        .size= sizeof(void*),                     \
-        .align= sizeof(void*),                    \
-        .kind= ADPT_KIND_PTR,                     \
-        .info.to= &__to,                          \
-    }
-*/
 
 struct adpt_item {
     char const* const name;
-    struct adpt_type const* type;
+    struct adpt_type const* const type;
+    enum {
+        ITEM_VALUE,
+        ITEM_TYPEDEF,
+        ITEM_VARIABLE,
+    } kind;
     union {
         void* const object;
         void (* const function)(char*, char**);
+        size_t const variable;
     } as;
+};
+
+struct adpt_namespace {
+    char const* const name;
+    size_t const count;
+    struct adpt_item const* const items;
 };
 
 #endif // CINTRE_ADAPT_H

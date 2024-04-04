@@ -66,29 +66,22 @@ bool prompt(char const* prompt, char** res) {
 
 // compile time (lookup and random helpers) {{{
 #ifndef CINTRE_NAMESPACES_DEFINED
-static struct {
-    char const* const name;
-    size_t const count;
-    struct adpt_item const* const items;
-} const namespaces[1] = {
-    {.name= "(placeholder)", .count= 0, .items= NULL},
-};
+static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
 #endif
 
-struct adpt_item const* search_namespaces(bufsl const name, size_t ref out_ns) {
-    for (size_t ns = 0; ns < countof(namespaces); ns++)
-        for (size_t k = 0; k < namespaces[ns].count; k++) {
-            struct adpt_item const* const it = &namespaces[ns].items[k];
-            if (!memcmp(it->name, name.ptr, name.len)) {
-                if (out_ns) *out_ns = ns;
-                return it;
-            }
-        }
-    return NULL;
-}
+dyarr(struct adpt_item) locals;
 
 struct adpt_item const* lookup(bufsl const name) {
-    return search_namespaces(name, NULL);
+    for (size_t k = 0; k < locals.len; k++) {
+        struct adpt_item const* const it = locals.ptr+k;
+        if (!memcmp(it->name, name.ptr, name.len)) return it;
+    }
+    for (size_t ns = 0; ns < countof(namespaces); ns++)
+        for (size_t k = 0; k < namespaces[ns].count; k++) {
+            struct adpt_item const* const it = namespaces[ns].items+k;
+            if (!memcmp(it->name, name.ptr, name.len)) return it;
+        }
+    return NULL;
 }
 
 bool is_decl_keyword(bufsl const tok) {
@@ -109,9 +102,51 @@ bool is_decl_keyword(bufsl const tok) {
         ;
 #   undef tokis
 }
+
+struct adpt_type const* decl_to_adpt(cintre_state cref gs, struct decl_type cref ty) {
+    switch (ty->kind) {
+    case KIND_NOTAG:;
+        bool _signed = false, _unsigned = false, _short = false, _long = false;
+        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case QUAL_END:       break;
+            case QUAL_CONST:     break;
+            case QUAL_RESTRICT:  break;
+            case QUAL_VOLATILE:  break;
+            case QUAL_INLINE:    break;
+            case QUAL_SIGNED:    _signed = true;          break;
+            case QUAL_UNSIGNED:  _unsigned = true;        break;
+            case QUAL_SHORT:     _short = true;           break;
+            case QUAL_LONG:      _long = true;            break;
+            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
+            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+        }
+#       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+        if (nameis("char"))
+            return _signed ? &adptb_schar_type
+                 : _unsigned ? &adptb_uchar_type
+                 : &adptb_char_type;
+        if (nameis("int") || !ty->name.len)
+            return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
+                 : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
+                 : _unsigned ? &adptb_uint_type : &adptb_int_type;
+        if (nameis("float"))  return &adptb_float_type;
+        if (nameis("double")) return &adptb_double_type;
+#       undef nameis
+        struct adpt_item const* it = gs->lookup(ty->name);
+        return it ? it->type : NULL;
+
+    case KIND_STRUCT: exitf("NYI: decl to adpt type for 'struct'");
+    case KIND_UNION:  exitf("NYI: decl to adpt type for 'union'");
+    case KIND_ENUM:   exitf("NYI: decl to adpt type for 'enum'");
+    case KIND_PTR:    exitf("NYI: decl to adpt type for 'ptr'");
+    case KIND_FUN:    exitf("NYI: decl to adpt type for 'fun'");
+    case KIND_ARR:    exitf("NYI: decl to adpt type for 'arr'");
+    }
+    return NULL;
+}
 // }}}
 
-// run time (run and decl) {{{
+// runtime {{{
 void run(cintre_state ref gs, bytecode const code) {
     size_t a, b, c;
 #   define imm(nm) for (                           \
@@ -253,8 +288,24 @@ void run(cintre_state ref gs, bytecode const code) {
 void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     cintre_state ref gs = usr;
 
-    printf("got declaration:\n");
-    print_decl(stdout, decl);
+    struct adpt_type cref ty = decl_to_adpt(gs, &decl->type);
+
+    //size_t end = gs->sp;
+    gs->sp = ((gs->sp-ty->size) / ty->align) * ty->align;
+
+    struct adpt_item* it = dyarr_push(&locals);
+    if (!it) exitf("OOM");
+    char* name = malloc(decl->name.len);
+    if (!name) free(it), exitf("OOM");
+    memcpy(it, &(struct adpt_item){
+        .type= ty,
+        .name= memcpy(name, decl->name.ptr, decl->name.len),
+        .as.variable= gs->sp,
+    }, sizeof *it);
+
+    printf("declared (at %zu) \n", it->as.variable);
+    printf("%.*s: ", bufmt(decl->name));
+    print_type(stdout, ty);
     printf("\n");
 
     gs->decl.base = (declaration){0};
@@ -263,11 +314,17 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
 void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     cintre_state ref gs = usr;
 
+    // NOTE: thinking about moving this xcmd stuff in its own function, in
+    //       a way it could be called from accept_decl (and maybe even
+    //       accept_sttm, idk that doesn't make sense but all this isn't
+    //       devised yest)
     char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
+        printf("   h[elp]  - print this help and no more\n");
+        printf("   loc[ales]  -  list local names\n");
         printf("   names[paces] or ns  -  list names in namespaces\n");
         printf("   ast  -  ast of the expression\n");
         printf("   ty[pe]  -  type of the expression, eg. `strlen; ty`\n");
@@ -276,15 +333,20 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         return;
     }
 
+    if (xcmdis("loc")) {
+        printf("List of locals:\n");
+        for (size_t k = 0; k < locals.len; k++)
+            print_item(stdout, locals.ptr+k, gs->stack);
+        return;
+    }
+
     if (xcmdis("names") || xcmdis("ns")) {
         printf("List of names:\n");
-        for (size_t ns = 0; ns < countof(namespaces); ns++)
-            for (size_t k = 0; k < namespaces[ns].count; k++) {
-                struct adpt_item const* const it = &namespaces[ns].items[k];
-                printf("   [%p] %s::%-8s\t", it->as.object, namespaces[ns].name, it->name);
-                print_type(stdout, it->type);
-                printf("\n");
-            }
+        for (size_t ns = 0; ns < countof(namespaces); ns++) {
+            printf("%s::\n", namespaces[ns].name);
+            for (size_t k = 0; k < namespaces[ns].count; k++)
+                print_item(stdout, namespaces[ns].items+k, gs->stack);
+        }
         return;
     }
 
@@ -343,6 +405,13 @@ int main(void) {
         else if (is_decl_keyword(tok)) parse_declaration(&gs.decl, tok);
         else parse_expression(&gs.expr, tok);
     }
+
+    ldel(&gs.lexr);
+    for (size_t k = 0; k < locals.len; k++) {
+        // TODO: free and recursively `locals.ptr[k].type`
+        free((void*)locals.ptr[k].name);
+    }
+    free(locals.ptr);
 
     return EXIT_SUCCESS;
 }

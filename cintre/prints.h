@@ -10,8 +10,9 @@ void print_decl(FILE ref strm, declaration cref decl);
 void print_expr(FILE ref strm, expression cref expr, unsigned depth);
 void print_type(FILE ref strm, struct adpt_type cref ty);
 void print_code(FILE ref strm, bytecode const code);
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack);
 
-void print_decl_type(FILE ref strm, struct decl_type cref ty) {
+void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
     case QUAL_END:                                                  break;
     case QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
@@ -34,8 +35,10 @@ void print_decl_type(FILE ref strm, struct decl_type cref ty) {
         if (ty->name.len) fprintf(strm, " %.*s", bufmt(ty->name));
         if ((size_t)-1 != ty->info.obj.count) {
             fprintf(strm, " {");
-            for (struct decl_type_field const* it = ty->info.obj.first; it; it = it->next)
+            for (struct decl_type_field const* it = ty->info.obj.first; it; it = it->next) {
                 print_decl(strm, it->decl);
+                if (it->next) fprintf(strm, ", ");
+            }
             fprintf(strm, "}");
         }
         break;
@@ -48,7 +51,7 @@ void print_decl_type(FILE ref strm, struct decl_type cref ty) {
 
     case KIND_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
-        print_decl_type(strm, ty->info.ptr);
+        _print_decl_type(strm, ty->info.ptr);
         fprintf(strm, "]");
         break;
 
@@ -56,10 +59,12 @@ void print_decl_type(FILE ref strm, struct decl_type cref ty) {
         fprintf(strm, "\x1b[34mfun\x1b[m(");
         if ((size_t)-1 == ty->info.fun.count) ;
         else if (!ty->info.fun.count) fprintf(strm, "\x1b[36mvoid\x1b[m");
-        else for (struct decl_type_param const* it = ty->info.fun.first; it; it = it->next)
+        else for (struct decl_type_param const* it = ty->info.fun.first; it; it = it->next) {
             print_decl(strm, it->decl);
+            if (it->next) fprintf(strm, ", ");
+        }
         fprintf(strm, ") -> ");
-        print_decl_type(strm, ty->info.fun.ret);
+        _print_decl_type(strm, ty->info.fun.ret);
         break;
 
     case KIND_ARR:
@@ -67,7 +72,7 @@ void print_decl_type(FILE ref strm, struct decl_type cref ty) {
         if ((size_t)-1 == ty->info.arr.count) fprintf(strm, "*, ");
         else if (!ty->info.arr.count) fprintf(strm, "_, ");
         else fprintf(strm, "%zu, ", ty->info.arr.count);
-        print_decl_type(strm, ty->info.arr.item);
+        _print_decl_type(strm, ty->info.arr.item);
         fprintf(strm, "]");
         break;
     }
@@ -83,7 +88,7 @@ void print_decl(FILE ref strm, declaration cref decl) {
     case SPEC_REGISTER: fprintf(strm, "\x1b[36mregister\x1b[m "); break;
     }
     fprintf(strm, "%.*s: ", bufmt(decl->name));
-    print_decl_type(strm, &decl->type);
+    _print_decl_type(strm, &decl->type);
 }
 
 void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
@@ -118,23 +123,27 @@ void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
 }
 
 void print_type(FILE ref strm, struct adpt_type cref ty) {
-    switch (ty->kind) {
-    case ADPT_KIND_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
-    case ADPT_KIND_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
-    case ADPT_KIND_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
-    case ADPT_KIND_SCHAR:  fprintf(strm, "\x1b[32mschar\x1b[m");  break;
-    case ADPT_KIND_SHORT:  fprintf(strm, "\x1b[32mshort\x1b[m");  break;
-    case ADPT_KIND_INT:    fprintf(strm, "\x1b[32mint\x1b[m");    break;
-    case ADPT_KIND_LONG:   fprintf(strm, "\x1b[32mlong\x1b[m");   break;
-    case ADPT_KIND_USHORT: fprintf(strm, "\x1b[32mushort\x1b[m"); break;
-    case ADPT_KIND_UINT:   fprintf(strm, "\x1b[32muint\x1b[m");   break;
-    case ADPT_KIND_ULONG:  fprintf(strm, "\x1b[32mulong\x1b[m");  break;
-    case ADPT_KIND_ENUM:   fprintf(strm, "\x1b[32menum\x1b[m");   break;
-    case ADPT_KIND_FLOAT:  fprintf(strm, "\x1b[32mfloat\x1b[m");  break;
-    case ADPT_KIND_DOUBLE: fprintf(strm, "\x1b[32mdouble\x1b[m"); break;
+    if (!ty) {
+        fprintf(strm, "\x1b[31m(nil)\x1b[m");
+        return;
+    }
 
-    case ADPT_KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m{"); if (0)
-    case ADPT_KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m{");
+    switch (ty->tyty) {
+    case TYPE_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
+    case TYPE_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
+    case TYPE_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
+    case TYPE_SCHAR:  fprintf(strm, "\x1b[32mschar\x1b[m");  break;
+    case TYPE_SHORT:  fprintf(strm, "\x1b[32mshort\x1b[m");  break;
+    case TYPE_INT:    fprintf(strm, "\x1b[32mint\x1b[m");    break;
+    case TYPE_LONG:   fprintf(strm, "\x1b[32mlong\x1b[m");   break;
+    case TYPE_USHORT: fprintf(strm, "\x1b[32mushort\x1b[m"); break;
+    case TYPE_UINT:   fprintf(strm, "\x1b[32muint\x1b[m");   break;
+    case TYPE_ULONG:  fprintf(strm, "\x1b[32mulong\x1b[m");  break;
+    case TYPE_FLOAT:  fprintf(strm, "\x1b[32mfloat\x1b[m");  break;
+    case TYPE_DOUBLE: fprintf(strm, "\x1b[32mdouble\x1b[m"); break;
+
+    case TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m{"); if (0)
+    case TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m{");
         for (size_t k = 0; k < ty->info.comp.count; k++) {
             struct adpt_comp_field const* it = ty->info.comp.fields+k;
             fprintf(strm, k ? ", [%zu]%s: " : "[%zu]%s: ", it->offset, it->name);
@@ -143,7 +152,7 @@ void print_type(FILE ref strm, struct adpt_type cref ty) {
         fprintf(strm, "}");
         break;
 
-    case ADPT_KIND_FUN:
+    case TYPE_FUN:
         fprintf(strm, "\x1b[34mfun\x1b[m(");
         for (size_t k = 0; k < ty->info.fun.count; k++) {
             struct adpt_fun_param const* it = ty->info.fun.params+k;
@@ -154,9 +163,15 @@ void print_type(FILE ref strm, struct adpt_type cref ty) {
         print_type(strm, ty->info.fun.ret);
         break;
 
-    case ADPT_KIND_PTR:
+    case TYPE_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
         print_type(strm, ty->info.to);
+        fprintf(strm, "]");
+        break;
+
+    case TYPE_ARR:
+        fprintf(strm, "\x1b[34marr\x1b[m[%zu, ", ty->info.arr.count);
+        print_type(strm, ty->info.arr.item);
         fprintf(strm, "]");
         break;
     }
@@ -280,6 +295,53 @@ void print_code(FILE ref strm, bytecode const code) {
         fprintf(strm, "\x1b[m\n");
 #       undef imm
     }
+}
+
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack) {
+    void const* p = NULL;
+
+    switch (it->kind) {
+    case ITEM_VALUE:
+        printf("   [%p] %-8s\t", it->as.object, it->name);
+        p = it->as.object;
+        break;
+
+    case ITEM_TYPEDEF:
+        printf("   [typedef] %-8s\t", it->name);
+        break;
+
+    case ITEM_VARIABLE:
+        printf("   [sp=%zu] %-8s\t", it->as.variable, it->name);
+        p = stack+it->as.variable;
+        break;
+    }
+
+    print_type(stdout, it->type);
+    if (p) {
+        // TODO
+        switch (it->type->tyty) {
+        case TYPE_VOID:   break;
+        case TYPE_CHAR:   break;
+        case TYPE_UCHAR:  break;
+        case TYPE_SCHAR:  break;
+        case TYPE_SHORT:  break;
+        case TYPE_INT:    break;
+        case TYPE_LONG:   break;
+        case TYPE_USHORT: break;
+        case TYPE_UINT:   break;
+        case TYPE_ULONG:  break;
+        case TYPE_FLOAT:  break;
+        case TYPE_DOUBLE: break;
+        case TYPE_STRUCT: break;
+        case TYPE_UNION:  break;
+        case TYPE_FUN:    break;
+        case TYPE_PTR:    break;
+        case TYPE_ARR:    break;
+        }
+        printf(" = ...(%p)", p);
+    }
+
+    printf("\n");
 }
 
 #endif // CINTRE_PRINTS_H

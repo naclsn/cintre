@@ -36,7 +36,7 @@ struct slot {
           double d;
           unsigned char bytes[8];
       } value;
-      struct slot const* variable; // XXX: say
+      size_t variable; // XXX: say
   } as;
 };
 
@@ -54,11 +54,11 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
 #   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
-#   define isint(__ty)  (ADPT_KIND_CHAR <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_ENUM)
-#   define isflt(__ty)  (ADPT_KIND_FLOAT <= (__ty)->kind && (__ty)->kind <= ADPT_KIND_DOUBLE)
+#   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)
+#   define isflt(__ty)  (TYPE_FLOAT <= (__ty)->tyty && (__ty)->tyty <= TYPE_DOUBLE)
 #   define isnum(__ty)  (isint(__ty) || isflt(__ty))
-#   define isptr(__ty)  (ADPT_KIND_PTR == (__ty)->kind)
-#   define isfun(__ty)  (ADPT_KIND_FUN == (__ty)->kind)
+#   define isptr(__ty)  (TYPE_PTR == (__ty)->tyty)
+#   define isfun(__ty)  (TYPE_FUN == (__ty)->tyty)
 
     struct adpt_type const *opr, *lhs, *rhs, *base, *off;
 
@@ -69,7 +69,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             static struct adpt_type const string = {
                 .size= sizeof(char*),
                 .align= sizeof(char*),
-                .kind= ADPT_KIND_PTR,
+                .tyty= TYPE_PTR,
                 .info.to= &adptb_char_type,
             };
             return expr->usr = (void*)&string;
@@ -78,6 +78,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if ('0' <= c && c <= '9') return expr->usr = (void*)&adptb_int_type; // TODO: double and suffixes
         struct adpt_item const* found = cs->lookup(expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
+        if (ITEM_TYPEDEF == found->kind) fail("Unexpected type name '%.*s'", bufmt(expr->info.atom));
         return expr->usr = (void*)found->type;
 
     case BINOP_SUBSCR:
@@ -132,8 +133,11 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_ASGN_REM:
     case BINOP_ASGN_DIV:
     case BINOP_ASGN_MUL:
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        // TODO: compatible with op (same as respective normal binop)
         // TODO: assignable
-        fail("NIY: assignment");
+        return expr->usr = (void*)lhs;
 
     case BINOP_LOR:
     case BINOP_LAND:
@@ -227,6 +231,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 } // typeof
 
 #define at(__slt)  ((__slt)->loc - cs->vsp)
+#define atv(__slt) ((__slt)->as.variable - cs->vsp)
 
 // compile utils {{{
 unsigned _l2(size_t n) {
@@ -262,8 +267,10 @@ unsigned _l2(size_t n) {
 void _alloc_slot(compile_state ref cs, struct slot ref slot) {
     slot->codeat = cs->res.len;
     slot->end = cs->vsp;
-    cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->size));
-    _emit_instr_w_opr(0x0f, slot->end - cs->vsp);
+    if (slot->ty->size) {
+        cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->size));
+        _emit_instr_w_opr(0x0f, slot->end - cs->vsp);
+    }
     slot->loc = cs->vsp;
 }
 
@@ -272,7 +279,8 @@ void _cancel_slot(compile_state ref cs, struct slot cref slot) {
 }
 
 void _rewind_slot(compile_state ref cs, struct slot cref slot) {
-    _emit_instr_w_opr(0x0d, slot->end - cs->vsp);
+    if (slot->end != cs->vsp)
+        _emit_instr_w_opr(0x0d, slot->end - cs->vsp);
     cs->vsp = slot->end;
 }
 
@@ -339,19 +347,18 @@ void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size
 }
 
 enum _arith_w _slot_arith_w(struct slot cref slot) {
-    switch (slot->ty->kind) {
-    case ADPT_KIND_CHAR:   return _oprw_8;
-    case ADPT_KIND_UCHAR:  return _oprw_8;
-    case ADPT_KIND_SCHAR:  return _oprw_8;
-    case ADPT_KIND_SHORT:  return _oprw_16;
-    case ADPT_KIND_INT:    return _oprw_32;
-    case ADPT_KIND_LONG:   return _oprw_64;
-    case ADPT_KIND_USHORT: return _oprw_16;
-    case ADPT_KIND_UINT:   return _oprw_32;
-    case ADPT_KIND_ULONG:  return _oprw_64;
-    case ADPT_KIND_ENUM:   return _oprw_32;
-    case ADPT_KIND_FLOAT:  return _oprw_f;
-    case ADPT_KIND_DOUBLE: return _oprw_d;
+    switch (slot->ty->tyty) {
+    case TYPE_CHAR:   return _oprw_8;
+    case TYPE_UCHAR:  return _oprw_8;
+    case TYPE_SCHAR:  return _oprw_8;
+    case TYPE_SHORT:  return _oprw_16;
+    case TYPE_INT:    return _oprw_32;
+    case TYPE_LONG:   return _oprw_64;
+    case TYPE_USHORT: return _oprw_16;
+    case TYPE_UINT:   return _oprw_32;
+    case TYPE_ULONG:  return _oprw_64;
+    case TYPE_FLOAT:  return _oprw_f;
+    case TYPE_DOUBLE: return _oprw_d;
     default: return 0;
     }
 }
@@ -383,35 +390,33 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
 }
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)  \
-    do switch ((dst)->ty->kind) {  \
-    case ADPT_KIND_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
-    case ADPT_KIND_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
-    case ADPT_KIND_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
-    case ADPT_KIND_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
-    case ADPT_KIND_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
-    case ADPT_KIND_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
-    case ADPT_KIND_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
-    case ADPT_KIND_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
-    case ADPT_KIND_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
-    case ADPT_KIND_ENUM:   (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
+    do switch ((dst)->ty->tyty) {  \
+    case TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
+    case TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
+    case TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
+    case TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
+    case TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
+    case TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
+    case TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
+    case TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
+    case TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
     default:;  \
     } while (0)
 
 #define _cfold_arith(dst, lhs, op, rhs)  \
-    do switch ((dst)->ty->kind) {  \
-    case ADPT_KIND_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
-    case ADPT_KIND_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
-    case ADPT_KIND_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
-    case ADPT_KIND_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
-    case ADPT_KIND_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
-    case ADPT_KIND_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
-    case ADPT_KIND_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
-    case ADPT_KIND_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
-    case ADPT_KIND_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
-    case ADPT_KIND_ENUM:   (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
-    case ADPT_KIND_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
-    case ADPT_KIND_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
-    case ADPT_KIND_PTR: exitf("NIY: pointer arithmetics");  \
+    do switch ((dst)->ty->tyty) {  \
+    case TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
+    case TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
+    case TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
+    case TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
+    case TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
+    case TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
+    case TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
+    case TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
+    case TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
+    case TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
+    case TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
+    case TYPE_PTR: exitf("NIY: pointer arithmetics");  \
     default:;  \
     } while (0)
 // }}}
@@ -424,7 +429,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case ATOM:;
         char c = *expr->info.atom.ptr;
         if ('"' == c) {
-            slot->as.variable = (void*)-1;
+            slot->as.variable = -1;
             slot->usage = _slot_variable;
             exitf("NYI: string literal (should have been replaced with its slot during checking)");
             // XXX: nah- it's gonna need to be a pointer proper, be it on the stack or not
@@ -472,8 +477,13 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
         }
 
         struct adpt_item const* found = cs->lookup(expr->info.atom);
-        slot->as.value.ul = (size_t)found->as.object;
-        slot->usage = _slot_value;
+        if (ITEM_VALUE == found->kind) {
+            slot->as.value.ul = (size_t)found->as.object;
+            slot->usage = _slot_value;
+        } else {
+            slot->as.variable = found->as.variable;
+            slot->usage = _slot_variable;
+        }
         return;
 
     case BINOP_SUBSCR:
@@ -510,11 +520,11 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
                     args[k].usage = _slot_used;
                 } else if (_slot_variable == args[k].usage) {
                     _cancel_slot(cs, args+k);
-                    args[k] = *args[k].as.variable;
+                    args[k].loc = args[k].as.variable;
                 }
             }
 
-            _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? at(fun.as.variable) : at(&fun));
+            _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? atv(&fun) : at(&fun));
             for (size_t k = count; k; k--) _emit_call_arg(cs, at(args+k-1));
 
             slot->usage = _slot_used;
@@ -526,10 +536,51 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case BINOP_TERNBRANCH:
         return;
 
-    case BINOP_COMMA:
+    case BINOP_COMMA: {
+            struct slot drp = {.ty= expr->info.binary.lhs->usr};
+            _alloc_slot(cs, &drp);
+            compile_expression(cs, expr->info.binary.lhs, &drp);
+            if (_slot_used != drp.usage) _cancel_slot(cs, &drp);
+            compile_expression(cs, expr->info.binary.rhs, slot);
+            if (_slot_used == drp.usage) _rewind_slot(cs, &drp);
+        }
         return;
 
-    case BINOP_ASGN:
+    case BINOP_ASGN: {
+            struct adpt_type const* dst_ty = expr->info.binary.lhs->usr;
+            struct adpt_type const* src_ty = expr->info.binary.rhs->usr;
+            // TODO: conversions and all
+
+            struct slot dst = {.ty= dst_ty};
+            compile_expression(cs, expr->info.binary.lhs, &dst);
+
+            // xxx: only assigning to plain variable for now
+            slot->as.variable = dst.as.variable;
+            slot->usage = _slot_variable;
+
+            struct slot src = {.ty= src_ty};
+            _alloc_slot(cs, &src);
+            compile_expression(cs, expr->info.binary.rhs, &src);
+
+            switch (src.usage) {
+            case _slot_value:
+                _cancel_slot(cs, &src);
+                _emit_data(cs, atv(&dst), slot->ty->size, src.as.value.bytes);
+                break;
+
+            case _slot_used:
+                _emit_move(cs, atv(&dst), slot->ty->size, at(&src));
+                _rewind_slot(cs, &src);
+                break;
+
+            case _slot_variable:
+                _cancel_slot(cs, &src);
+                _emit_move(cs, atv(&dst), slot->ty->size, atv(&src));
+                break;
+            }
+        }
+        return;
+
     case BINOP_ASGN_BOR:
     case BINOP_ASGN_BXOR:
     case BINOP_ASGN_BAND:
@@ -540,6 +591,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case BINOP_ASGN_REM:
     case BINOP_ASGN_DIV:
     case BINOP_ASGN_MUL:
+        exitf("NIY: assignment with op");
         return;
 
     case BINOP_LOR:
@@ -647,8 +699,8 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
             break;
 
         case _slot_variable:
-            if (UNOP_MINUS == expr->kind) _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, at(slot->as.variable));
-            else if (UNOP_PLUS == expr->kind) _emit_move(cs, at(slot), slot->ty->size, at(slot->as.variable));
+            if (UNOP_MINUS == expr->kind) _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, atv(slot));
+            else if (UNOP_PLUS == expr->kind) _emit_move(cs, at(slot), slot->ty->size, atv(slot));
             slot->usage = _slot_used;
         }
         return;
@@ -679,7 +731,7 @@ bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
         break;
 
     case _slot_variable:
-        _emit_move(cs, at(&slot), slot.ty->size, at(slot.as.variable));
+        _emit_move(cs, at(&slot), slot.ty->size, atv(&slot));
         break;
     }
     slot.usage = _slot_used;
@@ -687,6 +739,7 @@ bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
     return true;
 }
 
+#undef atv
 #undef at
 
 #endif // CINTRE_COMPILER_H

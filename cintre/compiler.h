@@ -715,8 +715,6 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
 } // compile_expression
 
 bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
-    //cs->vsp = 0;
-
     struct slot slot = {.ty= check_expression(cs, expr)};
     if (!slot.ty) return false;
     _alloc_slot(cs, &slot);
@@ -732,6 +730,7 @@ bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
 
     case _slot_variable:
         _emit_move(cs, at(&slot), slot.ty->size, atv(&slot));
+        // yyy: result is a variable, show it and not "_"?
         break;
     }
     slot.usage = _slot_used;

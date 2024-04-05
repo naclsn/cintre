@@ -280,8 +280,12 @@ int main(int argc, char** argv) {
         if (fileext) thisns.len = fileext - thisns.ptr;
     }
     fprintf(result, "static struct adpt_item const adptns_%.*s[] = {\n", bufmt(thisns));
-    for (size_t k = 0; k < seen.len; k++)
-        fprintf(result, "    {.name= \"%.*s\", .type= &%.*s_adapt_type, .as.function= %.*s_adapt_call},\n", bufmt(seen.ptr[k].name), bufmt(seen.ptr[k].name), bufmt(seen.ptr[k].name));
+    for (size_t k = 0; k < seen.len; k++) {
+        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    , .as.function= %.*s_adapt_call\n", bufmt(seen.ptr[k].name));
+        fprintf(result, "    , .kind= ITEM_VALUE },\n");
+    }
     fprintf(result, "};\n");
 
     return EXIT_SUCCESS;

@@ -288,6 +288,9 @@ void run(cintre_state ref gs, bytecode const code) {
 void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     cintre_state ref gs = usr;
 
+    //printf("decl: ");
+    //print_decl(stdout, decl);
+    //printf("\n");
     struct adpt_type cref ty = decl_to_adpt(gs, &decl->type);
 
     //size_t end = gs->sp;
@@ -295,20 +298,15 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
 
     struct adpt_item* it = dyarr_push(&locals);
     if (!it) exitf("OOM");
-    char* name = malloc(decl->name.len);
+    char* name = malloc(decl->name.len+1);
     if (!name) free(it), exitf("OOM");
+    name[decl->name.len] = '\0';
     memcpy(it, &(struct adpt_item){
-        .type= ty,
         .name= memcpy(name, decl->name.ptr, decl->name.len),
+        .type= ty,
+        .kind= ITEM_VARIABLE,
         .as.variable= gs->sp,
     }, sizeof *it);
-
-    printf("declared (at %zu) \n", it->as.variable);
-    printf("%.*s: ", bufmt(decl->name));
-    print_type(stdout, ty);
-    printf("\n");
-
-    gs->decl.base = (declaration){0};
 }
 
 void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
@@ -335,8 +333,13 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
 
     if (xcmdis("loc")) {
         printf("List of locals:\n");
-        for (size_t k = 0; k < locals.len; k++)
-            print_item(stdout, locals.ptr+k, gs->stack);
+        for (size_t k = 0; k < locals.len; k++) {
+            struct adpt_item const* it = locals.ptr+k;
+            if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
+            else printf("   [top-%zu] %-8s\t", STACK_SIZE-it->as.variable, it->name);
+            print_type(stdout, it->type);
+            printf("\n");
+        }
         return;
     }
 
@@ -344,8 +347,13 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         printf("List of names:\n");
         for (size_t ns = 0; ns < countof(namespaces); ns++) {
             printf("%s::\n", namespaces[ns].name);
-            for (size_t k = 0; k < namespaces[ns].count; k++)
-                print_item(stdout, namespaces[ns].items+k, gs->stack);
+            for (size_t k = 0; k < namespaces[ns].count; k++) {
+                struct adpt_item const* it = namespaces[ns].items+k;
+                if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
+                else printf("   [%p] %-8s\t", it->as.object, it->name);
+                print_type(stdout, it->type);
+                printf("\n");
+            }
         }
         return;
     }
@@ -358,7 +366,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
 
     gs->code.len = 0;
     if (!expr) return;
-    compile_state cs = {.res= gs->code, .lookup= gs->lookup};
+    compile_state cs = {.vsp= gs->sp, .res= gs->code, .lookup= gs->lookup};
 
     if (xcmdis("ty")) {
         struct adpt_type const* ty = check_expression(&cs, expr);
@@ -380,7 +388,17 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     }
 
     run(gs, gs->code);
-    printf("Result: %u\n", *(unsigned*)(gs->stack+gs->sp)); // yyy: type
+    struct adpt_item res = {
+        .name= "_",
+        .type= expr->usr,
+        .kind= ITEM_VARIABLE,
+        .as.variable= gs->sp,
+    };
+
+    printf("Result:\n");
+    print_item(stdout, &res, gs->stack);
+
+    gs->sp+= res.type->size;
 } // accept_expr
 // }}}
 
@@ -402,7 +420,24 @@ int main(void) {
 
         bufsl tok = lext(&gs.lexr);
         if (!tok.len || ';' == *tok.ptr) accept_expr(NULL, NULL, &tok);
-        else if (is_decl_keyword(tok)) parse_declaration(&gs.decl, tok);
+
+        else if (is_decl_keyword(tok)) {
+            do {
+                tok = parse_declaration(&gs.decl, tok);
+                break; // FIXME: `int a = 42;` breaks the parser
+
+                if (1 == tok.len && '=' == *tok.ptr) {
+                    gs.lexr.slice.ptr--, gs.lexr.slice.len++;
+                    char cref name = dyarr_bot(&locals)->name;
+                    tok = parse_expression(&gs.expr, (bufsl){.ptr= name, .len= strlen(name)});
+                }
+                // FIXME: can never be true until parsing of the comma operator is done properly
+                //        (ie. cannot occure at this point of the syntax-)
+            } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs.lexr), true : false);
+
+            gs.decl.base = (declaration){0};
+        }
+
         else parse_expression(&gs.expr, tok);
     }
 

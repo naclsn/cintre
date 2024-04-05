@@ -298,50 +298,53 @@ void print_code(FILE ref strm, bytecode const code) {
 }
 
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack) {
-    void const* p = NULL;
+    fprintf(strm, "%s: ", it->name);
+    print_type(strm, it->type);
+    fprintf(strm, "\n   = ");
 
-    switch (it->kind) {
-    case ITEM_VALUE:
-        printf("   [%p] %-8s\t", it->as.object, it->name);
-        p = it->as.object;
-        break;
+    void cref p = ITEM_VALUE == it->kind
+        ? it->as.object
+        : stack+it->as.variable;
 
-    case ITEM_TYPEDEF:
-        printf("   [typedef] %-8s\t", it->name);
-        break;
+    switch (it->type->tyty) {
+    case TYPE_VOID: fprintf(strm, "()"); break;
 
-    case ITEM_VARIABLE:
-        printf("   [sp=%zu] %-8s\t", it->as.variable, it->name);
-        p = stack+it->as.variable;
-        break;
+    case TYPE_CHAR: switch (*(char*)p) {
+        case '\0': fprintf(strm, "'\\0'"); break;
+        case '\'': fprintf(strm, "'\\''"); break;
+        case '\"': fprintf(strm,"'\\\"'"); break;
+        case '\?': fprintf(strm, "'\\?'"); break;
+        case '\\': fprintf(strm,"'\\\\'"); break;
+        case '\a': fprintf(strm, "'\\a'"); break;
+        case '\b': fprintf(strm, "'\\b'"); break;
+        case '\f': fprintf(strm, "'\\f'"); break;
+        case '\n': fprintf(strm, "'\\n'"); break;
+        case '\r': fprintf(strm, "'\\r'"); break;
+        case '\t': fprintf(strm, "'\\t'"); break;
+        case '\v': fprintf(strm, "'\\v'"); break;
+        default: fprintf(strm, ' ' <= *(char*)p && *(char*)p <= '~' ? "'%c'" : "'\\x%02x'", *(char*)p);
+    } break;
+
+    case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", *(unsigned char*)p);  break;
+    case TYPE_SCHAR:  fprintf(strm, "%hhi",     *(signed char*)p);    break;
+    case TYPE_SHORT:  fprintf(strm, "%hi",      *(short*)p);          break;
+    case TYPE_INT:    fprintf(strm, "%i",       *(int*)p);            break;
+    case TYPE_LONG:   fprintf(strm, "%li",      *(long*)p);           break;
+    case TYPE_USHORT: fprintf(strm, "%hu",      *(unsigned short*)p); break;
+    case TYPE_UINT:   fprintf(strm, "%u",       *(unsigned int*)p);   break;
+    case TYPE_ULONG:  fprintf(strm, "%lu",      *(unsigned long*)p);  break;
+    case TYPE_FLOAT:  fprintf(strm, "%f",       *(float*)p);          break;
+    case TYPE_DOUBLE: fprintf(strm, "%lf",      *(double*)p);         break;
+
+    // TODO: complete
+    case TYPE_STRUCT: fprintf(strm, "{..}"); break;
+    case TYPE_UNION:  fprintf(strm, "{..}"); break;
+    case TYPE_FUN:    fprintf(strm, "(%p)", p); break;
+    case TYPE_PTR:    fprintf(strm, "%p", p); break;
+    case TYPE_ARR:    fprintf(strm, "[..]"); break;
     }
 
-    print_type(stdout, it->type);
-    if (p) {
-        // TODO
-        switch (it->type->tyty) {
-        case TYPE_VOID:   break;
-        case TYPE_CHAR:   break;
-        case TYPE_UCHAR:  break;
-        case TYPE_SCHAR:  break;
-        case TYPE_SHORT:  break;
-        case TYPE_INT:    break;
-        case TYPE_LONG:   break;
-        case TYPE_USHORT: break;
-        case TYPE_UINT:   break;
-        case TYPE_ULONG:  break;
-        case TYPE_FLOAT:  break;
-        case TYPE_DOUBLE: break;
-        case TYPE_STRUCT: break;
-        case TYPE_UNION:  break;
-        case TYPE_FUN:    break;
-        case TYPE_PTR:    break;
-        case TYPE_ARR:    break;
-        }
-        printf(" = ...(%p)", p);
-    }
-
-    printf("\n");
+    fprintf(strm, "\n");
 }
 
 #endif // CINTRE_PRINTS_H

@@ -69,6 +69,23 @@ bufsl lext(lex_state ref ls);
 
 // ---
 
+buf _lex_read_all(FILE ref f) {
+    buf r = {0};
+    if (!f) return r;
+    if (!fseek(f, 0, SEEK_END)) {
+        r.ptr = malloc(r.len = r.cap = ftell(f));
+        if (!r.ptr) exitf("OOM");
+        fseek(f, 0, SEEK_SET);
+        fread(r.ptr, 1, r.len, f);
+    } else do {
+        size_t a = r.len ? r.len*2 : 1024;
+        char* s = dyarr_insert(&r, r.len, a);
+        if (!s) exitf("OOM");
+        fread(s, 1, a, f);
+    } while (!feof(f) && !ferror(f));
+    return r;
+}
+
 void ldef(lex_state ref ls, char cref name, char cref value) {
     struct _lex_state_macro* it = dyarr_push(&ls->macros);
     if (!it) exitf("OOM");
@@ -93,7 +110,9 @@ void lini(lex_state ref ls, char cref entry) {
     memcpy(dup, entry, n);
     dup[n] = '\0';
     src->file = dup;
-    src->text = read_all(entry);
+    FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
+    src->text = _lex_read_all(f);
+    if (stdin != f) fclose(f);
     if (!src->text.len) exitf("Could not open entry file %s", entry);
     ls->slice.ptr = src->text.ptr;
     ls->slice.len = src->text.len;
@@ -368,7 +387,9 @@ bufsl lext(lex_state ref ls) {
                         memcpy(file+n, path.ptr, path.len); n+= path.len;
                     }
                     file[n] = '\0';
-                    src->text = read_all(file);
+                    FILE* f = fopen(file, "rb");
+                    src->text = _lex_read_all(f);
+                    fclose(f);
                     if (src->text.len) {
                         char* dup = malloc(n+1);
                         if (!dup) exitf("OOM");

@@ -44,9 +44,16 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
         break;
 
     case KIND_ENUM:
-        // TODO: enum
         fprintf(strm, "\x1b[34menum\x1b[m");
         if (ty->name.len) fprintf(strm, " %.*s", bufmt(ty->name));
+        if ((size_t)-1 != ty->info.enu.count) {
+            fprintf(strm, " {");
+            for (struct decl_type_enumer const* it = ty->info.enu.first; it; it = it->next) {
+                fprintf(strm, "%.*s", bufmt(it->name));
+                if (it->next) fprintf(strm, ", ");
+            }
+            fprintf(strm, "}");
+        }
         break;
 
     case KIND_PTR:

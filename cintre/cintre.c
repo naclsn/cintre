@@ -424,7 +424,6 @@ int main(void) {
         else if (is_decl_keyword(tok)) {
             do {
                 tok = parse_declaration(&gs.decl, tok);
-                break; // FIXME: `int a = 42;` breaks the parser
 
                 if (1 == tok.len && '=' == *tok.ptr) {
                     gs.lexr.slice.ptr--, gs.lexr.slice.len++;

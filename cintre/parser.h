@@ -21,8 +21,7 @@ typedef struct declaration {
     } spec;
 
     struct decl_type {
-        // XXX: TODO: rename the type_.. to decl_type_..
-        enum type_qual {
+        enum decl_type_qual {
             QUAL_END= 0,
             QUAL_CONST= kws('c','o','n','s','t'),
             QUAL_RESTRICT= kws('r','e','s','t','r','i','c','t'),
@@ -36,7 +35,7 @@ typedef struct declaration {
             QUAL_IMAGINARY= kws('i','m','a','g','i','n','a','r','y'),
         } quals[8];
 
-        enum type_kind {
+        enum decl_type_kind {
             KIND_NOTAG= 0,
             KIND_STRUCT= kws('s','t','r','u','c','t'),
             KIND_UNION= kws('u','n','i','o','n'),
@@ -46,12 +45,13 @@ typedef struct declaration {
             KIND_ARR= ('['&31)<<5 | (']'&31),
         } kind;
 
-        union type_info {
+        union decl_type_info {
             struct decl_type const* ptr;
             struct decl_type_comp {
                 size_t count; // -1 if no body
                 struct decl_type_field {
                     struct declaration const* decl;
+                    struct expression* bitw; // NULL if not specified or irrelevant
                     struct decl_type_field* next;
                 }* first;
             } comp; // struct or union
@@ -59,7 +59,7 @@ typedef struct declaration {
                 size_t count;
                 struct decl_type_enumer {
                     bufsl const name;
-                    struct expression* expr;
+                    struct expression* expr; // NULL if not specified
                     struct decl_type_enumer* next;
                 }* first;
             } enu; // enum
@@ -71,11 +71,10 @@ typedef struct declaration {
                     struct decl_type_param* next;
                 }* first;
             } fun;
-            struct {
+            struct deck_type_arr {
                 struct decl_type const* item;
                 struct expression* count; // NULL when [*] or [], n otherwise
                 bool statik;
-                enum type_qual quals[3];
             } arr;
         } info;
 
@@ -167,6 +166,48 @@ struct _parse_decl_capture {
     _parse_decl_closure_t ref then;
 };
 _parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_post, _parse_decl_params, _parse_decl_enumer, _parse_decl_fields, _parse_decl_spec;
+
+void _parse_on_array_size(void ref decl_ps_capt[3], expression ref expr, bufsl ref tok) {
+    declaration ref arr = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
+    //_expect(tok, "]");
+    arr->type.info.arr.count = expr;
+    ps->tok = lext(ps->ls);
+    _parse_decl_post(ps, capt, arr);
+}
+void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, bufsl ref tok) {
+    declaration ref enu = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
+    //_expect(tok, "," or "}");
+    for (struct decl_type_enumer* curr = enu->type.info.enu.first ;3; curr = curr->next) if (!curr->next) {
+        curr->expr = expr;
+        break;
+    }
+    if (',' == *tok->ptr) *tok = lext(ps->ls);
+    if ('}' == *tok->ptr) {
+        ps->tok = lext(ps->ls);
+        _parse_decl_ator(ps, capt, enu);
+    } else _parse_decl_enumer(ps, capt, NULL);
+}
+void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, bufsl ref tok) {
+    declaration ref comp = decl_ps_capt[0], ref base = decl_ps_capt[1]; parse_decl_state ref ps = decl_ps_capt[2]; struct _parse_decl_capture ref capt = decl_ps_capt[3];
+    //_expect(tok, "," or ";");
+    for (struct decl_type_field* curr = comp->type.info.comp.first ;3; curr = curr->next) if (!curr->next) {
+        curr->bitw = expr;
+        break;
+    }
+    bool reset = ';' == *tok->ptr;
+    ps->tok = lext(ps->ls);
+    if (reset && '}' == *ps->tok.ptr) {
+        ps->tok = lext(ps->ls);
+        _parse_decl_ator(ps, capt, comp);
+        return;
+    }
+    declaration niwbase = reset ? (declaration){0} : *base;
+    _parse_decl_spec(ps, &(struct _parse_decl_capture){
+            .next= capt,
+            .then= _parse_decl_fields,
+        }, &niwbase);
+    // FIXME: syntax error with `struct { int a, b:3, c; } e;`
+}
 
 #define kw(s) kws(s[0],s[1],s[2],)
 #define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
@@ -280,9 +321,8 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
                     iskw(ps->tok, askw, 'r','e','s','t','r','i','c','t') ||
                     iskw(ps->tok, askw, 'v','o','l','a','t','i','l','e') ));
                 ps->tok = lext(ps->ls)) {
-            for (unsigned k = 0; k < countof(/*arr.type.quals*/arr.type.info.arr.quals); k++) if (QUAL_END == arr.type.quals[k]) {
-                //arr.type.quals[k] = askw; // XXX: I'm confused tbh
-                arr.type.info.arr.quals[k] = askw;
+            for (unsigned k = 0; k < countof(arr.type.quals); k++) if (QUAL_END == arr.type.quals[k]) {
+                arr.type.quals[k] = askw;
                 break;
             }
         }
@@ -298,17 +338,10 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             return;
         }
 
-        exitf("NIY: array size");
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
-                // TODO:
-                //.usr= [ps, arr= &arr, capt],
-                //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
-                //    _expect(tok, "]");
-                //    usr->arr->type.info.arr.count = expr;
-                //    ps->tok = lext(ps->ls);
-                //    _parse_decl_post(ps, capt, &arr);
-                //},
+                .usr= (void*[3]){&arr, ps, capt},
+                .on= (void(*)())_parse_on_array_size,
             }, ps->tok);
         return;
     }
@@ -319,32 +352,32 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 /// parse the params of a function
 void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
     struct decl_type_param node = {.decl= decl}; // here so it's not deallocated before the recursion
-    declaration ref fun_decl = capt->hold;
+    declaration ref fun = capt->hold;
 
     bool last = ')' == *ps->tok.ptr;
     if (last || ',' == *ps->tok.ptr) {
-        struct decl_type_fun* const fun = &fun_decl->type.info.fun;
+        struct decl_type_fun* const info = &fun->type.info.fun;
         ps->tok = lext(ps->ls);
 
         if (!decl) {
             if (last) {
-                fun->count = -1; // eg. `int a();`
-                _parse_decl_post(ps, capt, fun_decl);
+                info->count = -1; // eg. `int a();`
+                _parse_decl_post(ps, capt, fun);
                 return;
             } else exitf("NIY: syntax error in params");
         }
 
         if (!(last && !decl->name.len && 4 == decl->type.name.len && !memcmp("void", decl->type.name.ptr, 4))) {
-            fun->count++;
-            if (!fun->first) fun->first = &node;
-            else for (struct decl_type_param* curr = fun->first ;3; curr = curr->next) if (!curr->next) {
+            info->count++;
+            if (!info->first) info->first = &node;
+            else for (struct decl_type_param* curr = info->first ;3; curr = curr->next) if (!curr->next) {
                 curr->next = &node;
                 break;
             }
         }
 
         if (last) {
-            _parse_decl_post(ps, capt, fun_decl);
+            _parse_decl_post(ps, capt, fun);
             return;
         }
     }
@@ -359,82 +392,68 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
 void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref _) {
     (void)_;
     struct decl_type_enumer node = {.name= ps->tok}; // here so it's not deallocated before the recursion
-    declaration ref enu_decl = capt->hold;
+    declaration ref enu = capt->hold;
 
-    struct decl_type_enu* const enu = &enu_decl->type.info.enu;
-    enu->count++;
-    if (!enu->first) enu->first = &node;
-    else for (struct decl_type_enumer* curr = enu->first ;3; curr = curr->next) if (!curr->next) {
+    ps->tok = lext(ps->ls);
+
+    struct decl_type_enu* const info = &enu->type.info.enu;
+    info->count++;
+    if (!info->first) info->first = &node;
+    else for (struct decl_type_enumer* curr = info->first ;3; curr = curr->next) if (!curr->next) {
         curr->next = &node;
         break;
     }
 
     if ('=' == *ps->tok.ptr) {
         ps->tok = lext(ps->ls);
-        exitf("NIY: enumerator value");
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
-                // TODO:
-                //.usr= [ps, pexpr= &node.expr, capt],
-                //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
-                //    _expect(tok, "," or "}");
-                //    *pexpr = expr;
-                //    if ('}') _parse_decl_post;
-                //    else _parse_decl_enumer;
-                //}
+                .usr= (void*[3]){enu, ps, capt},
+                .on= (void(*)())_parse_on_enumer_value,
             }, ps->tok);
         return;
     }
 
     if (',' == *ps->tok.ptr) ps->tok = lext(ps->ls);
     if ('}' == *ps->tok.ptr) {
-        _parse_decl_post(ps, capt, enu_decl);
-        return;
-    }
-
-    _parse_decl_enumer(ps, capt, NULL);
+        ps->tok = lext(ps->ls);
+        _parse_decl_ator(ps, capt, enu);
+    } else _parse_decl_enumer(ps, capt, NULL);
 }
 
 /// parse fields of a struct/union
 void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
     struct decl_type_field node = {.decl= decl}; // here so it's not deallocated before the recursion
-    declaration ref comp_decl = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is [0]
-    declaration cref base = ((declaration**)capt->hold)[1];
+    declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is [0]
+    declaration ref base = ((declaration**)capt->hold)[1];
 
+    bool bitw = ':' == *ps->tok.ptr;
     bool reset = ';' == *ps->tok.ptr;
-    if (reset || ',' == *ps->tok.ptr) {
-        struct decl_type_comp* const comp = &comp_decl->type.info.comp;
+    if (bitw || reset || ',' == *ps->tok.ptr) {
+        struct decl_type_comp* const info = &comp->type.info.comp;
         ps->tok = lext(ps->ls);
 
-        comp->count++;
-        if (!comp->first) comp->first = &node;
-        else for (struct decl_type_field* curr = comp->first ;3; curr = curr->next) if (!curr->next) {
+        if (!decl) exitf("NIY: syntax error in fields");
+
+        info->count++;
+        if (!info->first) info->first = &node;
+        else for (struct decl_type_field* curr = info->first ;3; curr = curr->next) if (!curr->next) {
             curr->next = &node;
             break;
         }
 
-        if (':' == *ps->tok.ptr) {
-            ps->tok = lext(ps->ls);
-            exitf("NIY: bitfield width");
+        if (bitw) {
             parse_expression(&(parse_expr_state){
                     .ls= ps->ls,
-                    // TODO:
-                    //.usr= [ps, field= &decl, capt],
-                    //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
-                    //    _expect(tok, "," or ";");
-                    //    usr->field... = expr;
-                    //    ps->tok = lext(ps->ls);
-                    //    // all the stuff below:
-                    //    if ('}') _parse_decl_post;
-                    //    else _parse_decl_spec;
-                    //},
+                    .usr= (void*[4]){comp, base, ps, capt},
+                    .on= (void(*)())_parse_on_bitfield_width,
                 }, ps->tok);
             return;
         }
 
-        if ('}' == *ps->tok.ptr) {
+        if (reset && '}' == *ps->tok.ptr) {
             ps->tok = lext(ps->ls);
-            _parse_decl_post(ps, capt, comp_decl);
+            _parse_decl_ator(ps, capt, comp);
             return;
         }
     }

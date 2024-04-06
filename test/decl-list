@@ -34,6 +34,7 @@ void print_type(struct decl_type cref type, unsigned const depth) {
         for (struct decl_type_field* curr = type->info.comp.first; curr; curr = curr->next) {
             printf("%*s", (depth+1)*4, "");
             print_decl(curr->decl, depth+1);
+            if (curr->bitw) printf(" :%.*s", (unsigned)curr->bitw->info.atom.len, curr->bitw->info.atom.ptr);
             printf("\n");
         }
         printf("%*s}", depth*4, "");
@@ -41,7 +42,13 @@ void print_type(struct decl_type cref type, unsigned const depth) {
 
     case KIND_ENUM:
         printf("%s %.*s", unkw(type->kind), (unsigned)type->name.len, type->name.ptr);
-        printf("{ /*TODO*/ }");
+        printf(type->name.len ? " {\n" : "{\n");
+        for (struct decl_type_enumer* curr = type->info.enu.first; curr; curr = curr->next) {
+            printf("%*s%.*s", (depth+1)*4, "", (unsigned)curr->name.len, curr->name.ptr);
+            if (curr->expr) printf("= %.*s", (unsigned)curr->expr->info.atom.len, curr->expr->info.atom.ptr);
+            printf("\n");
+        }
+        printf("%*s}", depth*4, "");
         break;
 
     case KIND_PTR:
@@ -62,7 +69,9 @@ void print_type(struct decl_type cref type, unsigned const depth) {
         break;
 
     case KIND_ARR:
-        printf("[%zu]", type->info.arr.count);
+        printf(type->info.arr.statik ? "[sta " : "[");
+        if (!type->info.arr.count) printf("*]");
+        else printf("%.*s]", (unsigned)type->info.arr.count->info.atom.len, type->info.arr.count->info.atom.ptr);
         print_type(type->info.arr.item, depth);
         break;
     }

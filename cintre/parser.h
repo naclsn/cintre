@@ -448,7 +448,6 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
 
 /// parse the specifier and initial qualifiers then one declarator
 void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
-#   define is(wo) (!dyarr_cmp((&(bufsl){.ptr= wo, .len= strlen(wo)}), &ps->tok))
 #   define is1(w) (ps->tok.len && w == *ps->tok.ptr)
 #   define isid() (ps->tok.len && ('_' == *ps->tok.ptr || ('A' <= *ps->tok.ptr && *ps->tok.ptr <= 'Z') || ('a' <= *ps->tok.ptr && *ps->tok.ptr <= 'z') || ('0' <= *ps->tok.ptr && *ps->tok.ptr <= '9')))
 #   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(ps->tok, __VA_ARGS__)) goto notkw;
@@ -508,7 +507,9 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
         if (ps->tok.len) {
             if (isid()) {
-                if (!decl->type.name.len) {
+                if (!decl->type.name.len || (
+                            3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
+                            && 6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6) )) {
                     decl->type.name = ps->tok;
                     continue;
                 }
@@ -534,7 +535,6 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 #   undef case_iskw
 #   undef isid
 #   undef is1
-#   undef is
 
     exitf("NIY: syntax error (I *think* we're not supposed to be here?)");
 }

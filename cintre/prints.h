@@ -33,9 +33,9 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     case KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
     case KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
         if (ty->name.len) fprintf(strm, " %.*s", bufmt(ty->name));
-        if ((size_t)-1 != ty->info.obj.count) {
+        if ((size_t)-1 != ty->info.comp.count) {
             fprintf(strm, " {");
-            for (struct decl_type_field const* it = ty->info.obj.first; it; it = it->next) {
+            for (struct decl_type_field const* it = ty->info.comp.first; it; it = it->next) {
                 print_decl(strm, it->decl);
                 if (it->next) fprintf(strm, ", ");
             }
@@ -69,9 +69,8 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
 
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
-        if ((size_t)-1 == ty->info.arr.count) fprintf(strm, "*, ");
-        else if (!ty->info.arr.count) fprintf(strm, "_, ");
-        else fprintf(strm, "%zu, ", ty->info.arr.count);
+        if (!ty->info.arr.count) fprintf(strm, "_, ");
+        else fprintf(strm, "(expression*)%p, ", ty->info.arr.count);
         _print_decl_type(strm, ty->info.arr.item);
         fprintf(strm, "]");
         break;

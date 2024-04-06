@@ -1,4 +1,5 @@
 /// C parser of sort
+    // TODO: if (!tok.len) return tok;
 
 #ifndef CINTRE_PARSER_H
 #define CINTRE_PARSER_H
@@ -6,10 +7,10 @@
 #include "common.h"
 #include "lexer.h"
 
-#define kws(a,b,c,...) ((a&31)<<10 | (b&31)<<5 | (c&31))
-
 // struct declaration {{{
 typedef struct declaration {
+#define kws(a,b,c,...) ((a&31)<<10 | (b&31)<<5 | (c&31))
+
     enum decl_spec {
         SPEC_NONE= 0,
         SPEC_TYPEDEF= kws('t','y','p','e','d','e','f'),
@@ -20,6 +21,7 @@ typedef struct declaration {
     } spec;
 
     struct decl_type {
+        // XXX: TODO: rename the type_.. to decl_type_..
         enum type_qual {
             QUAL_END= 0,
             QUAL_CONST= kws('c','o','n','s','t'),
@@ -46,20 +48,21 @@ typedef struct declaration {
 
         union type_info {
             struct decl_type const* ptr;
-            struct decl_type_obj {
+            struct decl_type_comp {
                 size_t count; // -1 if no body
                 struct decl_type_field {
                     struct declaration const* decl;
                     struct decl_type_field* next;
                 }* first;
-            } obj; // obj is struct or union
+            } comp; // struct or union
             struct decl_type_enu {
                 size_t count;
                 struct decl_type_enumer {
                     bufsl const name;
+                    struct expression* expr;
                     struct decl_type_enumer* next;
                 }* first;
-            } enu; // TODO: see in parse_declaration
+            } enu; // enum
             struct decl_type_fun {
                 struct decl_type const* ret;
                 size_t count; // -1 when (), 0 when (void), n otherwise
@@ -70,7 +73,9 @@ typedef struct declaration {
             } fun;
             struct {
                 struct decl_type const* item;
-                size_t count; // -1 when [*], 0 when [], n otherwise
+                struct expression* count; // NULL when [*] or [], n otherwise
+                bool statik;
+                enum type_qual quals[3];
             } arr;
         } info;
 
@@ -85,6 +90,7 @@ typedef struct parse_decl_state {
     lex_state* ls;
     void* usr;
     void (*on)(void ref usr, declaration cref decl, bufsl ref tok);
+    bufsl tok;
     declaration base;
 } parse_decl_state;
 
@@ -154,323 +160,396 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
 
 // parse declaration {{{
 struct _parse_decl_capture;
-typedef void _parse_decl_closure_t(parse_decl_state ref ps, struct _parse_decl_capture ref capt, expression ref expr);
+typedef void _parse_decl_closure_t(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl);
 struct _parse_decl_capture {
     declaration* hold;
     struct _parse_decl_capture ref next;
-    _parse_decl_closure_t ref then; // its `hold` is in `next->hold`
+    _parse_decl_closure_t ref then;
 };
+_parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_post, _parse_decl_params, _parse_decl_enumer, _parse_decl_fields, _parse_decl_spec;
 
 #define kw(s) kws(s[0],s[1],s[2],)
 #define iskwx(tok, ...) !dyarr_cmp(&((bufsl){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
 #define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
 
-bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl_t on, bufsl const tok1, bufsl const tok2, declaration cref base);
-
-// [struct|union] <name>? { <decls> } {{{
-struct _parse_put_field_capt {
-    lex_state* ls;
-    void* usr;
-    on_decl_t* on;
-    declaration* objc;
-};
-
-void _decl_put_field(struct _parse_put_field_capt ref capt, declaration cref decl, bufsl ref tok) {
-    struct decl_type_obj* obj = &capt->objc->type.info.obj;
-    struct decl_type_field node = {.decl= decl};
-    obj->count++;
-    if (!obj->first) obj->first = &node;
-    else for (struct decl_type_field* curr = obj->first ;3; curr = curr->next) if (!curr->next) {
-        curr->next = &node;
-        break;
-    }
-
-    bufsl nx = lext(capt->ls);
-    if (tok->len && nx.len && '}' != *nx.ptr)
-        *tok = parse_declaration(&(parse_decl_state){
-                .ls= capt->ls,
-                .usr= capt, .on= (void(*)())_decl_put_field,
-                .base= ';' == *tok->ptr ? (declaration){0} : *decl},
-                nx);
-    else {
-        *tok = lext(capt->ls);
-        if (tok->len && ';' == *tok->ptr) {
-            if (capt->on) capt->on(capt->usr, capt->objc, tok);
-        } else *tok = _parse_declarator(capt->ls, capt->usr, capt->on, *tok, lext(capt->ls), capt->objc);
-    }
-}
-// }}}
-
-// <decl>(<params>) {{{
-struct _parse_put_param_capt {
-    lex_state* ls;
-    void* usr;
-    on_decl_t* on;
-    declaration* func;
-};
-
-void _decl_put_param(struct _parse_put_param_capt ref capt, declaration cref decl, bufsl ref tok) {
-    struct decl_type_fun* fun = &capt->func->type.info.fun;
-    struct decl_type_param node = {.decl= decl};
-    fun->count++;
-    if (!fun->first) fun->first = &node;
-    else for (struct decl_type_param* curr = fun->first ;3; curr = curr->next) if (!curr->next) {
-        curr->next = &node;
-        break;
-    }
-
-    if (tok->len && ',' == *tok->ptr)
-        *tok = parse_declaration(&(parse_decl_state){
-                .ls= capt->ls,
-                .usr= capt, .on= (void(*)())_decl_put_param},
-                lext(capt->ls));
-    else {
-        if (1 == fun->count && !fun->first->decl->type.name.len && 4 == fun->first->decl->name.len && !memcmp("void", fun->first->decl->name.ptr, 4)) {
-            fun->count = 0;
-            fun->first = NULL;
-        }
-        *tok = lext(capt->ls);
-        if (capt->on) capt->on(capt->usr, capt->func, tok);
-    }
-}
-// }}}
-
-// (<decl>) {{{
-struct _parse_par_decl_capt {
-    lex_state* ls;
-    void* usr;
-    on_decl_t* on;
-    declaration const* outer;
-};
-
-void _parse_par_decl_unwind(struct _parse_par_decl_capt ref capt, declaration cref decl, bufsl ref tok) {
-    // TODO: apply the transformation from `capt->outer->type` to `decl` (or rather the `local` copy)
-
-    declaration local = *decl;
-
-    if (KIND_PTR == capt->outer->type.kind) {
-        local.type = (struct decl_type){
-            .quals= {
-                [0]= capt->outer->type.quals[0],
-                [1]= capt->outer->type.quals[1],
-                [2]= capt->outer->type.quals[2],
-                [3]= capt->outer->type.quals[3],
-                [4]= capt->outer->type.quals[4],
-                [5]= capt->outer->type.quals[5],
-                [6]= capt->outer->type.quals[6],
-                [7]= capt->outer->type.quals[7],
-            },
-            .kind= KIND_PTR,
-            .info.ptr= &decl->type,
-        };
-    }
-
-    // also somewhere in there
-    local.name = capt->outer->name;
-
-    if (capt->on) capt->on(capt->usr, &local, tok);
-}
-
-void _parse_par_decl(struct _parse_par_decl_capt ref capt, declaration cref inner, bufsl ref tok) {
-    *tok = lext(capt->ls);
-    declaration const* outer = capt->outer;
-    // reuses the same field, but in `_parse_par_decl_unwind` it will then
-    // carry `inner`, ie the transformation to unwind
-    capt->outer = inner;
-    *tok = _parse_declarator(capt->ls,
-            capt, (void(*)())_parse_par_decl_unwind,
-            // fake token to get past the first switch
-            (bufsl){.ptr= ")", .len= 1}, *tok,
-            outer);
-}
-// }}}
-
-bufsl _parse_declarator(lex_state ref ls, void ref usr, on_decl_t on, bufsl const tok1, bufsl const tok2, declaration cref base) {
-    if (!tok1.len) return tok1;
-
-    bufsl tok;
-#   define is1(w) (tok.len && w == *tok.ptr)
-
-    declaration decl = *base;
-
-    switch (*tok1.ptr) {
+/// pre-ish declarator part with '('<decl>')' | '*'<decl>
+void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    switch (*ps->tok.ptr) {
     case '(':
-        tok = _parse_declarator(ls,
-                &(struct _parse_par_decl_capt){.ls= ls, .usr= usr, .on= on, .outer= &decl},
-                (void(*)())_parse_par_decl,
-                tok2, lext(ls),
-                &(declaration){.type= decl.type});
-        return tok;
+        ps->tok = lext(ps->ls);
+        declaration before = *decl;
+        _parse_decl_ator(ps, &(struct _parse_decl_capture){
+                .next= &(struct _parse_decl_capture){
+                    .hold= &before,
+                    .next= capt->next,
+                    .then= capt->then,
+                },
+                .then= _parse_decl_close,
+            }, decl);
+        return;
 
     case '*':
-        tok = tok2;
-        struct decl_type const hold = decl.type;
-        decl.type = (struct decl_type){.kind= KIND_PTR, .info.ptr= &hold};
-        while (3 < tok.len) {
-            unsigned askw = kw(tok.ptr);
-            switch (askw) {
-            case QUAL_CONST: case QUAL_RESTRICT: case QUAL_VOLATILE:
-                if (!iskwx(tok, 'c','o','n','s','t') && !iskwx(tok, 'r','e','s','t','r','i','c','t') && !iskwx(tok, 'v','o','l','a','t','i','l','e'))
-                    break;
-                for (unsigned k = 0; k < countof(decl.type.quals); k++) if (QUAL_END == decl.type.quals[k]) {
-                    decl.type.quals[k] = askw;
-                    break;
-                }
-                tok = lext(ls);
-                continue;
-            }
-            break;
-        }
-        return _parse_declarator(ls, usr, on, tok, lext(ls), &decl);
-
-    default:
-        decl.name = tok1;
-        // fall through
-    case ')':
-        tok = tok2;
-        if (is1(':')) tok = parse_expression(&(parse_expr_state){.ls= ls}, lext(ls));
-    } // switch with (<decl>), *<decl>
-
-    if (is1('(')) {
-        tok = lext(ls);
-        struct decl_type const hold = decl.type;
-        decl.type = (struct decl_type){.kind= KIND_FUN, .info.fun.ret= &hold};
-        if (tok.len) {
-            if (!is1(')')) return parse_declaration(&(parse_decl_state){
-                    .ls= ls,
-                    .usr= &(struct _parse_put_param_capt){.ls= ls, .usr= usr, .on= on, .func= &decl},
-                    .on= (void(*)())_decl_put_param},
-                    tok);
-            decl.type.info.fun.count = -1;
-            tok = lext(ls);
-        }
-    } // if <decl>(<params>)
-
-    else while (is1('[')) {
-        tok = lext(ls);
-        struct decl_type const hold = decl.type;
-        decl.type = (struct decl_type){.kind= KIND_ARR, .info.arr.item= &hold};
-        if (3 < tok.len) {
-            unsigned askw = kw(tok.ptr);
-            if (iskw(tok, askw, 's','t','a','t','i','c')) {
-                // TODO: use askw
-                tok = lext(ls);
-            }
-            while (3 < tok.len && (
-                        iskw(tok, askw, 'c','o','n','s','t') ||
-                        iskw(tok, askw, 'r','e','s','t','r','i','c','t') ||
-                        iskw(tok, askw, 'v','o','l','a','t','i','l','e') )) {
-                // TODO: add askw
-                tok = lext(ls);
-                askw = kw(tok.ptr);
+        ps->tok = lext(ps->ls);
+        declaration ptr = {
+            .spec= decl->spec,
+            .type= {.kind= KIND_PTR, .info.ptr= &decl->type},
+            .name= decl->name,
+        };
+        for (unsigned askw; (3 < ps->tok.len && (askw = kw(ps->tok.ptr),
+                    iskw(ps->tok, askw, 'c','o','n','s','t') ||
+                    iskw(ps->tok, askw, 'r','e','s','t','r','i','c','t') ||
+                    iskw(ps->tok, askw, 'v','o','l','a','t','i','l','e') ));
+                ps->tok = lext(ps->ls)) {
+            for (unsigned k = 0; k < countof(ptr.type.quals); k++) if (QUAL_END == ptr.type.quals[k]) {
+                ptr.type.quals[k] = askw;
+                break;
             }
         }
-        // TODO: add to type
-        if (tok.len) switch (*tok.ptr) {
+        _parse_decl_ator(ps, capt, &ptr);
+        return;
+
+    case '=': case ',': case ';': case ')':
+        capt->then(ps, capt->next, decl);
+        return;
+    }
+
+    decl->name = ps->tok;
+    ps->tok = lext(ps->ls);
+    _parse_decl_post(ps, capt, decl);
+}
+
+/// skip closing parenthesis and parse post
+void _parse_decl_close(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    //_expect(ps->tok, ")");
+    ps->tok = lext(ps->ls);
+
+    // TODO:
+    if (ps->tok.len) {
+        declaration ref before = capt->hold;
+
+        void print_decl(declaration cref decl, unsigned const depth);
+        printf("!! before is "); print_decl(before, 0); printf("\n");
+        printf("!!   decl is "); print_decl(  decl, 0); printf("\n");
+
+        if ('(' == *ps->tok.ptr) {
+            // `.. (*a)(..)`
+        }
+        else if ('[' == *ps->tok.ptr) {
+            // `.. (*a)[..]`
+        }
+
+        // setup the call to _post in a way that it fills in the inner to the ptr
+    }
+
+    _parse_decl_post(ps, capt, decl);
+}
+
+/// postfix declarator notations
+void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    // '(' <params> ')'
+    // '[' [static][const][idk] <expr>|*|<nothing> ']'
+
+    switch (*ps->tok.ptr) {
+    case '(':
+        ps->tok = lext(ps->ls);
+        declaration fun = {
+            .spec= decl->spec,
+            .type= {.kind= KIND_FUN, .info.fun.ret= &decl->type},
+            .name= decl->name,
+        };
+        _parse_decl_params(ps, &(struct _parse_decl_capture){
+                .hold= &fun,
+                .next= capt->next,
+                .then= capt->then,
+            }, NULL);
+        return;
+
+    case '[':
+        ps->tok = lext(ps->ls);
+        declaration arr = {
+            .spec= decl->spec,
+            .type= {.kind= KIND_ARR, .info.arr.item= &decl->type},
+            .name= decl->name,
+        };
+        if (3 < ps->tok.len && iskwx(ps->tok, 's','t','a','t','i','c')) {
+            arr.type.info.arr.statik = true;
+            ps->tok = lext(ps->ls);
+        }
+        for (unsigned askw; (3 < ps->tok.len && (askw = kw(ps->tok.ptr),
+                    iskw(ps->tok, askw, 'c','o','n','s','t') ||
+                    iskw(ps->tok, askw, 'r','e','s','t','r','i','c','t') ||
+                    iskw(ps->tok, askw, 'v','o','l','a','t','i','l','e') ));
+                ps->tok = lext(ps->ls)) {
+            for (unsigned k = 0; k < countof(/*arr.type.quals*/arr.type.info.arr.quals); k++) if (QUAL_END == arr.type.quals[k]) {
+                //arr.type.quals[k] = askw; // XXX: I'm confused tbh
+                arr.type.info.arr.quals[k] = askw;
+                break;
+            }
+        }
+
+        if (ps->tok.len) switch (*ps->tok.ptr) {
         case '*':
-            lext(ls);
+            lext(ps->ls);
+            //_expect(ps->tok, "]");
             // fall through
         case ']':
-            tok = lext(ls);
-            break;
-        default:
-            parse_expression(&(parse_expr_state){.ls= ls}, tok);
-            tok = lext(ls);
+            ps->tok = lext(ps->ls);
+            _parse_decl_post(ps, capt, &arr);
+            return;
         }
-    } // while <decl>[<arrinfo>]
 
-    if (on) on(usr, &decl, &tok);
+        exitf("NIY: array size");
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                // TODO:
+                //.usr= [ps, arr= &arr, capt],
+                //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
+                //    _expect(tok, "]");
+                //    usr->arr->type.info.arr.count = expr;
+                //    ps->tok = lext(ps->ls);
+                //    _parse_decl_post(ps, capt, &arr);
+                //},
+            }, ps->tok);
+        return;
+    }
 
-#   undef is1
-    return tok;
-} // _parse_declarator
+    capt->then(ps, capt->next, decl);
+}
 
-bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
-#   define is(wo) (!dyarr_cmp((&(bufsl){.ptr= wo, .len= strlen(wo)}), &tok))
-#   define is1(w) (tok.len && w == *tok.ptr)
-#   define isid() (tok.len && ('_' == *tok.ptr || ('A' <= *tok.ptr && *tok.ptr <= 'Z') || ('a' <= *tok.ptr && *tok.ptr <= 'z') || ('0' <= *tok.ptr && *tok.ptr <= '9')))
-#   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(tok, __VA_ARGS__)) goto notkw;
+/// parse the params of a function
+void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    struct decl_type_param node = {.decl= decl}; // here so it's not deallocated before the recursion
+    declaration ref fun_decl = capt->hold;
 
-    for (unsigned askw; tok.len; tok = lext(ps->ls)) redo: switch (askw = tok.len <3 ? 0 : kw(tok.ptr)) {
-    case 0: goto notkw;
+    bool last = ')' == *ps->tok.ptr;
+    if (last || ',' == *ps->tok.ptr) {
+        struct decl_type_fun* const fun = &fun_decl->type.info.fun;
+        ps->tok = lext(ps->ls);
+
+        if (!decl) {
+            if (last) {
+                fun->count = -1; // eg. `int a();`
+                _parse_decl_post(ps, capt, fun_decl);
+                return;
+            } else exitf("NIY: syntax error in params");
+        }
+
+        if (!(last && !decl->name.len && 4 == decl->type.name.len && !memcmp("void", decl->type.name.ptr, 4))) {
+            fun->count++;
+            if (!fun->first) fun->first = &node;
+            else for (struct decl_type_param* curr = fun->first ;3; curr = curr->next) if (!curr->next) {
+                curr->next = &node;
+                break;
+            }
+        }
+
+        if (last) {
+            _parse_decl_post(ps, capt, fun_decl);
+            return;
+        }
+    }
+
+    _parse_decl_spec(ps, &(struct _parse_decl_capture){
+            .next= capt,
+            .then= _parse_decl_params,
+        }, &(declaration){0});
+}
+
+/// parse values of an enum
+void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref _) {
+    (void)_;
+    struct decl_type_enumer node = {.name= ps->tok}; // here so it's not deallocated before the recursion
+    declaration ref enu_decl = capt->hold;
+
+    struct decl_type_enu* const enu = &enu_decl->type.info.enu;
+    enu->count++;
+    if (!enu->first) enu->first = &node;
+    else for (struct decl_type_enumer* curr = enu->first ;3; curr = curr->next) if (!curr->next) {
+        curr->next = &node;
+        break;
+    }
+
+    if ('=' == *ps->tok.ptr) {
+        ps->tok = lext(ps->ls);
+        exitf("NIY: enumerator value");
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                // TODO:
+                //.usr= [ps, pexpr= &node.expr, capt],
+                //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
+                //    _expect(tok, "," or "}");
+                //    *pexpr = expr;
+                //    if ('}') _parse_decl_post;
+                //    else _parse_decl_enumer;
+                //}
+            }, ps->tok);
+        return;
+    }
+
+    if (',' == *ps->tok.ptr) ps->tok = lext(ps->ls);
+    if ('}' == *ps->tok.ptr) {
+        _parse_decl_post(ps, capt, enu_decl);
+        return;
+    }
+
+    _parse_decl_enumer(ps, capt, NULL);
+}
+
+/// parse fields of a struct/union
+void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    struct decl_type_field node = {.decl= decl}; // here so it's not deallocated before the recursion
+    declaration ref comp_decl = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is [0]
+    declaration cref base = ((declaration**)capt->hold)[1];
+
+    bool reset = ';' == *ps->tok.ptr;
+    if (reset || ',' == *ps->tok.ptr) {
+        struct decl_type_comp* const comp = &comp_decl->type.info.comp;
+        ps->tok = lext(ps->ls);
+
+        comp->count++;
+        if (!comp->first) comp->first = &node;
+        else for (struct decl_type_field* curr = comp->first ;3; curr = curr->next) if (!curr->next) {
+            curr->next = &node;
+            break;
+        }
+
+        if (':' == *ps->tok.ptr) {
+            ps->tok = lext(ps->ls);
+            exitf("NIY: bitfield width");
+            parse_expression(&(parse_expr_state){
+                    .ls= ps->ls,
+                    // TODO:
+                    //.usr= [ps, field= &decl, capt],
+                    //.on= (void ref usr, expression ref expr, bufsl ref tok) -> {
+                    //    _expect(tok, "," or ";");
+                    //    usr->field... = expr;
+                    //    ps->tok = lext(ps->ls);
+                    //    // all the stuff below:
+                    //    if ('}') _parse_decl_post;
+                    //    else _parse_decl_spec;
+                    //},
+                }, ps->tok);
+            return;
+        }
+
+        if ('}' == *ps->tok.ptr) {
+            ps->tok = lext(ps->ls);
+            _parse_decl_post(ps, capt, comp_decl);
+            return;
+        }
+    }
+
+    declaration niwbase = reset ? (declaration){0} : *base;
+    _parse_decl_spec(ps, &(struct _parse_decl_capture){
+            .next= capt,
+            .then= _parse_decl_fields,
+        }, &niwbase);
+}
+
+/// parse the specifier and initial qualifiers then one declarator
+void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+#   define is(wo) (!dyarr_cmp((&(bufsl){.ptr= wo, .len= strlen(wo)}), &ps->tok))
+#   define is1(w) (ps->tok.len && w == *ps->tok.ptr)
+#   define isid() (ps->tok.len && ('_' == *ps->tok.ptr || ('A' <= *ps->tok.ptr && *ps->tok.ptr <= 'Z') || ('a' <= *ps->tok.ptr && *ps->tok.ptr <= 'z') || ('0' <= *ps->tok.ptr && *ps->tok.ptr <= '9')))
+#   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(ps->tok, __VA_ARGS__)) goto notkw;
+
+    for (unsigned askw; ps->tok.len; ps->tok = lext(ps->ls)) redo: switch (askw = ps->tok.len <3 ? 0 : kw(ps->tok.ptr)) {
+    case 0: goto notkw; // here as to remove warning for the `if` right after
 
     case_iskw('t','y','p','e','d','e','f') case_iskw('e','x','t','e','r','n') case_iskw('s','t','a','t','i','c') case_iskw('a','u','t','o') case_iskw('r','e','g','i','s','t','e','r')
-        ps->base.spec = askw;
-        break;
+        decl->spec = askw;
+        continue;
 
     case_iskw('s','i','g','n','e','d') case_iskw('u','n','s','i','g','n','e','d') case_iskw('s','h','o','r','t') case_iskw('l','o','n','g')
-        if (!ps->base.type.name.len) ps->base.type.name = (bufsl){.ptr= "int", .len= 3};
+        if (!decl->type.name.len) decl->type.name = (bufsl){.ptr= "int", .len= 3};
     case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e') case_iskw('i','n','l','i','n','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
-        for (unsigned k = 0; k < countof(ps->base.type.quals); k++) if (QUAL_END == ps->base.type.quals[k]) {
-            ps->base.type.quals[k] = askw;
+        for (unsigned k = 0; k < countof(decl->type.quals); k++) if (QUAL_END == decl->type.quals[k]) {
+            decl->type.quals[k] = askw;
             break;
         }
-        break;
+        continue;
 
     case_iskw('s','t','r','u','c','t') case_iskw('u','n','i','o','n') case_iskw('e','n','u','m')
-        ps->base.type.kind = askw;
-        tok = lext(ps->ls);
+        decl->type.kind = askw;
+        bool const e = KIND_ENUM == askw;
+        ps->tok = lext(ps->ls);
         if (isid()) {
-            ps->base.type.name = tok;
-            tok = lext(ps->ls);
+            decl->type.name = ps->tok;
+            ps->tok = lext(ps->ls);
         }
         if (is1('{')) {
-            tok = lext(ps->ls);
-            if (KIND_ENUM == askw) {
-                // TODO: store the names and values
-                do {
-                    bufsl name = tok;
-                    tok = lext(ps->ls);
-                    if (is1('=')) tok = parse_expression(&(parse_expr_state){.ls= ps->ls}, lext(ps->ls));
-                    if (is1(',')) tok = lext(ps->ls);
-                } while (isid());
-            } else if (!is1('}')) return parse_declaration(&(parse_decl_state){
-                    .ls= ps->ls,
-                    .usr= &(struct _parse_put_field_capt){.ls= ps->ls, .usr= ps->usr, .on= ps->on, .objc= &ps->base},
-                    .on= (void(*)())_decl_put_field},
-                    lext(ps->ls));
-            tok = lext(ps->ls);
-            if (is1(';')) {
-                if (ps->on) ps->on(ps->usr, &ps->base, &tok);
-                return tok;
-            } else goto redo;
-        } else {
-            if (KIND_STRUCT == askw || KIND_UNION == askw)
-                ps->base.type.info.obj.count = -1;
-            goto redo;
+            ps->tok = lext(ps->ls);
+            if (e) _parse_decl_enumer(ps, &(struct _parse_decl_capture){
+                    .hold= decl,
+                    .next= capt->next,
+                    .then= capt->then,
+                }, NULL);
+            else _parse_decl_fields(ps, &(struct _parse_decl_capture){
+                    .hold= (void*)(declaration*[2]){decl, &(declaration){0}}, // yyy: whatever, see _parse_decl_fields
+                    .next= capt->next,
+                    .then= capt->then,
+                }, NULL);
+            return;
         }
-        break;
+        if (!e) decl->type.info.comp.count = -1;
+        goto redo;
 
     default:
     notkw:
-        ;
-        bufsl tok1 = tok, tok2 = lext(ps->ls);
-        if (tok2.len && isid()) switch (*tok2.ptr) {
-        case '(': // eg `int (a);`
-            if (!ps->base.type.name.len) {
-                ps->base.type.name = tok1;
-                tok1 = tok2;
-                tok2 = lext(ps->ls);
-            } // fall through
-        case ',': case ';': case ')': case '[':
-            break;
-        default:
-            ps->base.type.name = tok1;
-            tok = tok2;
-            goto redo;
+        // at this point it can be (in a valid declaration):
+        // - a name:
+        //   - name of the type -> only if not already found
+        //   - it's a declarator
+        // - a '*' a '(' or -> it's a declarator
+        // - (in the params of a function declaration):
+        //   - a ',' or a ')' -> emit and return
+        // - a '=' or a ',' or a ';' -> emit and return
+
+        if (ps->tok.len) {
+            if (isid()) {
+                if (!decl->type.name.len) {
+                    decl->type.name = ps->tok;
+                    continue;
+                }
+                declaration cpy = *decl;
+                _parse_decl_ator(ps, capt, &cpy);
+                return;
+            }
+
+            switch (*ps->tok.ptr) {
+            case '=': case ',': case ';': case ')': // shortcut one stack frame
+                capt->then(ps, capt->next, decl);
+                return;
+            case '*': case '(':;
+                declaration cpy = *decl;
+                _parse_decl_ator(ps, capt, &cpy);
+                return;
+            }
         }
 
-        tok = _parse_declarator(ps->ls, ps->usr, ps->on, tok1, tok2, &ps->base);
-        return tok;
+        exitf("NIY: syntax error in spec");
     } // while-switch tok
 
 #   undef case_iskw
 #   undef isid
 #   undef is1
 #   undef is
-    return tok;
-} // parse_declaration
+
+    exitf("NIY: syntax error (I *think* we're not supposed to be here?)");
+}
+
+/// callback chain tail end which call user code
+void _parse_decl_exit(parse_decl_state ref ps, struct _parse_decl_capture ref _, declaration ref decl) {
+    (void)_;
+    if (ps->on) ps->on(ps->usr, decl, &ps->tok);
+}
+
+bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
+    ps->tok = tok;
+    _parse_decl_spec(ps, &(struct _parse_decl_capture){.then= _parse_decl_exit}, &ps->base);
+    return ps->tok;
+}
 
 #undef iskw
 #undef iskwx

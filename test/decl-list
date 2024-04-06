@@ -29,9 +29,9 @@ void print_type(struct decl_type cref type, unsigned const depth) {
     case KIND_STRUCT:
     case KIND_UNION:
         printf("%s %.*s", unkw(type->kind), (unsigned)type->name.len, type->name.ptr);
-        if (-1 == type->info.obj.count) break;
+        if (-1 == type->info.comp.count) break;
         printf(type->name.len ? " {\n" : "{\n");
-        for (struct decl_type_field* curr = type->info.obj.first; curr; curr = curr->next) {
+        for (struct decl_type_field* curr = type->info.comp.first; curr; curr = curr->next) {
             printf("%*s", (depth+1)*4, "");
             print_decl(curr->decl, depth+1);
             printf("\n");
@@ -52,7 +52,7 @@ void print_type(struct decl_type cref type, unsigned const depth) {
 
     case KIND_FUN:
         printf("(");
-        if (!type->info.fun.count) printf("void");
+        if (-1 == type->info.fun.count) printf("...");
         for (struct decl_type_param* curr = type->info.fun.first; curr; curr = curr->next) {
             print_decl(curr->decl, depth);
             if (curr->next) printf(", ");

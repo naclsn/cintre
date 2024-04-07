@@ -1,5 +1,33 @@
-/// C parser of sort
-    // TODO: if (!tok.len) return tok;
+/// C parser around the lexer; examples:
+/// ```c
+/// lex_state ls = ...;
+/// my_state_t my_state = ...;
+///
+/// void accept_decl(my_state_t* me, declaration const* decl, bufsl* tok) { ... }
+/// void accept_expr(my_state_t* me, expression* expr, bufsl* tok) { ... }
+///
+/// {
+///     parse_decl_state decl_ps = {.ls= &ls, .usr= &my_state, .on= accept_decl};
+///     bufsl after = parse_declaration(&decl_ps, lext(&ls));
+///     // note: `int a, b;` have 2 declarations with the same "base", so it
+///     // will be 2 calls to `parse_declaration` with the same state
+///     // however when the ';' is found the usual behavior is to reset:
+///     if (';' == *after.ptr) decl_ps.base = (declaration){0};
+/// }
+///
+/// {
+///     parse_expr_state expr_ps = {.ls= &ls, .usr= &my_state, .on= accept_expr};
+///     bufsl after = parse_expression(&expr_ps, lext(&ls));
+/// }
+/// ```
+///
+/// It makes use of the call stack, that is nothing is allocated on the heap
+/// and the result needs to be handled in the "accept" callback (or copied over
+/// to the heap at this point).
+
+// TODO: if (!tok.len) return tok;
+// TODO: once thoroughly tested, look for avoidable capture-copying
+// (that could be replaced with mutating an existing capture)
 
 #ifndef CINTRE_PARSER_H
 #define CINTRE_PARSER_H
@@ -249,7 +277,7 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         _parse_decl_ator(ps, capt, &ptr);
         return;
 
-    case '=': case ',': case ';': case ')':
+    case '=': case ',': case ';': case ')': case ':':
         capt->then(ps, capt->next, decl);
         return;
     }
@@ -268,9 +296,9 @@ void _parse_decl_close(parse_decl_state ref ps, struct _parse_decl_capture ref c
     if (ps->tok.len) {
         declaration ref before = capt->hold;
 
-        void print_decl(declaration cref decl, unsigned const depth);
-        printf("!! before is "); print_decl(before, 0); printf("\n");
-        printf("!!   decl is "); print_decl(  decl, 0); printf("\n");
+        //void print_decl(declaration cref decl, unsigned const depth);
+        //printf("!! before is "); print_decl(before, 0); printf("\n");
+        //printf("!!   decl is "); print_decl(  decl, 0); printf("\n");
 
         if ('(' == *ps->tok.ptr) {
             // `.. (*a)(..)`
@@ -425,7 +453,7 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
 void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
     struct decl_type_field node = {.decl= decl}; // here so it's not deallocated before the recursion
     declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is [0]
-    declaration ref base = ((declaration**)capt->hold)[1];
+    declaration* ref base = ((declaration**)capt->hold)+1;
 
     bool bitw = ':' == *ps->tok.ptr;
     bool reset = ';' == *ps->tok.ptr;
@@ -445,22 +473,36 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
         if (bitw) {
             parse_expression(&(parse_expr_state){
                     .ls= ps->ls,
-                    .usr= (void*[4]){comp, base, ps, capt},
+                    .usr= (void*[4]){comp, *base, ps, capt},
                     .on= (void(*)())_parse_on_bitfield_width,
                 }, ps->tok);
             return;
         }
 
-        if (reset && '}' == *ps->tok.ptr) {
+        if ('}' == *ps->tok.ptr) {
+            if (!reset) exitf("NIY: syntax error in fields (found , where ; expected)");
             ps->tok = lext(ps->ls);
             _parse_decl_ator(ps, capt, comp);
             return;
         }
     }
 
-    declaration niwbase = reset ? (declaration){0} : *base;
+    if ('}' == *ps->tok.ptr) {
+        if (decl) exitf("NIY: syntax error in fields (missing ; after declaration)");
+        ps->tok = lext(ps->ls);
+        _parse_decl_ator(ps, capt, comp);
+        return;
+    }
+
+    declaration niwbase = reset ? (declaration){0} : **base;
+    //*base = &niwbase; // yyy: once thoroughly tested, this may be an avoidable capture-copying
     _parse_decl_spec(ps, &(struct _parse_decl_capture){
-            .next= capt,
+            //.next= capt,
+            .next= &(struct _parse_decl_capture){
+                .hold= (void*)(declaration*[2]){comp, &niwbase}, // yyy: whatever, see _parse_decl_fields
+                .next= capt->next,
+                .then= capt->then,
+            },
             .then= _parse_decl_fields,
         }, &niwbase);
 }
@@ -522,13 +564,19 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         // - a '*' a '(' or -> it's a declarator
         // - (in the params of a function declaration):
         //   - a ',' or a ')' -> emit and return
+        // - (in the fields of a struct):
+        //   - a ':' -> emit and return
         // - a '=' or a ',' or a ';' -> emit and return
 
         if (ps->tok.len) {
             if (isid()) {
-                if (!decl->type.name.len || (
-                            3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
-                            && 6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6) )) {
+                if (!decl->type.name.len
+                        || (3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
+                            && (6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6)
+                                || 3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3)
+                                )
+                            )
+                        ) {
                     decl->type.name = ps->tok;
                     continue;
                 }
@@ -538,7 +586,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             }
 
             switch (*ps->tok.ptr) {
-            case '=': case ',': case ';': case ')': // shortcut one stack frame
+            case '=': case ',': case ';': case ')': case ':': // shortcut one stack frame
                 capt->then(ps, capt->next, decl);
                 return;
             case '*': case '(':;

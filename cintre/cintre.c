@@ -430,8 +430,8 @@ int main(void) {
                     char cref name = dyarr_bot(&locals)->name;
                     tok = parse_expression(&gs.expr, (bufsl){.ptr= name, .len= strlen(name)});
                 }
-                // FIXME: can never be true until parsing of the comma operator is done properly
-                //        (ie. cannot occure at this point of the syntax-)
+                // FIXME: sometime incorrect until parsing of the comma operator is done properly
+                //        (if there was an '=')
             } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs.lexr), true : false);
 
             gs.decl.base = (declaration){0};

@@ -2,7 +2,7 @@
 prog=${0%/*}/../build/${0##*/}.exe
 base=${0%/*}/in/${0##*/}
 set -ex
-cc -x c $0 -o $prog || exit 1
+cc -ggdb -O0 -x c $0 -o $prog || exit 1
 case $1 in
     check)  bla() { diff -u $1 -; };;
     update) bla() { cat >$1; };;

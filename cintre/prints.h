@@ -58,7 +58,7 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
 
     case KIND_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
-        _print_decl_type(strm, ty->info.ptr);
+        _print_decl_type(strm, &ty->info.ptr->type);
         fprintf(strm, "]");
         break;
 
@@ -71,14 +71,14 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
             if (it->next) fprintf(strm, ", ");
         }
         fprintf(strm, ") -> ");
-        _print_decl_type(strm, ty->info.fun.ret);
+        _print_decl_type(strm, &ty->info.fun.ret->type);
         break;
 
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (!ty->info.arr.count) fprintf(strm, "_, ");
         else fprintf(strm, "(expression*)%p, ", ty->info.arr.count);
-        _print_decl_type(strm, ty->info.arr.item);
+        _print_decl_type(strm, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;
     }

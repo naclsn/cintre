@@ -53,7 +53,7 @@ void print_type(struct decl_type cref type, unsigned const depth) {
 
     case KIND_PTR:
         printf("*(");
-        print_type(type->info.ptr, depth);
+        print_type(&type->info.ptr->type, depth);
         printf(")");
         break;
 
@@ -65,14 +65,14 @@ void print_type(struct decl_type cref type, unsigned const depth) {
             if (curr->next) printf(", ");
         }
         printf(") -> ");
-        print_type(type->info.fun.ret, depth);
+        print_type(&type->info.fun.ret->type, depth);
         break;
 
     case KIND_ARR:
         printf(type->info.arr.statik ? "[sta " : "[");
         if (!type->info.arr.count) printf("*]");
         else printf("%.*s]", (unsigned)type->info.arr.count->info.atom.len, type->info.arr.count->info.atom.ptr);
-        print_type(type->info.arr.item, depth);
+        print_type(&type->info.arr.item->type, depth);
         break;
     }
 

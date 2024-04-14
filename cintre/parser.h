@@ -74,7 +74,7 @@ typedef struct declaration {
         } kind;
 
         union decl_type_info {
-            struct decl_type const* ptr;
+            struct declaration const* ptr;
             struct decl_type_comp {
                 size_t count; // -1 if no body
                 struct decl_type_field {
@@ -92,7 +92,7 @@ typedef struct declaration {
                 }* first;
             } enu; // enum
             struct decl_type_fun {
-                struct decl_type const* ret;
+                struct declaration const* ret;
                 size_t count; // -1 when (), 0 when (void), n otherwise
                 struct decl_type_param {
                     struct declaration const* decl;
@@ -100,7 +100,7 @@ typedef struct declaration {
                 }* first;
             } fun;
             struct deck_type_arr {
-                struct decl_type const* item;
+                struct declaration const* item;
                 struct expression* count; // NULL when [*] or [], n otherwise
                 bool statik;
             } arr;
@@ -193,7 +193,7 @@ struct _parse_decl_capture {
     struct _parse_decl_capture ref next;
     _parse_decl_closure_t ref then;
 };
-_parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_post, _parse_decl_params, _parse_decl_enumer, _parse_decl_fields, _parse_decl_spec;
+_parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_fixup, _parse_decl_post, _parse_decl_params, _parse_decl_enumer, _parse_decl_fields, _parse_decl_spec;
 
 void _parse_on_array_size(void ref decl_ps_capt[3], expression ref expr, bufsl ref tok) {
     declaration ref arr = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
@@ -254,14 +254,14 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
                     .then= capt->then,
                 },
                 .then= _parse_decl_close,
-            }, decl);
+            }, &before);
         return;
 
     case '*':
         ps->tok = lext(ps->ls);
         declaration ptr = {
             .spec= decl->spec,
-            .type= {.kind= KIND_PTR, .info.ptr= &decl->type},
+            .type= {.kind= KIND_PTR, .info.ptr= decl},
             .name= decl->name,
         };
         for (unsigned askw; (3 < ps->tok.len && (askw = kw(ps->tok.ptr),
@@ -292,25 +292,39 @@ void _parse_decl_close(parse_decl_state ref ps, struct _parse_decl_capture ref c
     //_expect(ps->tok, ")");
     ps->tok = lext(ps->ls);
 
-    // TODO:
-    if (ps->tok.len) {
-        declaration ref before = capt->hold;
-
-        //void print_decl(declaration cref decl, unsigned const depth);
-        //printf("!! before is "); print_decl(before, 0); printf("\n");
-        //printf("!!   decl is "); print_decl(  decl, 0); printf("\n");
-
-        if ('(' == *ps->tok.ptr) {
-            // `.. (*a)(..)`
-        }
-        else if ('[' == *ps->tok.ptr) {
-            // `.. (*a)[..]`
-        }
-
-        // setup the call to _post in a way that it fills in the inner to the ptr
+    declaration ref before = capt->hold;
+    if (decl != before) {
+        _parse_decl_post(ps, &(struct _parse_decl_capture){
+                .next= &(struct _parse_decl_capture){
+                    .hold= (void*)(declaration*[2]){before, decl}, // yyy: need both
+                    .next= capt->next,
+                    .then= capt->then,
+                },
+                .then= _parse_decl_fixup,
+            }, before);
+        return;
     }
+    // eg. `int (a)` would get there, because `decl == before == ptr to the "int" typed base`
 
     _parse_decl_post(ps, capt, decl);
+}
+
+/// fixup after a parenthesised declarator like `(*a)`
+void _parse_decl_fixup(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref after) {
+    declaration cref before = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is all that
+    declaration* hold = ((declaration**)capt->hold)[1];
+
+    // 'visit' hold; until find before; replace with after
+    declaration** it = &hold;
+    do switch ((*it)->type.kind) { // xxx: casts are to discard const qualifier
+        case KIND_PTR: it = (declaration**)&(*it)->type.info.ptr;      break;
+        case KIND_FUN: it = (declaration**)&(*it)->type.info.fun.ret;  break;
+        case KIND_ARR: it = (declaration**)&(*it)->type.info.arr.item; break;
+        default: exitf("unreachable");
+    } while (before != *it);
+    *it = after;
+
+    capt->then(ps, capt->next, hold);
 }
 
 /// postfix declarator notations
@@ -323,7 +337,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         ps->tok = lext(ps->ls);
         declaration fun = {
             .spec= decl->spec,
-            .type= {.kind= KIND_FUN, .info.fun.ret= &decl->type},
+            .type= {.kind= KIND_FUN, .info.fun.ret= decl},
             .name= decl->name,
         };
         _parse_decl_params(ps, &(struct _parse_decl_capture){
@@ -337,7 +351,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         ps->tok = lext(ps->ls);
         declaration arr = {
             .spec= decl->spec,
-            .type= {.kind= KIND_ARR, .info.arr.item= &decl->type},
+            .type= {.kind= KIND_ARR, .info.arr.item= decl},
             .name= decl->name,
         };
         if (3 < ps->tok.len && iskwx(ps->tok, 's','t','a','t','i','c')) {
@@ -452,7 +466,7 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
 /// parse fields of a struct/union
 void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
     struct decl_type_field node = {.decl= decl}; // here so it's not deallocated before the recursion
-    declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is [0]
+    declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is all that
     declaration* ref base = ((declaration**)capt->hold)+1;
 
     bool bitw = ':' == *ps->tok.ptr;

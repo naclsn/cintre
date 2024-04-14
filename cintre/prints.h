@@ -7,10 +7,10 @@
 #include "compiler.h"
 
 void print_decl(FILE ref strm, declaration cref decl);
-void print_expr(FILE ref strm, expression cref expr, unsigned depth);
+void print_expr(FILE ref strm, expression cref expr, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty);
 void print_code(FILE ref strm, bytecode const code);
-void print_item(FILE ref strm, struct adpt_item cref it, char cref stack);
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
 
 void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
@@ -97,7 +97,7 @@ void print_decl(FILE ref strm, declaration cref decl) {
     _print_decl_type(strm, &decl->type);
 }
 
-void print_expr(FILE ref strm, expression cref expr, unsigned depth) {
+void print_expr(FILE ref strm, expression cref expr, unsigned const depth) {
     static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
     for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
 
@@ -303,10 +303,12 @@ void print_code(FILE ref strm, bytecode const code) {
     }
 }
 
-void print_item(FILE ref strm, struct adpt_item cref it, char cref stack) {
-    fprintf(strm, "%s: ", it->name);
-    print_type(strm, it->type);
-    fprintf(strm, "\n   = ");
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth) {
+    if (!depth) {
+        fprintf(strm, "%s: ", it->name);
+        print_type(strm, it->type);
+        fprintf(strm, "\n   = ");
+    }
 
     void cref p = ITEM_VALUE == it->kind
         ? it->as.object
@@ -342,12 +344,43 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack) {
     case TYPE_FLOAT:  fprintf(strm, "%f",       *(float*)p);          break;
     case TYPE_DOUBLE: fprintf(strm, "%lf",      *(double*)p);         break;
 
-    // TODO: complete
-    case TYPE_STRUCT: fprintf(strm, "{..}"); break;
-    case TYPE_UNION:  fprintf(strm, "{..}"); break;
-    case TYPE_FUN:    fprintf(strm, "(%p)", p); break;
-    case TYPE_PTR:    fprintf(strm, "%p", p); break;
-    case TYPE_ARR:    fprintf(strm, "[..]"); break;
+    case TYPE_STRUCT:
+    case TYPE_UNION:
+        fprintf(strm, "{\n");
+        for (size_t k = 0; k < it->type->info.comp.count; k++) {
+            struct adpt_comp_field cref f = it->type->info.comp.fields+k;
+            fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
+            print_item(strm, &(struct adpt_item){
+                    .type= f->type,
+                    .as.object= (void*)p+f->offset, // xxx: discards const
+                }, stack, depth+1);
+            fprintf(strm, "\n");
+        }
+        fprintf(strm, "%*s}", depth*3, "");
+        break;
+
+    case TYPE_FUN: fprintf(strm, "(%p)", p); break;
+
+    case TYPE_PTR:
+        fprintf(strm, "(%p) ", p);
+        print_item(strm, &(struct adpt_item){
+                .type= it->type->info.to,
+                .as.object= *(void**)p,
+            }, stack, depth);
+        break;
+
+    case TYPE_ARR:
+        fprintf(strm, "[\n");
+        for (size_t k = 0; k < it->type->info.arr.count; k++) {
+            fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
+            print_item(strm, &(struct adpt_item){
+                    .type= it->type->info.arr.item,
+                    .as.object= (void*)p+k*it->type->info.arr.item->size, // xxx: discards const
+                }, stack, depth+1);
+            fprintf(strm, "\n");
+        }
+        fprintf(strm, "%*s]", depth*3, "");
+        break;
     }
 
     fprintf(strm, "\n");

@@ -302,11 +302,11 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     if (!name) free(it), exitf("OOM");
     name[decl->name.len] = '\0';
     memcpy(it, &(struct adpt_item){
-        .name= memcpy(name, decl->name.ptr, decl->name.len),
-        .type= ty,
-        .kind= ITEM_VARIABLE,
-        .as.variable= gs->sp,
-    }, sizeof *it);
+            .name= memcpy(name, decl->name.ptr, decl->name.len),
+            .type= ty,
+            .kind= ITEM_VARIABLE,
+            .as.variable= gs->sp,
+        }, sizeof *it);
 }
 
 void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
@@ -443,6 +443,7 @@ int main(void) {
     ldel(&gs.lexr);
     for (size_t k = 0; k < locals.len; k++) {
         // TODO: free and recursively `locals.ptr[k].type`
+        //       (allocated in `decl_to_adapt`)
         free((void*)locals.ptr[k].name);
     }
     free(locals.ptr);

@@ -234,7 +234,6 @@ void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, buf
             .next= capt,
             .then= _parse_decl_fields,
         }, &niwbase);
-    // FIXME: syntax error with `struct { int a, b:3, c; } e;`
 }
 
 #define kw(s) kws(s[0],s[1],s[2],)

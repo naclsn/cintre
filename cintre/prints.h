@@ -77,7 +77,7 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (!ty->info.arr.count) fprintf(strm, "_, ");
-        else fprintf(strm, "(expression*)%p, ", ty->info.arr.count);
+        else fprintf(strm, "(expression*)%p, ", (void*)ty->info.arr.count);
         _print_decl_type(strm, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;
@@ -171,7 +171,7 @@ void print_type(FILE ref strm, struct adpt_type cref ty) {
 
     case TYPE_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
-        print_type(strm, ty->info.to);
+        print_type(strm, ty->info.ptr);
         fprintf(strm, "]");
         break;
 
@@ -352,7 +352,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
             fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
             print_item(strm, &(struct adpt_item){
                     .type= f->type,
-                    .as.object= (void*)p+f->offset, // xxx: discards const
+                    .as.object= (char*)p+f->offset, // xxx: discards const
                 }, stack, depth+1);
             fprintf(strm, "\n");
         }
@@ -364,7 +364,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     case TYPE_PTR:
         fprintf(strm, "(%p) ", p);
         print_item(strm, &(struct adpt_item){
-                .type= it->type->info.to,
+                .type= it->type->info.ptr,
                 .as.object= *(void**)p,
             }, stack, depth);
         break;
@@ -375,7 +375,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
             fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
             print_item(strm, &(struct adpt_item){
                     .type= it->type->info.arr.item,
-                    .as.object= (void*)p+k*it->type->info.arr.item->size, // xxx: discards const
+                    .as.object= (char*)p+k*it->type->info.arr.item->size, // xxx: discards const
                 }, stack, depth+1);
             fprintf(strm, "\n");
         }

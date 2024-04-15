@@ -70,7 +70,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 .size= sizeof(char*),
                 .align= sizeof(char*),
                 .tyty= TYPE_PTR,
-                .info.to= &adptb_char_type,
+                .info.ptr= &adptb_char_type,
             };
             return expr->usr = (void*)&string;
         }
@@ -86,7 +86,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         failforward(off, expr->info.subscr.off);
         if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
         if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
-        return expr->usr = (void*)base->info.to;
+        return expr->usr = (void*)base->info.ptr;
 
     case BINOP_CALL:
         failforward(base, expr->info.call.base);
@@ -186,7 +186,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         fail("NIY: address of");
     case UNOP_DEREF:
         failforward(opr, expr->info.unary.opr);
-        if (isptr(opr)) return expr->usr = (void*)opr->info.to;
+        if (isptr(opr)) return expr->usr = (void*)opr->info.ptr;
         fail("Operand is not of a pointer type");
 
     case UNOP_PMEMBER:

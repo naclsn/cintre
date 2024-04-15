@@ -41,7 +41,7 @@ static struct adpt_type {
             size_t const count;
         } const fun; // fun
 
-        struct adpt_type const* const to; // ptr
+        struct adpt_type const* const ptr; // ptr
 
         struct adpt_arr_desc {
             struct adpt_type const* const item;

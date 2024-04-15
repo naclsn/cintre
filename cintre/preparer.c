@@ -1,3 +1,5 @@
+// big ol' TODO: all of it
+
 #include "common.h"
 #include "parser.h"
 
@@ -36,7 +38,7 @@ void emit_type(struct decl_type cref type) {
 
     case KIND_ENUM:   fprintf(result, "enum ");   break;
     case KIND_PTR:
-        emit_type(type->info.ptr);
+        emit_type(&type->info.ptr->type);
         fprintf(result, "*");
         break;
     case KIND_FUN: break;
@@ -79,7 +81,7 @@ void emit_decl(declaration cref decl) {
         if ((size_t)-1 == decl->type.info.fun.count)
             exitf("%s:%zu: not supported, use (void) or specify the actual arguments", ls.file, ls.line);
 
-        emit_type(decl->type.info.fun.ret);
+        emit_type(&decl->type.info.fun.ret->type);
         fprintf(result, "%.*s(", bufmt(decl->name));
         if (!decl->type.info.fun.count) printf("void");
         for (struct decl_type_param* curr = decl->type.info.fun.first; curr; curr = curr->next) {
@@ -95,7 +97,7 @@ void emit_decl(declaration cref decl) {
         if (ret_void) fprintf(result, "    (void)ret;\n    ");
         else {
             fprintf(result, "    *(");
-            emit_type(decl->type.info.fun.ret);
+            emit_type(&decl->type.info.fun.ret->type);
             fprintf(result, "*)ret = ");
         }
         fprintf(result, "%.*s(", bufmt(decl->name));
@@ -127,13 +129,13 @@ void emit_decl(declaration cref decl) {
                       "                          .size= sizeof(char*),\n"
                       "                          .align= sizeof(char*),\n"
                       "                          .tyty= TYPE_PTR,\n"
-                      "                          .info.to= &adptb_char_type,\n"
+                      "                          .info.ptr= &adptb_char_type,\n"
                       "                      }"
                     : "(struct adpt_type){\n"
                       "                          .size= sizeof(int*),\n"
                       "                          .align= sizeof(int*),\n"
                       "                          .tyty= TYPE_PTR,\n"
-                      "                          .info.to= &adptb_int_type,\n"
+                      "                          .info.ptr= &adptb_int_type,\n"
                       "                      }"
                     ;
             }

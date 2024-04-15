@@ -75,6 +75,7 @@ typedef struct declaration {
 
         union decl_type_info {
             struct declaration const* ptr;
+
             struct decl_type_comp {
                 size_t count; // -1 if no body
                 struct decl_type_field {
@@ -83,6 +84,7 @@ typedef struct declaration {
                     struct decl_type_field* next;
                 }* first;
             } comp; // struct or union
+
             struct decl_type_enu {
                 size_t count;
                 struct decl_type_enumer {
@@ -91,6 +93,7 @@ typedef struct declaration {
                     struct decl_type_enumer* next;
                 }* first;
             } enu; // enum
+
             struct decl_type_fun {
                 struct declaration const* ret;
                 size_t count; // -1 when (), 0 when (void), n otherwise
@@ -99,6 +102,7 @@ typedef struct declaration {
                     struct decl_type_param* next;
                 }* first;
             } fun;
+
             struct deck_type_arr {
                 struct declaration const* item;
                 struct expression* count; // NULL when [*] or [], n otherwise
@@ -585,8 +589,8 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             if (isid()) {
                 if (!decl->type.name.len
                         || (3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
-                            && (6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6)
-                                || 3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3)
+                            && ((6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6))
+                                || (3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3))
                                 )
                             )
                         ) {

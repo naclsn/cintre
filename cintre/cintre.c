@@ -580,3 +580,8 @@ int main(void) {
 
     return EXIT_SUCCESS;
 }
+
+#if 0
+lv /TODO\|FIXME\|XXX/ cintre/*.[ch]
+*/
+#endif

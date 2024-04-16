@@ -17,7 +17,8 @@ struct slot {
   size_t /*const*/ codeat;
 
   enum {
-      _slot_value,
+      //_slot_broken,
+      _slot_value= 1,
       _slot_used,
       _slot_variable,
   } usage;
@@ -34,7 +35,7 @@ struct slot {
           unsigned long ul;
           float f;
           double d;
-          unsigned char bytes[8];
+          unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
       } value;
       size_t variable; // XXX: say
   } as;
@@ -49,7 +50,7 @@ typedef struct compile_state {
 /// does modify the expression by at least adding a typing info in the usr fields
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
 /// the expression should have been sieved through `check_expression` first
-void compile_expression(compile_state ref cs, expression ref expr, struct slot ref slot);
+void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot);
 
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
@@ -57,8 +58,11 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)
 #   define isflt(__ty)  (TYPE_FLOAT <= (__ty)->tyty && (__ty)->tyty <= TYPE_DOUBLE)
 #   define isnum(__ty)  (isint(__ty) || isflt(__ty))
-#   define isptr(__ty)  (TYPE_PTR == (__ty)->tyty)
 #   define isfun(__ty)  (TYPE_FUN == (__ty)->tyty)
+#   define isptr(__ty)  (TYPE_PTR == (__ty)->tyty)
+#   define isarr(__ty)  (TYPE_ARR == (__ty)->tyty)
+#   define isindir(__ty)  (isptr(__ty) || isarr(__ty))
+#   define atindir(__ty)  (isptr(__ty) ? (__ty)->info.ptr : (__ty)->info.arr.item)
 
     struct adpt_type const *opr, *lhs, *rhs, *base, *off;
 
@@ -84,9 +88,9 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_SUBSCR:
         failforward(base, expr->info.subscr.base);
         failforward(off, expr->info.subscr.off);
-        if (!isptr(base)) fail("Base of subscript expression is not of a pointer type");
+        if (!isindir(base)) fail("Base of subscript expression is not of a pointer type");
         if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
-        return expr->usr = (void*)base->info.ptr;
+        return expr->usr = (void*)atindir(base);
 
     case BINOP_CALL:
         failforward(base, expr->info.call.base);
@@ -151,7 +155,11 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_GE:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if ((isnum(lhs) && isnum(rhs)) || (isptr(lhs) && isptr(rhs))) return expr->usr = (void*)&adptb_int_type; // yyy
+        if ((isnum(lhs) && isnum(rhs))
+                || (isptr(lhs) && isptr(rhs))
+                || (isarr(lhs) && isptr(rhs))
+                || (isptr(lhs) && isarr(rhs))
+                ) return expr->usr = (void*)&adptb_int_type; // yyy
         fail("Values are not comparable");
 
     case BINOP_BOR:
@@ -168,30 +176,32 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_ADD:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        bool lnum = isnum(lhs), rnum = isnum(rhs);
-        if (lnum && rnum) return expr->usr = (void*)lhs; // yyy
-        if (lnum && isptr(rhs)) return expr->usr = (void*)rhs;
-        if (rnum && isptr(lhs)) return expr->usr = (void*)lhs;
-        fail("Both operands are not of an arithmetic type");
-
-    case BINOP_REM:
+        if (isnum(lhs) && isindir(rhs)) return expr->usr = (void*)rhs; // XXX: forwards the array type :/
+        if (isnum(rhs) && isindir(lhs)) return expr->usr = (void*)lhs;
+        if (0) {
+            // fall through
+    case BINOP_REM: // xxx: keep forgetting it's only on ints...
     case BINOP_DIV:
     case BINOP_MUL:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        if (isnum(lhs) && isnum(rhs)) return expr->usr = (void*)lhs; // yyy
+            failforward(lhs, expr->info.binary.lhs);
+            failforward(rhs, expr->info.binary.rhs);
+        }
+        if (isnum(lhs) && isnum(rhs)) {
+            // (yyy: gross approximation of implicit conversions' "common real type" and only with ints)
+            return expr->usr = (void*)(lhs->size < rhs->size ? rhs : lhs);
+        }
         fail("Both operands are not of an arithmetic type");
 
     case UNOP_ADDR:
         fail("NIY: address of");
     case UNOP_DEREF:
         failforward(opr, expr->info.unary.opr);
-        if (isptr(opr)) return expr->usr = (void*)opr->info.ptr;
+        if (isindir(opr)) return expr->usr = (void*)atindir(opr);
         fail("Operand is not of a pointer type");
 
     case UNOP_PMEMBER:
         failforward(opr, expr->info.unary.opr);
-        if (!isptr(opr)) fail("Operand is not of a pointer type");
+        if (!isindir(opr)) fail("Operand is not of a pointer type");
         if (0)
     case UNOP_MEMBER:
             failforward(opr, expr->info.unary.opr);
@@ -215,14 +225,17 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case UNOP_POST_INC:
         // TODO: assignable
         failforward(opr, expr->info.unary.opr);
-        if (isnum(opr) || isptr(opr)) return expr->usr = (void*)opr;
+        if (isnum(opr) || isindir(opr)) return expr->usr = (void*)opr; // XXX: forwards the array type :/
         fail("Operand is not of an arithmetic type");
     }
 
     fail("Broken tree with unknown expression kind %d", expr->kind);
 
-#   undef isfun
+#   undef atindir
+#   undef isindir
+#   undef isarr
 #   undef isptr
+#   undef isfun
 #   undef isnum
 #   undef isflt
 #   undef isint
@@ -363,30 +376,36 @@ enum _arith_w _slot_arith_w(struct slot cref slot) {
     }
 }
 
-size_t _slot_v_bytes(struct slot cref slot) {
-    return slot->as.value.ul; // XXX
-    //switch (slot->ty->kind) {
-    //case ADPT_KIND_CHAR:   return *(size_t*)&slot->value.c;
-    //case ADPT_KIND_UCHAR:  return *(size_t*)&slot->value.uc;
-    //case ADPT_KIND_SCHAR:  return *(size_t*)&slot->value.sc;
-    //case ADPT_KIND_SHORT:  return *(size_t*)&slot->value.ss;
-    //case ADPT_KIND_INT:    return *(size_t*)&slot->value.si;
-    //case ADPT_KIND_LONG:   return *(size_t*)&slot->value.sl;
-    //case ADPT_KIND_USHORT: return *(size_t*)&slot->value.us;
-    //case ADPT_KIND_UINT:   return *(size_t*)&slot->value.ui;
-    //case ADPT_KIND_ULONG:  return *(size_t*)&slot->value.ul;
-    //case ADPT_KIND_ENUM:   return *(size_t*)&slot->value.si;
-    //case ADPT_KIND_FLOAT:  return *(size_t*)&slot->value.f;
-    //case ADPT_KIND_DOUBLE: return *(size_t*)&slot->value.d;
-    //default: return 0;
-    //}
+size_t _slot_arith_v(struct slot cref slot) {
+    switch (slot->ty->tyty) {
+    case TYPE_CHAR:   return slot->as.value.c;
+    case TYPE_UCHAR:  return slot->as.value.uc;
+    case TYPE_SCHAR:  return slot->as.value.sc;
+    case TYPE_SHORT:  return slot->as.value.ss;
+    case TYPE_INT:    return slot->as.value.si;
+    case TYPE_LONG:   return slot->as.value.sl;
+    case TYPE_USHORT: return slot->as.value.us;
+    case TYPE_UINT:   return slot->as.value.ui;
+    case TYPE_ULONG:  return slot->as.value.ul;
+    case TYPE_FLOAT:  return slot->as.value.f;
+    case TYPE_DOUBLE: return slot->as.value.d;
+    default: return 0;
+    }
 }
 
 void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cref small_src) {
-    // XXX: sign/zero
-    *dyarr_push(&cs->res) = _l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size);
-    *dyarr_push(&cs->res) = at(big_dst); // yyy: dst
-    *dyarr_push(&cs->res) = at(small_src); // yyy: src
+    // unsigned -> unsigned: zero extend
+    // signed   -> signed:   sign extend
+    // unsigned -> signed:   zero extend
+    // signed   -> unsigned: sign extend
+
+    unsigned char ref b = dyarr_insert(&cs->res, cs->res.len, 3);
+
+    bool const issigned = TYPE_SCHAR == small_src->ty->tyty || TYPE_SHORT == small_src->ty->tyty || TYPE_INT == small_src->ty->tyty || TYPE_LONG == small_src->ty->tyty;
+
+    b[0] = _l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size) | !issigned<<3;
+    b[1] = at(big_dst);
+    b[2] = at(small_src);
 }
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)  \
@@ -416,12 +435,131 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
     case TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
     case TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
     case TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
-    case TYPE_PTR: exitf("NIY: pointer arithmetics");  \
     default:;  \
     } while (0)
+
+/// makes a slot "pysical", ie if it was a value, it will be inserted as data
+/// and marked as used (but if it was a variable, it will stay as is)
+void _materialize_slot(compile_state ref cs, struct slot ref slot) {
+    if (_slot_value == slot->usage) {
+        _emit_data(cs, at(slot), slot->ty->size, slot->as.value.bytes); // (yyy: endianness)
+        slot->usage = _slot_used;
+    }
+}
+
+/// fits an expression to a slot by compiling into it with any necessary
+/// conversion step (allocates and de-allocates a slot if needed)
+void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot ref slot) {
+    // so we have `slot` and `expr` of two types
+    // "assignablility" should already be ensured by `check_expression`
+
+    // ideal case when they have the same type is just compile the expr w/ res into the slot
+    // otherwise ptr and num conversions must take place:
+    // - ptr -> ptr is whever
+    // - int -> int:
+    //   - if the slot is wider then it can still be emit into it, conversion in-place (zero/sign extend)
+    //   - otherwise truncating cvt doesn't requier an other slot, conversion in-place (because little endian)
+    // - float -> int, int -> float, float -> float: TODO
+
+    // after compiling the expression, either
+    // - the slot is used in which case conversion steps in-place
+    // - the slot is a variable, a widening conversion will need to copy
+    // - the slot is a value, compile-time conversion
+
+    bool const is_to_int = TYPE_CHAR <= slot->ty->tyty && slot->ty->tyty <= TYPE_ULONG;
+    bool const is_to_flt = TYPE_FLOAT <= slot->ty->tyty && slot->ty->tyty <= TYPE_DOUBLE;
+
+    // not a number, nothing to do about it, all should be already type-sound
+    if (!is_to_int && !is_to_flt) {
+        compile_expression(cs, expr, slot);
+        return;
+    }
+
+    struct adpt_type cref expr_ty = expr->usr;
+    // YYY: we don't handle floats for now, so same size -> nothing to do
+    if (slot->ty->size == expr_ty->size) {
+        compile_expression(cs, expr, slot);
+        return;
+    }
+
+    bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
+    bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
+
+    bool const is_to_signed = TYPE_SCHAR == slot->ty->tyty || TYPE_SHORT == slot->ty->tyty || TYPE_INT == slot->ty->tyty || TYPE_LONG == slot->ty->tyty;
+    bool const is_to_unsigned = TYPE_UCHAR == slot->ty->tyty || TYPE_USHORT == slot->ty->tyty || TYPE_UINT == slot->ty->tyty || TYPE_ULONG == slot->ty->tyty;
+    bool const is_from_signed = TYPE_SCHAR == expr_ty->tyty || TYPE_SHORT == expr_ty->tyty || TYPE_INT == expr_ty->tyty || TYPE_LONG == expr_ty->tyty;
+    bool const is_from_unsigned = TYPE_UCHAR == expr_ty->tyty || TYPE_USHORT == expr_ty->tyty || TYPE_UINT == expr_ty->tyty || TYPE_ULONG == expr_ty->tyty;
+
+    // if slot too small, make temporary
+    if (slot->ty->size < expr_ty->size) {
+        struct slot tmp = {.ty= expr_ty};
+        _alloc_slot(cs, &tmp);
+        compile_expression(cs, expr, &tmp);
+
+        switch (tmp.usage) {
+        case _slot_value:
+            slot->usage = _slot_value;
+            memcpy(slot->as.value.bytes, tmp.as.value.bytes, slot->ty->size); // (yyy: endianness)
+            _cancel_slot(cs, &tmp);
+            break;
+
+        case _slot_used:
+            slot->usage = _slot_used;
+            _emit_move(cs, at(slot), slot->ty->size, at(&tmp)); // (yyy: endianness)
+            _rewind_slot(cs, &tmp);
+            break;
+
+        case _slot_variable:
+            slot->usage = _slot_variable;
+            slot->as.variable = tmp.as.variable; // (yyy: endianness)
+            _cancel_slot(cs, &tmp);
+            break;
+        }
+    }
+
+    // slot large enough for the expr result
+    else {
+        compile_expression(cs, expr, slot);
+
+        // unsigned -> unsigned: zero extend
+        // signed   -> signed:   sign extend
+        // unsigned -> signed:   zero extend
+        // signed   -> unsigned: sign extend
+
+        switch (slot->usage) {
+        case _slot_value:
+            if (is_from_unsigned)
+                memcpy(slot->as.value.bytes, memcpy((unsigned char[sizeof slot->as.value.bytes]){0}, slot->as.value.bytes, expr_ty->size), slot->ty->size);
+            else {
+                unsigned char x[sizeof slot->as.value.bytes] = {0};
+                bool const sign_bit = slot->as.value.bytes[expr_ty->size] & 0x80; // (yyy: endianness)
+                if (sign_bit) memset(x, 0xff, sizeof x);
+                memcpy(slot->as.value.bytes, memcpy(x, slot->as.value.bytes, expr_ty->size), slot->ty->size);
+            }
+            break;
+
+        case _slot_used:
+            _emit_extend(cs, slot, &(struct slot){
+                .ty= expr_ty,
+                .loc= slot->loc,
+                .usage= _slot_used,
+            });
+            break;
+
+        case _slot_variable:
+            slot->usage = _slot_used;
+            _emit_extend(cs, slot, &(struct slot){
+                .ty= expr_ty,
+                .loc= slot->as.variable,
+                .usage= _slot_used,
+            });
+            break;
+        }
+    }
+}
 // }}}
 
-void compile_expression(compile_state ref cs, expression ref expr, struct slot ref slot) {
+void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot) {
     size_t plen = cs->res.len;
     size_t pvsp = cs->vsp;
 
@@ -486,7 +624,12 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
         }
         return;
 
-    case BINOP_SUBSCR:
+    case BINOP_SUBSCR: if(0) { // TODO: wip
+            struct slot base = {.ty= expr->info.subscr.base->usr};
+            _alloc_slot(cs, &base);
+
+            compile_expression(cs, expr->info.subscr.base, &base);
+        }
         return;
 
     case BINOP_CALL: {
@@ -494,46 +637,40 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
             _alloc_slot(cs, &fun);
 
             compile_expression(cs, expr->info.call.base, &fun);
-            if (_slot_value == fun.usage) {
-                _emit_data(cs, at(&fun), sizeof(void*), (unsigned char*)&fun.as.value.ul); // (yyy: endianness)
-                fun.usage = _slot_used;
-            }
+            if (_slot_variable == fun.usage) _cancel_slot(cs, &fun);
+            else _materialize_slot(cs, &fun);
 
             struct slot args[15] = {0};
-            expression* cons = expr->info.call.args;
+            expression const* cons = expr->info.call.args;
             size_t count = fun.ty->info.fun.count;
             for (size_t k = 0; k < count; k++) {
                 args[k].ty = fun.ty->info.fun.params[count-1-k].type;
                 _alloc_slot(cs, args+k);
 
-                if (k+1 == count) {
-                    compile_expression(cs, cons, args+k);
-                } else {
-                    compile_expression(cs, cons->info.binary.rhs, args+k);
-                    cons = cons->info.binary.lhs;
-                }
+                expression cref arg_expr = k < count ? cons->info.binary.rhs : cons;
+                if (k < count) cons = cons->info.binary.lhs;
 
-                // TODO: size/zero extend and float conversions as needed
-
-                if (_slot_value == args[k].usage) {
-                    _emit_data(cs, at(args+k), args[k].ty->size, (unsigned char*)&args[k].as.value.ul); // (yyy: endianness)
-                    args[k].usage = _slot_used;
-                } else if (_slot_variable == args[k].usage) {
+                _fit_expr_to_slot(cs, arg_expr, args+k);
+                if (_slot_variable == args[k].usage) {
                     _cancel_slot(cs, args+k);
                     args[k].loc = args[k].as.variable;
-                }
+                } else _materialize_slot(cs, args+k);
             }
 
             _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? atv(&fun) : at(&fun));
             for (size_t k = count; k; k--) _emit_call_arg(cs, at(args+k-1));
 
             slot->usage = _slot_used;
+            // call rewind even if the slot for fun itself isn't used because
+            // there might have been arguments; rewind itself is smart enough
+            // to not emit a 0 pop anyways
             _rewind_slot(cs, &fun);
         }
         return;
 
     case BINOP_TERNCOND:
     case BINOP_TERNBRANCH:
+        exitf("NIY: branches");
         return;
 
     case BINOP_COMMA: {
@@ -596,6 +733,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
 
     case BINOP_LOR:
     case BINOP_LAND:
+        exitf("NIY: branches");
         return;
 
     case BINOP_EQ:
@@ -604,6 +742,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case BINOP_GT:
     case BINOP_LE:
     case BINOP_GE:
+        exitf("NIY: comparisons");
         return;
 
     case BINOP_BOR:
@@ -611,6 +750,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case BINOP_BAND:
     case BINOP_BSHL:
     case BINOP_BSHR:
+        exitf("NIY: bitwise operations");
         return;
 
     case BINOP_SUB:
@@ -618,69 +758,102 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case BINOP_REM:
     case BINOP_DIV:
     case BINOP_MUL: {
-            // TODO: so there is a lot of room for improvement and less moving the data around
-            //       but this was to get off the ground with a straightforward version
-            struct adpt_type const* lhs_ty = expr->info.binary.lhs->usr;
-            struct adpt_type const* rhs_ty = expr->info.binary.rhs->usr;
-
-            // figure out in which type is the calculation performed in
-            // TODO: no floating points for now
-            // (yyy: gross approximation of implicit conversions' "common real type" with ints only)
-            struct adpt_type const* const ty = lhs_ty->size < rhs_ty->size ? rhs_ty : lhs_ty;
-            struct slot res = {.ty= ty};
-            _alloc_slot(cs, &res); // res in the comon type
-
-            struct slot lr[2] = {0};
-            for (size_t k = 0; k < 2; k++) {
-                struct adpt_type const* const xhs_ty = !k ? lhs_ty : rhs_ty;
-                // push and do xhs
-                struct slot xhs = {.ty= xhs_ty};
-                _alloc_slot(cs, &xhs);
-                compile_expression(cs, !k ? expr->info.binary.lhs : expr->info.binary.rhs, &xhs);
-                // (todo: if _slot_value, if _slot_variable)
-                lr[k].ty = ty;
-                if (xhs_ty->size < ty->size) {
-                    // then (if needed) push and cvt xhs
-                    _alloc_slot(cs, lr+k);
-                    _emit_extend(cs, lr+k, &xhs);
-                } else lr[k] = xhs;
+            struct slot lhs = *slot, rhs;
+            _fit_expr_to_slot(cs, expr->info.binary.lhs, &lhs);
+            if (_slot_used != lhs.usage)
+                rhs = *slot;
+            else {
+                rhs.ty = slot->ty;
+                _alloc_slot(cs, &rhs);
             }
+            _fit_expr_to_slot(cs, expr->info.binary.rhs, &rhs);
+            if (_slot_used != rhs.usage) _cancel_slot(cs, &rhs);
 
-            // do the operation
-            switch (expr->kind) {
-            case BINOP_SUB: _emit_arith(cs, _ops_sub, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
-            case BINOP_ADD: _emit_arith(cs, _ops_add, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
-            case BINOP_REM: _emit_arith(cs, _ops_rem, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
-            case BINOP_DIV: _emit_arith(cs, _ops_div, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
-            case BINOP_MUL: _emit_arith(cs, _ops_mul, _slot_arith_w(&res), at(&res), at(lr+0), at(lr+1)); break;
-            default:;
-            }
+            switch (lhs.usage<<4 | rhs.usage) {
+                // neither is "physical"
+            case _slot_value<<4 | _slot_value:
+                switch (expr->kind) {
+                case BINOP_SUB: _cfold_arith     (slot, &lhs, -, &rhs); break;
+                case BINOP_ADD: _cfold_arith     (slot, &lhs, +, &rhs); break;
+                case BINOP_REM: _cfold_arith_ints(slot, &lhs, %, &rhs); break;
+                case BINOP_DIV: _cfold_arith     (slot, &lhs, /, &rhs); break;
+                case BINOP_MUL: _cfold_arith     (slot, &lhs, *, &rhs); break;
+                default:;
+                }
+                slot->usage = _slot_value;
+                break;
 
-            // cvt copy into slot
-            if (ty->size < slot->ty->size)
-                _emit_extend(cs, slot, &res);
-            else
-                _emit_move(cs, at(slot), slot->ty->size, at(&res));
-            slot->usage = _slot_used;
+                enum _arith_op op;
 
-            _rewind_slot(cs, &res);
+                // one is "physical"
+                struct slot const* val, * xhs;
+            case _slot_used<<4 | _slot_value:
+            case _slot_variable<<4 | _slot_value:
+                // rhs is value, use the r[..]i form
+                val = &rhs, xhs = &lhs, op = 0;
+                switch (expr->kind) {
+                case BINOP_SUB: op = _ops_rsubi; break;
+                case BINOP_REM: op = _ops_rremi; break;
+                case BINOP_DIV: op = _ops_rdivi; break;
+                default:;
+                }
+                if (0)
+            case _slot_value<<4 | _slot_used:
+            case _slot_value<<4 | _slot_variable:
+                    // lhs is value, use the [..]i form
+                    val = &lhs, xhs = &rhs, op = 0;
+                if (!op) switch (expr->kind) {
+                case BINOP_SUB: op = _ops_subi; break;
+                case BINOP_ADD: op = _ops_addi; break;
+                case BINOP_REM: op = _ops_remi; break;
+                case BINOP_DIV: op = _ops_divi; break;
+                case BINOP_MUL: op = _ops_muli; break;
+                default:;
+                }
+                _emit_arith(cs, op, _slot_arith_w(slot), at(slot),
+                        _slot_arith_v(val),
+                        _slot_variable == xhs->usage ? atv(xhs) : at(xhs));
+                slot->usage = _slot_used;
+                break;
+
+                // both are "physical"
+            case _slot_used<<4 | _slot_used:
+            case _slot_used<<4 | _slot_variable:
+            case _slot_variable<<4 | _slot_used:
+            case _slot_variable<<4 | _slot_variable:
+                switch (expr->kind) {
+                case BINOP_SUB: op = _ops_sub; break;
+                case BINOP_ADD: op = _ops_add; break;
+                case BINOP_REM: op = _ops_rem; break;
+                case BINOP_DIV: op = _ops_div; break;
+                case BINOP_MUL: op = _ops_mul; break;
+                default: exitf("unreachable");
+                }
+                _emit_arith(cs, op, _slot_arith_w(slot), at(slot),
+                        _slot_variable == lhs.usage ? atv(&lhs) : at(&lhs),
+                        _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
+                slot->usage = _slot_used;
+                break;
+            } // switch both usages
+
+            if (_slot_used == rhs.usage) _rewind_slot(cs, &rhs);
         }
         return;
 
     case UNOP_ADDR:
     case UNOP_DEREF:
+        exitf("NIY: address of and dereference");
         return;
 
     case UNOP_PMEMBER:
     case UNOP_MEMBER:
+        exitf("NIY: member access");
         return;
 
     case UNOP_BNOT:
     case UNOP_LNOT:
     case UNOP_MINUS:
     case UNOP_PLUS:
-        // remark: the destination slot's type should already match the operand's
-        // ie we don't worry about slot width nor conversions here
         compile_expression(cs, expr->info.unary.opr, slot);
 
         switch (slot->usage) {
@@ -709,6 +882,7 @@ void compile_expression(compile_state ref cs, expression ref expr, struct slot r
     case UNOP_PRE_INC:
     case UNOP_POST_DEC:
     case UNOP_POST_INC:
+        exitf("NIY: post and pre inc/dec");
         return;
     }
 

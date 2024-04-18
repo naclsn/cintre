@@ -767,11 +767,11 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 _alloc_slot(cs, &rhs);
             }
             _fit_expr_to_slot(cs, expr->info.binary.rhs, &rhs);
-            if (_slot_used != rhs.usage) _cancel_slot(cs, &rhs);
+            if (_slot_used == lhs.usage && _slot_used != rhs.usage) _cancel_slot(cs, &rhs);
 
-            switch (lhs.usage<<4 | rhs.usage) {
+            switch (lhs.usage <<8| rhs.usage) {
                 // neither is "physical"
-            case _slot_value<<4 | _slot_value:
+            case _slot_value <<8| _slot_value:
                 switch (expr->kind) {
                 case BINOP_SUB: _cfold_arith     (slot, &lhs, -, &rhs); break;
                 case BINOP_ADD: _cfold_arith     (slot, &lhs, +, &rhs); break;
@@ -787,8 +787,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
                 // one is "physical"
                 struct slot const* val, * xhs;
-            case _slot_used<<4 | _slot_value:
-            case _slot_variable<<4 | _slot_value:
+            case _slot_used     <<8| _slot_value:
+            case _slot_variable <<8| _slot_value:
                 // rhs is value, use the r[..]i form
                 val = &rhs, xhs = &lhs, op = 0;
                 switch (expr->kind) {
@@ -798,8 +798,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 default:;
                 }
                 if (0)
-            case _slot_value<<4 | _slot_used:
-            case _slot_value<<4 | _slot_variable:
+            case _slot_value    <<8| _slot_used:
+            case _slot_value    <<8| _slot_variable:
                     // lhs is value, use the [..]i form
                     val = &lhs, xhs = &rhs, op = 0;
                 if (!op) switch (expr->kind) {
@@ -817,10 +817,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 break;
 
                 // both are "physical"
-            case _slot_used<<4 | _slot_used:
-            case _slot_used<<4 | _slot_variable:
-            case _slot_variable<<4 | _slot_used:
-            case _slot_variable<<4 | _slot_variable:
+            case _slot_used     <<8| _slot_used:
+            case _slot_used     <<8| _slot_variable:
+            case _slot_variable <<8| _slot_used:
+            case _slot_variable <<8| _slot_variable:
                 switch (expr->kind) {
                 case BINOP_SUB: op = _ops_sub; break;
                 case BINOP_ADD: op = _ops_add; break;
@@ -836,7 +836,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 break;
             } // switch both usages
 
-            if (_slot_used == rhs.usage) _rewind_slot(cs, &rhs);
+            if (_slot_used == lhs.usage && _slot_used == rhs.usage) _rewind_slot(cs, &rhs);
         }
         return;
 
@@ -867,13 +867,16 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             }
             break;
 
-        case _slot_used:
-            if (UNOP_MINUS == expr->kind) _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, at(slot));
-            break;
-
-        case _slot_variable:
-            if (UNOP_MINUS == expr->kind) _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, atv(slot));
-            else if (UNOP_PLUS == expr->kind) _emit_move(cs, at(slot), slot->ty->size, atv(slot));
+            size_t at_slot;
+        case _slot_used:     at_slot = at(slot); if (0)
+        case _slot_variable: at_slot = atv(slot);
+            switch (expr->kind) {
+            case UNOP_BNOT: _emit_arith(cs, _ops_bxori, _slot_arith_w(slot), at(slot), -1/* xxx: should be of the type's size, this is larger */, at_slot); break;
+            case UNOP_LNOT: exitf("NIY emit lnot"); break;
+            case UNOP_MINUS: _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, at_slot); break;
+            case UNOP_PLUS: _emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
+            default:;
+            }
             slot->usage = _slot_used;
         }
         return;
@@ -887,30 +890,6 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     }
 
 } // compile_expression
-
-bool compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
-    struct slot slot = {.ty= check_expression(cs, expr)};
-    if (!slot.ty) return false;
-    _alloc_slot(cs, &slot);
-
-    compile_expression(cs, expr, &slot);
-    switch (slot.usage) {
-    case _slot_value:
-        _emit_data(cs, at(&slot), slot.ty->size, slot.as.value.bytes);
-        break;
-
-    case _slot_used:
-        break;
-
-    case _slot_variable:
-        _emit_move(cs, at(&slot), slot.ty->size, atv(&slot));
-        // yyy: result is a variable, show it and not "_"?
-        break;
-    }
-    slot.usage = _slot_used;
-
-    return true;
-}
 
 #undef atv
 #undef at

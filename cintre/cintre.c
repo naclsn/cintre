@@ -20,6 +20,30 @@ typedef struct cintre_state {
     bytecode code;
 } cintre_state;
 
+bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
+    struct slot slot = {.ty= check_expression(cs, expr)};
+    if (!slot.ty) return false;
+    _alloc_slot(cs, &slot);
+
+    compile_expression(cs, expr, &slot);
+    switch (slot.usage) {
+    case _slot_value:
+        _emit_data(cs, slot.loc-cs->vsp, slot.ty->size, slot.as.value.bytes);
+        break;
+
+    case _slot_used:
+        break;
+
+    case _slot_variable:
+        _emit_move(cs, slot.loc-cs->vsp, slot.ty->size, slot.as.variable-cs->vsp);
+        // yyy: result is a variable, show it and not "_"?
+        break;
+    }
+    slot.usage = _slot_used;
+
+    return true;
+}
+
 // readline {{{
 #ifdef USE_READLINE
 #include <readline/readline.h>
@@ -508,7 +532,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         return;
     }
 
-    bool r = compile_expression_tmp_wrap(&cs, expr);
+    bool r = _compile_expression_tmp_wrap(&cs, expr);
     gs->code = cs.res;
     if (!r) return;
 

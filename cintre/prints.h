@@ -363,10 +363,10 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
 
     case TYPE_PTR:
         fprintf(strm, "(%p) ", p);
-        print_item(strm, &(struct adpt_item){
-                .type= it->type->info.ptr,
-                .as.object= *(void**)p,
-            }, stack, depth);
+        //print_item(strm, &(struct adpt_item){
+        //        .type= it->type->info.ptr,
+        //        .as.object= *(void**)p,
+        //    }, stack, depth);
         break;
 
     case TYPE_ARR:

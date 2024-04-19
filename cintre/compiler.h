@@ -68,7 +68,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 
     switch (expr->kind) {
     case ATOM:;
-        char c = *expr->info.atom.ptr;
+        char const c = *expr->info.atom.ptr;
         if ('"' == c) {
             static struct adpt_type const string = {
                 .size= sizeof(char*),
@@ -80,7 +80,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         }
         if ('\'' == c) return expr->usr = (void*)&adptb_char_type;
         if ('0' <= c && c <= '9') return expr->usr = (void*)&adptb_int_type; // TODO: double and suffixes
-        struct adpt_item const* found = cs->lookup(expr->info.atom);
+        struct adpt_item cref found = cs->lookup(expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
         if (ITEM_TYPEDEF == found->kind) fail("Unexpected type name '%.*s'", bufmt(expr->info.atom));
         return expr->usr = (void*)found->type;
@@ -145,8 +145,6 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 
     case BINOP_LOR:
     case BINOP_LAND:
-        return expr->usr = (void*)&adptb_int_type; // yyy
-
     case BINOP_EQ:
     case BINOP_NE:
     case BINOP_LT:
@@ -155,11 +153,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_GE:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if ((isnum(lhs) && isnum(rhs))
-                || (isptr(lhs) && isptr(rhs))
-                || (isarr(lhs) && isptr(rhs))
-                || (isptr(lhs) && isarr(rhs))
-                ) return expr->usr = (void*)&adptb_int_type; // yyy
+        if ((isnum(lhs) || isindir(lhs)) && (isnum(rhs) || isindir(rhs))) // xxx: means can compare ptr and float for no reason..
+            return expr->usr = (void*)&adptb_int_type; // yyy
         fail("Values are not comparable");
 
     case BINOP_BOR:
@@ -167,6 +162,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_BAND:
     case BINOP_BSHL:
     case BINOP_BSHR:
+    case BINOP_REM:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
         if (isint(lhs) && isint(rhs)) return expr->usr = (void*)lhs; // yyy
@@ -180,7 +176,6 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (isnum(rhs) && isindir(lhs)) return expr->usr = (void*)lhs;
         if (0) {
             // fall through
-    case BINOP_REM: // xxx: keep forgetting it's only on ints...
     case BINOP_DIV:
     case BINOP_MUL:
             failforward(lhs, expr->info.binary.lhs);
@@ -192,8 +187,17 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         }
         fail("Both operands are not of an arithmetic type");
 
-    case UNOP_ADDR:
-        fail("NIY: address of");
+    case UNOP_ADDR: {
+            fail("NIY: address of");
+            static struct adpt_type const voidp = {
+                .size= sizeof(void*),
+                .align= sizeof(void*),
+                .tyty= TYPE_PTR,
+                .info.ptr= &adptb_void_type,
+            };
+            return expr->usr = (void*)&voidp; // XXX: yeah, nahh
+        }
+        fail("Cannot take the address of expression");
     case UNOP_DEREF:
         failforward(opr, expr->info.unary.opr);
         if (isindir(opr)) return expr->usr = (void*)atindir(opr);
@@ -241,7 +245,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   undef isint
 #   undef failforward
 #   undef fail
-} // typeof
+} // check_expression
 
 #define at(__slt)  ((__slt)->loc - cs->vsp)
 #define atv(__slt) ((__slt)->as.variable - cs->vsp)
@@ -306,6 +310,14 @@ void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char co
 
 void _emit_move(compile_state ref cs, size_t dst, size_t width, size_t src) {
     _emit_instr_w_opr(0x1f, dst, width, src);
+}
+
+void _emit_write(compile_state ref cs, size_t ptr_dst_slt, struct slot cref slot_src) {
+    _emit_instr_w_opr(0x2f, ptr_dst_slt, slot_src->ty->size, at(slot_src));
+}
+
+void _emit_read(compile_state ref cs, size_t ptr_src_slt, struct slot cref slot_dst) {
+    _emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, at(slot_dst));
 }
 
 //void _emit_slot_value(compile_state ref cs, struct slot cref slot) {
@@ -624,11 +636,19 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_SUBSCR: if(0) { // TODO: wip
+    case BINOP_SUBSCR: { // TODO: wip
             struct slot base = {.ty= expr->info.subscr.base->usr};
             _alloc_slot(cs, &base);
 
             compile_expression(cs, expr->info.subscr.base, &base);
+            // can be:
+            // - variable: stack, to ptr (far)
+            // - value: ptr (far), but outside of NULL..!?
+            // - used: -
+
+            struct slot off = {0};
+            compile_expression(cs, expr->info.subscr.off, &off);
+            slot->usage = _slot_variable;
         }
         return;
 
@@ -728,7 +748,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     case BINOP_ASGN_REM:
     case BINOP_ASGN_DIV:
     case BINOP_ASGN_MUL:
-        exitf("NIY: assignment with op");
+        exitf("NIY: compound assignment");
         return;
 
     case BINOP_LOR:
@@ -841,8 +861,31 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case UNOP_ADDR:
-    case UNOP_DEREF:
-        exitf("NIY: address of and dereference");
+        exitf("NIY: address of");
+        return;
+
+    case UNOP_DEREF: {
+            struct slot ptr = {.ty= expr->usr};
+            _alloc_slot(cs, &ptr);
+            compile_expression(cs, expr->info.unary.opr, &ptr);
+
+            switch (ptr.usage) {
+            case _slot_value:
+                exitf("deref on a compile time - this is surely very wrong");
+
+            case _slot_used:
+                _emit_read(cs, at(&ptr), slot);
+                _rewind_slot(cs, &ptr);
+                break;
+
+            case _slot_variable:
+                _cancel_slot(cs, &ptr);
+                _emit_read(cs, atv(&ptr), slot);
+                break;
+            }
+
+            slot->usage = _slot_used;
+        }
         return;
 
     case UNOP_PMEMBER:

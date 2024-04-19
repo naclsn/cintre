@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "parser.h"
+#include "prints.h"
 
 lex_state ls = {0};
 FILE* result = NULL;
@@ -15,8 +16,9 @@ void cleanup(void) {
 }
 
 // emit {{{
-void emit_decl(declaration cref decl);
 void emit_type(struct decl_type cref type);
+void emit_adpt_type(struct decl_type cref type);
+void emit_decl(declaration cref decl);
 
 void emit_type(struct decl_type cref type) {
     switch (type->kind) {
@@ -60,6 +62,36 @@ void emit_type(struct decl_type cref type) {
     }
 }
 
+void emit_adpt_type(struct decl_type cref type) {
+    switch (type->kind) {
+    case KIND_NOTAG:
+        if (bufis(type->name, "size_t")) {
+            fprintf(result, "adptb_ulong_type");
+            break;
+        }
+        fprintf(result, "adptb_%.*s_type", bufmt(type->name));
+        break;
+
+    case KIND_STRUCT:
+    case KIND_UNION:
+    case KIND_ENUM:
+        break;
+
+    case KIND_PTR:
+        fprintf(result, "(struct adpt_type){"
+                            ".size= sizeof(void*), "
+                            ".align= sizeof(void*), "
+                            ".tyty= TYPE_PTR, "
+                            ".info.ptr= &"); emit_adpt_type(&type->info.ptr->type);
+        fprintf(result, "}");
+        break;
+
+    case KIND_FUN:
+    case KIND_ARR:
+        break;
+    }
+}
+
 void emit_decl(declaration cref decl) {
     switch (decl->spec) {
     case SPEC_NONE: break;
@@ -91,10 +123,9 @@ void emit_decl(declaration cref decl) {
         }
         fprintf(result, ");\n");
 
-        bool ret_void = 4 == decl->type.info.fun.ret->name.len && !memcmp("void", decl->type.info.fun.ret->name.ptr, 4);
-
         fprintf(result, "void %.*s_adapt_call(char* ret, char** args) {\n", bufmt(decl->name));
-        if (ret_void) fprintf(result, "    (void)ret;\n    ");
+        if (bufis(decl->type.info.fun.ret->name, "void"))
+            fprintf(result, "    (void)ret;\n    ");
         else {
             fprintf(result, "    *(");
             emit_type(&decl->type.info.fun.ret->type);
@@ -116,31 +147,12 @@ void emit_decl(declaration cref decl) {
         fprintf(result, "    .size= %zu, .align= %zu,\n", sizeof&fprintf, sizeof&fprintf);
         fprintf(result, "    .tyty= TYPE_FUN,\n");
         fprintf(result, "    .info.fun= {\n");
-        fprintf(result, "        .ret= &%s,\n", ret_void ? "adptb_void_type" : "adptb_int_type");
+        fprintf(result, "        .ret= &"); emit_adpt_type(&decl->type.info.fun.ret->type); fprintf(result, ",\n");
         fprintf(result, "        .params= (struct adpt_fun_param[]){\n");
         size_t count = 0;
         for (struct decl_type_param* curr = decl->type.info.fun.first; curr; curr = curr->next) {
-            bool arg_char = 4 == curr->decl->type.name.len && !memcmp("char", curr->decl->type.name.ptr, 4);
-            char const* ty = arg_char ? "adptb_char_type" : "adptb_int_type";
-            if (KIND_PTR == curr->decl->type.kind) {
-                bool ptr_char = 4 == curr->decl->type.info.ptr->name.len && !memcmp("char", curr->decl->type.info.ptr->name.ptr, 4);
-                ty = ptr_char
-                    ? "(struct adpt_type){\n"
-                      "                          .size= sizeof(char*),\n"
-                      "                          .align= sizeof(char*),\n"
-                      "                          .tyty= TYPE_PTR,\n"
-                      "                          .info.ptr= &adptb_char_type,\n"
-                      "                      }"
-                    : "(struct adpt_type){\n"
-                      "                          .size= sizeof(int*),\n"
-                      "                          .align= sizeof(int*),\n"
-                      "                          .tyty= TYPE_PTR,\n"
-                      "                          .info.ptr= &adptb_int_type,\n"
-                      "                      }"
-                    ;
-            }
             fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
-            fprintf(result, "            , .type= &%s\n", ty);
+            fprintf(result, "            , .type= &"); emit_adpt_type(&curr->decl->type); fprintf(result, ",\n");
             fprintf(result, "            },\n");
             count++;
         }
@@ -157,7 +169,8 @@ void emit_decl(declaration cref decl) {
     }
 }
 
-void emit(void* usl, declaration cref decl, bufsl ref tok) {
+void emit(void* _, declaration cref decl, bufsl ref tok) {
+    (void)_;
     if (KIND_FUN != decl->type.kind) return; // yyy
 
     search_namespace(decl->name, seen) return;

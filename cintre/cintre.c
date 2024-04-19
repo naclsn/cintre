@@ -471,7 +471,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     //       a way it could be called from accept_decl (and maybe even
     //       accept_sttm, idk that doesn't make sense but all this isn't
     //       devised yest)
-    char const* const xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
+    char cref xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
     if (xcmdis("h")) {
@@ -489,7 +489,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     if (xcmdis("loc")) {
         printf("List of locals:\n");
         for (size_t k = 0; k < locals.len; k++) {
-            struct adpt_item const* it = locals.ptr+k;
+            struct adpt_item cref it = locals.ptr+k;
             if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
             else printf("   [top-%zu] %-8s\t", STACK_SIZE-it->as.variable, it->name);
             print_type(stdout, it->type);
@@ -503,7 +503,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         for (size_t ns = 0; ns < countof(namespaces); ns++) {
             printf("%s::\n", namespaces[ns].name);
             for (size_t k = 0; k < namespaces[ns].count; k++) {
-                struct adpt_item const* it = namespaces[ns].items+k;
+                struct adpt_item cref it = namespaces[ns].items+k;
                 if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
                 else printf("   [%p] %-8s\t", it->as.object, it->name);
                 print_type(stdout, it->type);
@@ -524,7 +524,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     compile_state cs = {.vsp= gs->sp, .res= gs->code, .lookup= gs->lookup};
 
     if (xcmdis("ty")) {
-        struct adpt_type const* ty = check_expression(&cs, expr);
+        struct adpt_type cref ty = check_expression(&cs, expr);
         if (!ty) return;
         printf("Expression is of type: ");
         print_type(stdout, ty);
@@ -532,7 +532,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         return;
     }
 
-    bool r = _compile_expression_tmp_wrap(&cs, expr);
+    bool const r = _compile_expression_tmp_wrap(&cs, expr);
     gs->code = cs.res;
     if (!r) return;
 
@@ -543,7 +543,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     }
 
     run(gs, gs->code);
-    struct adpt_item res = {
+    struct adpt_item const res = {
         .name= "_",
         .type= expr->usr,
         .kind= ITEM_VARIABLE,

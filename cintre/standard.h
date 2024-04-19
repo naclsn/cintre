@@ -9,6 +9,7 @@ int    strcoll(const char* s1, const char* s2);
 char*  strcpy(char* restrict dest, const char* restrict src);
 size_t strcspn(const char* s, const char* reject);
 char*  strdup(const char* s);
+char*  strerror(int errnum);
 char*  strfry(char* string);
 size_t strlen(const char* s);
 char*  strncat(char* restrict dest, const char* restrict src, size_t n);

@@ -23,6 +23,14 @@ build/a-standard.h: cintre/standard.h $(PR); $(PR) $< -o $@
 $(PR): cintre/preparer.c cintre/*.h; $(CC) $< -o $@ $(CFLAGS)
 .PRECIOUS: build/a-%.h build/%.o $(PR)
 
-test: test/???*; for it in $^; do ./$$it check && printf "\x1b[32m$$it success\x1b[m\n" || printf "\x1b[31m$$it failure\x1b[m\n"; done
-testup: test/???*; for it in $^; do ./$$it update; done
-.PHONY: test testup
+tests =         \
+    tok-stream  \
+    expr-tree   \
+    decl-list   \
+    comp-code   \
+
+test-%:; ./test/$* check && printf "\x1b[32m$@ success\x1b[m\n" || printf "\x1b[31m$@ failure\x1b[m\n"
+testup-%:; ./test/$* update
+test: $(addprefix test-,$(tests))
+testup: $(addprefix testup-,$(tests))
+.PHONY: test testup test-% testup-%

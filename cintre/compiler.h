@@ -37,7 +37,7 @@ struct slot {
           double d;
           unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
       } value;
-      size_t variable; // XXX: say
+      size_t variable;
   } as;
 };
 
@@ -79,7 +79,28 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             return expr->usr = (void*)&string;
         }
         if ('\'' == c) return expr->usr = (void*)&adptb_char_type;
-        if ('0' <= c && c <= '9') return expr->usr = (void*)&adptb_int_type; // TODO: double and suffixes
+        if (('0' <= c && c <= '9') || '.' == c) {
+            bool isfp = false; // is fp if has '.' or e/E/p/P
+            size_t const len = expr->info.atom.len;
+            char cref ptr = expr->info.atom.ptr;
+            char const* const isfpif = 2 < len && 'x' == ptr[1] ? ".Pp" : ".Ee";
+            for (size_t k = 0; k < len; k++) if (strchr(isfpif, ptr[k])) {
+                isfp = true;
+                break;
+            }
+            // f, u, l, ll, ul, lu, llu, ull
+            bool const isfloat = !(2 < len && 'x' == ptr[1]) && 'f' == (ptr[len-1]|32); // not if hex
+            bool isunsigned, islong;
+            if ((islong = 'l' == (ptr[len-1]|32)) || (isunsigned = 'u' == (ptr[len-1]|32))) {
+                if (islong) isunsigned = 'u' == (ptr[len-2-('l' == (ptr[len-2]|32))]|32);
+                else if (isunsigned) islong = 'l' == (ptr[len-2]|32);
+            }
+            return expr->usr = (void*)( isfloat ? &adptb_float_type
+                                      : isfp ? &adptb_double_type
+                                      : islong ? (isunsigned ? &adptb_ulong_type : &adptb_long_type)
+                                      : isunsigned ? &adptb_uint_type : &adptb_int_type
+                                      );
+        }
         struct adpt_item cref found = cs->lookup(expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
         if (ITEM_TYPEDEF == found->kind) fail("Unexpected type name '%.*s'", bufmt(expr->info.atom));
@@ -182,8 +203,11 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             failforward(rhs, expr->info.binary.rhs);
         }
         if (isnum(lhs) && isnum(rhs)) {
-            // (yyy: gross approximation of implicit conversions' "common real type" and only with ints)
-            return expr->usr = (void*)(lhs->size < rhs->size ? rhs : lhs);
+            bool const lf = isflt(lhs), rf = isflt(rhs);
+            // (yyy: approximation of implicit conversions' "common real type")
+            return expr->usr = (void*)( lf == rf ? (lhs->size < rhs->size ? rhs : lhs)
+                                      : lf ? lhs : rhs
+                                      );
         }
         fail("Both operands are not of an arithmetic type");
 
@@ -471,7 +495,7 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
     // - int -> int:
     //   - if the slot is wider then it can still be emit into it, conversion in-place (zero/sign extend)
     //   - otherwise truncating cvt doesn't requier an other slot, conversion in-place (because little endian)
-    // - float -> int, int -> float, float -> float: TODO
+    // - float -> int, int -> float, float -> float: ...
 
     // after compiling the expression, either
     // - the slot is used in which case conversion steps in-place
@@ -488,41 +512,61 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
     }
 
     struct adpt_type cref expr_ty = expr->usr;
-    // YYY: we don't handle floats for now, so same size -> nothing to do
-    if (slot->ty->size == expr_ty->size) {
+    bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
+    bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
+
+    // same size -> nothing to do
+    if (slot->ty->size == expr_ty->size && is_from_int == is_to_int) {
         compile_expression(cs, expr, slot);
         return;
     }
-
-    bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
-    bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
 
     bool const is_to_signed = TYPE_SCHAR == slot->ty->tyty || TYPE_SHORT == slot->ty->tyty || TYPE_INT == slot->ty->tyty || TYPE_LONG == slot->ty->tyty;
     bool const is_to_unsigned = TYPE_UCHAR == slot->ty->tyty || TYPE_USHORT == slot->ty->tyty || TYPE_UINT == slot->ty->tyty || TYPE_ULONG == slot->ty->tyty;
     bool const is_from_signed = TYPE_SCHAR == expr_ty->tyty || TYPE_SHORT == expr_ty->tyty || TYPE_INT == expr_ty->tyty || TYPE_LONG == expr_ty->tyty;
     bool const is_from_unsigned = TYPE_UCHAR == expr_ty->tyty || TYPE_USHORT == expr_ty->tyty || TYPE_UINT == expr_ty->tyty || TYPE_ULONG == expr_ty->tyty;
 
-    // if slot too small, make temporary
+    struct slot tmp = {.ty= expr_ty};
+
+    // if slot too small, make 'physical' temporary, else it'll used the same a `slot`
     if (slot->ty->size < expr_ty->size) {
-        struct slot tmp = {.ty= expr_ty};
         _alloc_slot(cs, &tmp);
         compile_expression(cs, expr, &tmp);
 
         switch (tmp.usage) {
         case _slot_value:
             slot->usage = _slot_value;
-            memcpy(slot->as.value.bytes, tmp.as.value.bytes, slot->ty->size); // (yyy: endianness)
             _cancel_slot(cs, &tmp);
+            switch (expr_ty->tyty <<8| slot->ty->tyty) {
+            case TYPE_LONG <<8| TYPE_FLOAT:  slot->as.value.f = tmp.as.value.sl; break;
+            case TYPE_ULONG <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.ul; break;
+            case TYPE_FLOAT <<8| TYPE_CHAR:   slot->as.value.c = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_UCHAR:  slot->as.value.uc = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_SCHAR:  slot->as.value.sc = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_SHORT:  slot->as.value.ss = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_USHORT: slot->as.value.us = tmp.as.value.f; break;
+            case TYPE_DOUBLE <<8| TYPE_CHAR:   slot->as.value.c = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_UCHAR:  slot->as.value.uc = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_SCHAR:  slot->as.value.sc = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_SHORT:  slot->as.value.ss = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_INT:    slot->as.value.si = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_USHORT: slot->as.value.us = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_UINT:   slot->as.value.ui = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.d; break;
+            default: memcpy(slot->as.value.bytes, tmp.as.value.bytes, slot->ty->size); // (yyy: endianness)
+            }
             break;
 
         case _slot_used:
             slot->usage = _slot_used;
+            // TODO: this is the int case
             _emit_move(cs, at(slot), slot->ty->size, at(&tmp)); // (yyy: endianness)
             _rewind_slot(cs, &tmp);
             break;
 
         case _slot_variable:
             slot->usage = _slot_variable;
+            // TODO: this is the int case
             slot->as.variable = tmp.as.variable; // (yyy: endianness)
             _cancel_slot(cs, &tmp);
             break;
@@ -531,38 +575,64 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
 
     // slot large enough for the expr result
     else {
-        compile_expression(cs, expr, slot);
+        tmp.loc = slot->loc;
+        compile_expression(cs, expr, &tmp);
 
-        // unsigned -> unsigned: zero extend
-        // signed   -> signed:   sign extend
-        // unsigned -> signed:   zero extend
-        // signed   -> unsigned: sign extend
-
-        switch (slot->usage) {
+        switch (tmp.usage) {
         case _slot_value:
-            if (is_from_unsigned)
-                memcpy(slot->as.value.bytes, memcpy((unsigned char[sizeof slot->as.value.bytes]){0}, slot->as.value.bytes, expr_ty->size), slot->ty->size);
-            else {
-                unsigned char x[sizeof slot->as.value.bytes] = {0};
-                bool const sign_bit = slot->as.value.bytes[expr_ty->size] & 0x80; // (yyy: endianness)
-                if (sign_bit) memset(x, 0xff, sizeof x);
-                memcpy(slot->as.value.bytes, memcpy(x, slot->as.value.bytes, expr_ty->size), slot->ty->size);
+            slot->usage = _slot_value;
+            switch (expr_ty->tyty <<8| slot->ty->tyty) {
+            case TYPE_CHAR   <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.c; break;
+            case TYPE_UCHAR  <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.uc; break;
+            case TYPE_SCHAR  <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.sc; break;
+            case TYPE_SHORT  <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.ss; break;
+            case TYPE_INT    <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.si; break;
+            case TYPE_USHORT <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.us; break;
+            case TYPE_UINT   <<8| TYPE_FLOAT: slot->as.value.f = tmp.as.value.ui; break;
+            case TYPE_CHAR   <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.c; break;
+            case TYPE_UCHAR  <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.uc; break;
+            case TYPE_SCHAR  <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.sc; break;
+            case TYPE_SHORT  <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ss; break;
+            case TYPE_INT    <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.si; break;
+            case TYPE_LONG   <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.sl; break;
+            case TYPE_USHORT <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.us; break;
+            case TYPE_UINT   <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ui; break;
+            case TYPE_ULONG  <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ul; break;
+            case TYPE_FLOAT <<8| TYPE_INT:   slot->as.value.si = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_UINT:  slot->as.value.ui = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_LONG:  slot->as.value.sl = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_ULONG: slot->as.value.ul = tmp.as.value.f; break;
+            case TYPE_FLOAT <<8| TYPE_DOUBLE: slot->as.value.d = tmp.as.value.f; break;
+            case TYPE_DOUBLE <<8| TYPE_LONG:  slot->as.value.sl = tmp.as.value.d; break;
+            case TYPE_DOUBLE <<8| TYPE_ULONG: slot->as.value.ul = tmp.as.value.d; break;
+            default:
+                if (is_from_unsigned)
+                    memcpy(slot->as.value.bytes, memcpy((unsigned char[sizeof slot->as.value.bytes]){0}, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
+                else {
+                    unsigned char x[sizeof slot->as.value.bytes] = {0};
+                    bool const sign_bit = tmp.as.value.bytes[expr_ty->size] & 0x80; // (yyy: endianness)
+                    if (sign_bit) memset(x, 0xff, sizeof x);
+                    memcpy(slot->as.value.bytes, memcpy(x, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
+                }
             }
             break;
 
         case _slot_used:
+            slot->usage = _slot_used;
+            // TODO: this is the int case
             _emit_extend(cs, slot, &(struct slot){
                 .ty= expr_ty,
-                .loc= slot->loc,
+                .loc= tmp.loc,
                 .usage= _slot_used,
             });
             break;
 
         case _slot_variable:
             slot->usage = _slot_used;
+            // TODO: this is the int case
             _emit_extend(cs, slot, &(struct slot){
                 .ty= expr_ty,
-                .loc= slot->as.variable,
+                .loc= tmp.as.variable,
                 .usage= _slot_used,
             });
             break;
@@ -577,8 +647,9 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
     switch (expr->kind) {
     case ATOM:;
-        char c = *expr->info.atom.ptr;
-        if ('"' == c) {
+        size_t const len = expr->info.atom.len;
+        char cref ptr = expr->info.atom.ptr;
+        if ('"' == ptr[0]) {
             slot->as.variable = -1;
             slot->usage = _slot_variable;
             exitf("NYI: string literal (should have been replaced with its slot during checking)");
@@ -587,9 +658,9 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             return;
         }
 
-        if ('\'' == c) {
-            char v = expr->info.atom.ptr[1];
-            if ('\\' == v) switch (expr->info.atom.ptr[2]) {
+        if ('\'' == ptr[0]) {
+            char v = ptr[1];
+            if ('\\' == v) switch (ptr[2]) {
             case '0': v = '\0'; break;
             case'\'': v = '\''; break;
             case '"': v = '\"'; break;
@@ -603,26 +674,83 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case 't': v = '\t'; break;
             case 'v': v = '\v'; break;
             }
-#           ifdef NO_CFOLD
-            _emit_data(cs, at(slot), sizeof v, (unsigned char*)&v);
-            slot->usage = _slot_used;
-#           else
             slot->as.value.c = v;
             slot->usage = _slot_value;
-#           endif
             return;
         }
 
-        if ('0' <= c && c <= '9') {
-            int v = atoi(expr->info.atom.ptr);
-#           ifdef NO_CFOLD
-            _emit_data(cs, at(slot), sizeof v, (unsigned char*)&v); // (yyy: endianness shortcut)
-            slot->usage = _slot_used;
-#           else
-            slot->as.value.si = v;
-            // XXX: double and suffixes
+        if (('0' <= ptr[0] && ptr[0] <= '9') || '.' == ptr[0]) {
+            enum adpt_type_tag const tyty = ((struct adpt_type const*)expr->usr)->tyty;
+            switch (tyty) {
+            case TYPE_INT:
+            case TYPE_LONG:
+            case TYPE_UINT:
+            case TYPE_ULONG:
+                if (len <3) slot->as.value.ul = (ptr[len-1]-'0') + (2 == len ? ptr[len-2]*10 : 0);
+                else {
+                    unsigned long r = 0;
+                    size_t k = 0;
+
+                    unsigned shft = 0;
+                    char const* dgts = "0123456789";
+                    if ('0' == ptr[0]) switch (ptr[1]) {
+                    case 'B': case 'b': k = 2; shft = 1; dgts = "01";               break;
+                    case 'O': case 'o': k = 2; shft = 3; dgts = "01234567";         break;
+                    case 'X': case 'x': k = 2; shft = 4; dgts = "0123456789abcdef"; break;
+                    }
+                    char const* v = strchr(dgts, ptr[k]|32);
+                    do if ('\'' != ptr[k]) r = (!shft ? r*10 : r<<shft) + (v-dgts);
+                    while (++k < len && ('\'' == ptr[k] || (v = strchr(dgts, ptr[k]|32))));
+
+                    slot->as.value.ul = r;
+                }
+                break;
+
+            case TYPE_FLOAT:
+            case TYPE_DOUBLE:;
+                double r = 0;
+
+                if (len <3 || 'x' != (ptr[1]|32)) {
+                    size_t k = 0;
+
+                    while (k < len && '.' != ptr[k] && 'e' != (ptr[k]|32) && 'f' != (ptr[k]|32))
+                        r = r*10 + (ptr[k++]-'0');
+                    if (k < len && '.' == ptr[k]) {
+                        double d = 1;
+                        while (++k < len && 'e' != (ptr[k]|32) && 'f' != (ptr[k]|32))
+                            r+= (ptr[k]-'0')*(d/= 10);
+                    }
+                    if (k < len && 'e' == (ptr[k]|32)) {
+                        unsigned long d = ptr[++k]-'0';
+                        while (++k < len && 'f' != (ptr[k]|32)) d = d*10 + (ptr[k]-'0');
+                        for (; d; d--) r*= 10;
+                    }
+                } else {
+                    size_t k = 2;
+                    static char cref dgts = "0123456789abcdef";
+
+                    while (k < len && '.' != ptr[k] && 'p' != (ptr[k]|32))
+                        r = r*16 + (strchr(dgts, ptr[k++]|32)-dgts);
+                    if (k < len && '.' == ptr[k]) {
+                        double d = 1;
+                        while (++k < len && 'p' != (ptr[k]|32))
+                            r+= (strchr(dgts, ptr[k]|32)-dgts)*(d/= 16);
+                    }
+                    if (k < len && 'p' == (ptr[k]|32)) {
+                        unsigned long d = ptr[++k]-'0';
+                        while (++k < len && 'f' != (ptr[k]|32)) d = d*2 + (ptr[k]-'0');
+                        for (; d; d--) r*= 2;
+                    }
+                }
+
+                if (TYPE_FLOAT == tyty) slot->as.value.f = r;
+                else slot->as.value.d = r;
+                break;
+
+            default:;
+            }
+
             slot->usage = _slot_value;
-#           endif
             return;
         }
 

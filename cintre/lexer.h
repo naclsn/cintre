@@ -134,6 +134,7 @@ void ldel(lex_state ref ls) {
     dyarr_clear(&ls->workbufs);
 }
 
+// preproc expression helpers {{{
 static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr) {
 #   define nx() (++xpr->ptr, --xpr->len)
 #   define at() (*xpr->ptr)
@@ -286,6 +287,7 @@ again:
     }
     return nop ? _lex_exexpr(lhs, nop, rhs) : lhs;
 }
+// }}}
 long lxpr(lex_state cref ls, bufsl ref xpr) {
     long first = _lex_atmxpr(ls, xpr);
     if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
@@ -338,9 +340,10 @@ bufsl lext(lex_state ref ls) {
         return lext(ls);
     }
 
-    bool disab = ls->ifdef_stack.len && *dyarr_top(&ls->ifdef_stack);
+    bool const disab = ls->ifdef_stack.len && *dyarr_top(&ls->ifdef_stack);
 
     if (!ls->macro_depth && has(1) && is('#')) {
+        // preproc directive {{{
         nx();
         skip(strchr(" \t", at()));
         bufsl dir;
@@ -528,6 +531,7 @@ bufsl lext(lex_state ref ls) {
 #       undef diris
         if (has(1) && !is('\n')) do if (has(1) && is('\\')) nx(); while (nx(), has(1) && !is('\n'));
         return lext(ls);
+        // }}}
     } // if is '#'
 
     if (disab) {
@@ -540,7 +544,7 @@ bufsl lext(lex_state ref ls) {
     accu(r) {
         if (!has(1)) {
             if (!ls->include_stack.len) return r;
-            struct _lex_state_hold* hold = dyarr_pop(&ls->include_stack);
+            struct _lex_state_hold ref hold = dyarr_pop(&ls->include_stack);
             ls->slice = hold->slice;
             ls->file = hold->file;
             ls->line = hold->line;
@@ -549,7 +553,8 @@ bufsl lext(lex_state ref ls) {
         }
 
         if (isin('0', '9') || is('.')) {
-            bool fp = is('.'), inte = false;
+            bool const fp = is('.');
+            bool inte = false;
             char const* dgts = "'0123456789";
             if (has(2) && is('0')) switch (nx(), at()) {
             case 'B': case 'b': nx(); dgts = "'01";        inte = true; break;
@@ -575,6 +580,7 @@ bufsl lext(lex_state ref ls) {
             bufsl name;
             accu(name) skip(isid());
             search_namespace(name, ls->macros) {
+                // expand preproc macro {{{
                 struct _lex_state_macro* macro = ls->macros.ptr+k;
                 size_t argc = 0;
                 bufsl argv[128];
@@ -691,6 +697,7 @@ bufsl lext(lex_state ref ls) {
                 ls->slice.len = work->len;
                 ls->macro_depth++;
                 return lext(ls);
+                // }}}
             } // found name in macros
         }
 

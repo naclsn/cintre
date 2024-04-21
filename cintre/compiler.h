@@ -686,8 +686,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case TYPE_LONG:
             case TYPE_UINT:
             case TYPE_ULONG:
-                if (len <3) slot->as.value.ul = (ptr[len-1]-'0') + (2 == len ? ptr[len-2]*10 : 0);
-                else {
+                if (len <3) {
+                    if ('9' < ptr[len-1]) slot->as.value.ul = ptr[0]-'0';
+                    else slot->as.value.ul = ptr[len-1]-'0' + (2 == len ? (ptr[len-2]-'0')*10 : 0);
+                } else {
                     unsigned long r = 0;
                     size_t k = 0;
 

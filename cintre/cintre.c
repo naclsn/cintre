@@ -2,22 +2,15 @@
 #include "parser.h"
 #include "adapter.h"
 #include "compiler.h"
+#include "runner.h"
 #include "prints.h"
-
-#ifndef STACK_SIZE
-#define STACK_SIZE 1024*1024
-#endif
 
 typedef struct cintre_state {
     lex_state lexr;
     parse_decl_state decl;
     parse_expr_state expr;
-
-    struct adpt_item const* (*lookup)(bufsl const name);
-
-    char stack[STACK_SIZE];
-    size_t sp;
-    bytecode code;
+    compile_state comp;
+    runner_state runr;
 } cintre_state;
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
@@ -161,7 +154,7 @@ void free_adpt_type(struct adpt_type cref ty) {
     free((void*)ty);
 }
 
-struct adpt_type const* alloc_adpt_type(cintre_state cref gs, struct decl_type cref ty) {
+struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cref ty) {
     struct adpt_type ref r = malloc(sizeof *r);
     if (!r) exitf("OOM");
 #   define cpyreturn(...) return memcpy(r, (__VA_ARGS__), sizeof*r)
@@ -192,7 +185,7 @@ struct adpt_type const* alloc_adpt_type(cintre_state cref gs, struct decl_type c
         if (nameis("double")) cpyreturn(&adptb_double_type);
 #       undef nameis
 
-        struct adpt_item cref it = gs->lookup(ty->name);
+        struct adpt_item cref it = gs->comp.lookup(ty->name);
         if (it && ITEM_TYPEDEF == it->kind) cpyreturn(it->type);
         break;
 
@@ -282,9 +275,39 @@ struct adpt_type const* alloc_adpt_type(cintre_state cref gs, struct decl_type c
     case KIND_ARR:;
         struct adpt_type cref item = alloc_adpt_type(gs, &ty->info.arr.item->type);
         if (!item) break;
-        size_t const count = ty->info.arr.count
-            ? atoi(ty->info.arr.count->info.atom.ptr) // XXX/TODO: very wrong of course
-            : 0;
+
+        size_t count = 0;
+        if (ty->info.arr.count) {
+            size_t const plen = gs->comp.res.len;
+            size_t const psp = gs->runr.sp;
+
+            // TODO: once UNOP_CAST is added, use it by wrapping `ty->info.arr.count`
+            struct adpt_type cref count_expr = check_expression(&gs->comp, ty->info.arr.count);
+            if (!count_expr) break;
+            if (!(TYPE_CHAR <= count_expr->tyty && count_expr->tyty <= TYPE_ULONG)) {
+                notif("Array size is not of an integral type");
+                break;
+            }
+
+            struct slot slot = {.ty= &adptb_ulong_type};
+            _alloc_slot(&gs->comp, &slot);
+            _fit_expr_to_slot(&gs->comp, ty->info.arr.count, &slot);
+
+            switch (slot.usage) {
+            case _slot_value:
+                count = slot.as.value.ul;
+                break;
+
+            case _slot_used:
+            case _slot_variable:
+                run(&gs->runr, gs->comp.res);
+                count = *(size_t*)(gs->runr.stack+gs->runr.sp);
+                gs->comp.res.len = plen;
+                gs->runr.sp = psp;
+                break;
+            }
+        }
+
         cpyreturn(&(struct adpt_type){
                 .size= item->size*count,
                 .align= item->align,
@@ -301,144 +324,6 @@ struct adpt_type const* alloc_adpt_type(cintre_state cref gs, struct decl_type c
 }
 // }}}
 
-// runtime {{{
-void run(cintre_state ref gs, bytecode const code) {
-    size_t a, b, c;
-#   define imm(nm) for (                           \
-        unsigned xx = (nm = code.ptr[++k], 0);     \
-        code.ptr[k]&0x80;                          \
-        nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
-#   define at(off, ty) ((ty*)(gs->stack+gs->sp+off))
-
-    for (size_t k = 0; k < code.len; k++) switch (code.ptr[k]) {
-    case 0x2a:
-        notif("yyy: debug");
-        // fall through
-    case 0x00:
-        continue;
-
-    case 0x0d: imm(a); gs->sp+= a; continue; // pop
-    case 0x0f: imm(a); gs->sp-= a; continue; // push
-    case 0x1d: // data
-        imm(a);
-        imm(b);
-        memcpy(at(a, char), code.ptr+k+1, b);
-        k+= b;
-        continue;
-    case 0x1f: // move
-        imm(a);
-        imm(b);
-        imm(c);
-        memmove(at(a, char), at(c, char), b);
-        continue;
-    case 0x2d: exitf("NIY: (run) write");
-    case 0x2f: exitf("NIY: (run) read");
-        continue;
-
-#       define cvt(code, from, to)  \
-    case code:                      \
-        imm(a);                     \
-        imm(b);                     \
-        *at(a, from) = *at(b, to);  \
-        continue;
-#       define extend_cvt(from_w, from, to_w, to)       \
-        cvt(from_w<<4 | to_w, signed from, signed to);  \
-        cvt(from_w<<4 | to_w | 0x4, unsigned from, unsigned to);
-        extend_cvt(0, char, 1, short)
-        extend_cvt(0, char, 2, int)
-        extend_cvt(0, char, 3, long)
-        extend_cvt(1, short, 2, int)
-        extend_cvt(1, short, 3, long)
-        extend_cvt(2, int, 3, long)
-#       undef extend_cvt
-        cvt(0x11, float, int)
-        cvt(0x22, double, long)
-        cvt(0x15, int, float)
-        cvt(0x26, long, double)
-        cvt(0x21, double, float)
-        cvt(0x25, float, double)
-#       undef cvt
-
-    case 0x04: exitf("NIY: (run) not");
-    case 0x14: exitf("NIY: (run) cmp1");
-    case 0x24: exitf("NIY: (run) cmp2");
-    case 0x0a: exitf("NIY: (run) jmp");
-    case 0x1a: exitf("NIY: (run) jmb");
-    case 0x0b: exitf("NIY: (run) breq");
-    case 0x1b: exitf("NIY: (run) brlt");
-    case 0x2b: exitf("NIY: (run) brle");
-        continue;
-
-    default:;
-        unsigned const hi = code.ptr[k]>>4 & 0xf, lo = code.ptr[k] & 0xf;
-
-        if (0xc == lo) {
-            imm(a);
-            char* ret = at(a, char);
-            imm(b);
-            typedef void (*fun_t)(char* ret, char** args);
-            fun_t fun = *at(b, fun_t);
-            char* args[15];
-            for (unsigned l = 0; l < hi; l++) {
-                imm(c);
-                args[l] = at(c, char);
-            }
-            fun(ret, args);
-            continue;
-        }
-
-        imm(a);
-        imm(b);
-        imm(c);
-        switch (hi) {
-#           define  _x( op, ty) *at(a, ty) = *at(b, ty) op *at(c, ty); continue;
-#           define  _xi(op, ty) *at(a, ty) = (ty)b      op *at(c, ty); continue;
-#           define _rxi(op, ty) *at(a, ty) = *at(c, ty) op (ty)b     ; continue;
-#           define dox(n, ...) n(__VA_ARGS__)
-#           define bop_u(x, op)  \
-                case 0x0: dox(x, op, unsigned char)   \
-                case 0x1: dox(x, op, unsigned short)  \
-                case 0x2: dox(x, op, unsigned int)    \
-                case 0x3: dox(x, op, unsigned long)
-#           define bop_b(x, op)  \
-                case 0x4: dox(x, op, unsigned char)   \
-                case 0x5: dox(x, op, unsigned short)  \
-                case 0x6: dox(x, op, unsigned int)    \
-                case 0x7: dox(x, op, unsigned long)
-#           define bop_f(x, op)  \
-                case 0xd: dox(x, op, double)  \
-                case 0xf: dox(x, op, float)
-        case 0x3: switch (lo) { bop_u( _x , +) bop_b( _x , |)  bop_f( _x , +) } break;
-        case 0x4: switch (lo) { bop_u( _x , -) bop_b( _x , ^)  bop_f( _x , -) } break;
-        case 0x5: switch (lo) { bop_u( _x , *) bop_b( _x , <<) bop_f( _x , *) } break;
-        case 0x6: switch (lo) { bop_u( _x , /) bop_b( _x , >>) bop_f( _x , /) } break;
-        case 0x7: switch (lo) { bop_u( _x , %) bop_b( _x , &)                 } break;
-        case 0x8: switch (lo) { bop_u( _xi, +) bop_b( _xi, |)  bop_f( _xi, +) } break;
-        case 0x9: switch (lo) { bop_u( _xi, -) bop_b( _xi, ^)  bop_f( _xi, -) } break;
-        case 0xa: switch (lo) { bop_u( _xi, *) bop_b( _xi, <<) bop_f( _xi, *) } break;
-        case 0xb: switch (lo) { bop_u( _xi, /) bop_b( _xi, >>) bop_f( _xi, /) } break;
-        case 0xc: switch (lo) { bop_u( _xi, %) bop_b( _xi, &)                 } break;
-        case 0xd: switch (lo) { bop_u(_rxi, -) bop_b(_rxi, <<) bop_f(_rxi, -) } break;
-        case 0xe: switch (lo) { bop_u(_rxi, /) bop_b(_rxi, >>) bop_f(_rxi, /) } break;
-        case 0xf: switch (lo) { bop_u(_rxi, %)                                } break;
-#           undef bop_f
-#           undef bop_b
-#           undef bop_u
-#           undef dox
-#           undef _rxi
-#           undef _xi
-#           undef _x
-        }
-
-        notif("unknown op code 0x%02x", code.ptr[k]);
-        return;
-    }
-
-#   undef at
-#   undef imm
-} // run
-// }}}
-
 // accept parsed input {{{
 void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     cintre_state ref gs = usr;
@@ -447,9 +332,10 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     //print_decl(stdout, decl);
     //printf("\n");
     struct adpt_type cref ty = alloc_adpt_type(gs, &decl->type);
+    if (!ty) return;
 
     //size_t end = gs->sp;
-    gs->sp = ((gs->sp-ty->size) / ty->align) * ty->align;
+    gs->runr.sp = ((gs->runr.sp-ty->size) / ty->align) * ty->align;
 
     struct adpt_item* it = dyarr_push(&locals);
     if (!it) exitf("OOM");
@@ -460,7 +346,7 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
             .name= memcpy(name, decl->name.ptr, decl->name.len),
             .type= ty,
             .kind= ITEM_VARIABLE,
-            .as.variable= gs->sp,
+            .as.variable= gs->runr.sp,
         }, sizeof *it);
 }
 
@@ -519,12 +405,12 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         return;
     }
 
-    gs->code.len = 0;
     if (!expr) return;
-    compile_state cs = {.vsp= gs->sp, .res= gs->code, .lookup= gs->lookup};
+    gs->comp.vsp = gs->runr.sp;
+    gs->comp.res.len = 0;
 
     if (xcmdis("ty")) {
-        struct adpt_type cref ty = check_expression(&cs, expr);
+        struct adpt_type cref ty = check_expression(&gs->comp, expr);
         if (!ty) return;
         printf("Expression is of type: ");
         print_type(stdout, ty);
@@ -532,70 +418,70 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
         return;
     }
 
-    bool const r = _compile_expression_tmp_wrap(&cs, expr);
-    gs->code = cs.res;
+    bool const r = _compile_expression_tmp_wrap(&gs->comp, expr);
     if (!r) return;
 
     if (xcmdis("bytec") || xcmdis("bc")) {
-        printf("Resulting bytecode (%zuB):\n", gs->code.len);
-        print_code(stdout, gs->code);
+        printf("Resulting bytecode (%zuB):\n", gs->comp.res.len);
+        print_code(stdout, gs->comp.res);
         return;
     }
 
-    run(gs, gs->code);
+    run(&gs->runr, gs->comp.res);
     struct adpt_item const res = {
         .name= "_",
         .type= expr->usr,
         .kind= ITEM_VARIABLE,
-        .as.variable= gs->sp,
+        .as.variable= gs->runr.sp,
     };
 
     printf("Result:\n");
-    print_item(stdout, &res, gs->stack, 0);
+    print_item(stdout, &res, gs->runr.stack, 0);
 
-    gs->sp+= res.type->size;
+    gs->runr.sp+= res.type->size; // yyy: free
 } // accept_expr
 // }}}
 
 int main(void) {
     printf("Type `;help` for a list of command\n");
 
-    cintre_state gs = {
+    static cintre_state _gs = {
         .lexr= {.file= "<input>"},
-        .decl= {.ls= &gs.lexr, .usr= &gs, .on= accept_decl},
-        .expr= {.ls= &gs.lexr, .usr= &gs, .on= accept_expr},
-        .lookup= lookup,
-        .sp= STACK_SIZE,
+        .decl= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_decl},
+        .expr= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_expr},
+        .comp= {.lookup= lookup},
+        .runr= {.sp= sizeof _gs.runr.stack}, // xxx: don't like having to do that
     };
+    cintre_state ref gs = &_gs;
 
     char* line = NULL;
     while (prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line)) {
-        gs.lexr.line++;
-        gs.lexr.slice.len = strlen(gs.lexr.slice.ptr = line);
+        gs->lexr.line++;
+        gs->lexr.slice.len = strlen(gs->lexr.slice.ptr = line);
 
-        bufsl tok = lext(&gs.lexr);
+        bufsl tok = lext(&gs->lexr);
         if (!tok.len || ';' == *tok.ptr) accept_expr(NULL, NULL, &tok);
 
         else if (is_decl_keyword(tok)) {
             do {
-                tok = parse_declaration(&gs.decl, tok);
+                tok = parse_declaration(&gs->decl, tok);
 
                 if (1 == tok.len && '=' == *tok.ptr) {
-                    gs.lexr.slice.ptr--, gs.lexr.slice.len++;
+                    gs->lexr.slice.ptr--, gs->lexr.slice.len++;
                     char cref name = dyarr_bot(&locals)->name;
-                    tok = parse_expression(&gs.expr, (bufsl){.ptr= name, .len= strlen(name)});
+                    tok = parse_expression(&gs->expr, (bufsl){.ptr= name, .len= strlen(name)});
                 }
                 // FIXME: sometime incorrect until parsing of the comma operator is done properly
                 //        (if there was an '=')
-            } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs.lexr), true : false);
+            } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs->lexr), true : false);
 
-            gs.decl.base = (declaration){0};
+            gs->decl.base = (declaration){0};
         }
 
-        else parse_expression(&gs.expr, tok);
+        else parse_expression(&gs->expr, tok);
     }
 
-    ldel(&gs.lexr);
+    ldel(&gs->lexr);
     for (size_t k = 0; k < locals.len; k++) {
         free((void*)locals.ptr[k].name);
         free_adpt_type(locals.ptr[k].type);
@@ -604,8 +490,3 @@ int main(void) {
 
     return EXIT_SUCCESS;
 }
-
-#if 0
-lv /TODO\|FIXME\|XXX/ cintre/*.[ch]
-*/
-#endif

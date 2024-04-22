@@ -1,12 +1,12 @@
-warnings = -Wall -Wextra -Wpedantic -Werror -Wno-unused-function -Wno-unused-variable -Wno-unused-value -Wno-unused-parameter
+warnings := -Wall -Wextra -Wpedantic -Werror -Wno-unused-function -Wno-unused-variable -Wno-unused-value -Wno-unused-parameter
 override CFLAGS += -ggdb -O1 -std=c99 $(warnings)
 
 PR = build/preparer.exe
 
 ifneq ($(OS), Windows_NT)
-readline = $(shell pkg-config readline --cflags --libs)
+readline := $(shell pkg-config readline --cflags --libs)
 ifneq (,$(readline))
-readline += -DUSE_READLINE
+readline := -DUSE_READLINE $(readline)
 endif
 endif
 

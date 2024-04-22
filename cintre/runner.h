@@ -1,3 +1,8 @@
+/// TODO: head doc
+
+#ifndef CINTRE_RUNNER_H
+#define CINTRE_RUNNER_H
+
 #include "common.h"
 #include "adapter.h"
 #include "compiler.h"
@@ -8,7 +13,8 @@
 
 typedef struct runner_state {
     char stack[STACK_SIZE];
-    size_t sp; // xxx: don't like that 0 is not sane default
+    size_t sp; // xxx: don't like that 0 is not sane default, it has
+               //      to be explicitly initialized to `sizeof ::stack`
 } runner_state;
 
 void run(runner_state ref rs, bytecode const code);
@@ -147,4 +153,6 @@ void run(runner_state ref rs, bytecode const code) {
 
 #   undef at
 #   undef imm
-} // run
+}
+
+#endif // CINTRE_RUNNER_H

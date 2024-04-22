@@ -1,3 +1,6 @@
+/// program to generate the <a-file.h> and <c-main.h>
+/// see `$ preparer -h` (or the main function at the end of the file)
+
 // big ol' TODO: all of it
 // - typedef
 // - struct/enum/union
@@ -14,11 +17,12 @@ struct {
     dyarr(struct seen_var { bufsl name; }) var;
 } seen = {0};
 
-#define errdie(...) exitf("preparer: %s:%zu: " __VA_ARGS__, ls.file, ls.line)
+#define errdie(...) (report_lex_locate(&ls, "preparer: " __VA_ARGS__), exit(EXIT_FAILURE))
 
 #define _linked_it_type_comp struct decl_type_field
+#define _linked_it_type_enu struct decl_type_enumer
 #define _linked_it_type_fun struct decl_type_param
-#define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = __info.__ty.first; curr; curr = curr->next)
+#define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = (__info).__ty.first; curr; curr = curr->next)
 
 void emit_type(struct decl_type cref type);
 void emit_adpt_type(struct decl_type cref type);
@@ -292,26 +296,32 @@ bufsl name_space(char ref name) {
 // do-s {{{
 int do_merge(int argc, char** argv) {
     char** const first = (--argc, ++argv);
-    char** last = first;
+    result = stdout;
+    atexit(cleanup);
+
+    char** last = NULL;
     while (argc) {
         char* arg = (argc--, *argv++);
         char* val;
         if (!memcmp("-o", arg, 2)) {
-            last = argv;
+            last = argv-1;
             val = arg[2] ? arg+2 : (argc--, *argv++);
             if ('-' != val[0]) result = fopen(val, "wb");
             break;
         }
     }
+    if (!last) last = argv;
 
-    for (char** it = first; it < last-1; it++)
+    for (char** it = first; it < last; it++)
         fprintf(result, "#include \"%s\"\n", *it);
     fprintf(result, "\n");
 
     fprintf(result, "static struct adpt_namespace const namespaces[] = {\n");
-    for (char** it = first; it < last-1; it++) {
+    for (char** it = first; it < last; it++) {
         bufsl itns = name_space(*it);
-        if ('a' == itns.ptr[0] && '-' == itns.ptr[1]) {
+        // adapter files are expected to start with "a-"
+        // tho this is not strictly mandatory I suppose...
+        if ('a' == itns.ptr[0] && '_' == itns.ptr[1]) {
             itns.ptr+= 2;
             itns.len-= 2;
         }
@@ -330,8 +340,7 @@ int do_merge(int argc, char** argv) {
 
 int do_prepare(int argc, char** argv) {
     char* file = (argc--, *argv++);
-    result = stdout; // yyy
-
+    result = stdout;
     atexit(cleanup);
 
     while (argc) {
@@ -403,10 +412,57 @@ int do_prepare(int argc, char** argv) {
 
 int main(int argc, char** argv) {
     char* prog = (argc--, *argv++);
-    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) exitf(
-            "Usage: %s <entry> [-D...,-I...] -o <a-file.h>\n"
-            "   or: %s -m <a-files...> -o <c-main.c>\n"
-            , prog, prog);
+    if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) {
+        fprintf(stderr,
+                "Usage: %s <entry> [-D...,-I...] -o <a-file.h>\n"
+                "       %s -m <a-file.h...> -o <c-main.c>\n"
+                "  Without \"-o\", uses standard output.\n"
+                "\n"
+                "  In the first form, parse <entry> (typically\n"
+                "a C library header file) and generate an \"adapter\"\n"
+                "<a-file.h>. An \"adapter\" file contains the necessary\n"
+                "information for a cintre REPL runtime to figure out how\n"
+                "to refer to the objects and functions declared in the\n"
+                "<entry> point (and the files it includes via the\n"
+                "\"quoted\" form). \"-D\" and \"-I\" have the same meaning as\n"
+                "for the C compiler (define macro and include path), and\n"
+                "other unrecognized arguments are simply ignored.\n"
+                "\n"
+                "  The second form (when the first argument is \"-m\")\n"
+                "takes a series of previously generated \"adapter\" files\n"
+                "and produces a single <c-main.c> entry point file. This\n"
+                "file will contain a valid `main` function (included in\n"
+                "\"cintre.c\"). Note that the \"adapter\" files are not\n"
+                "read; only the names are needed.\n"
+                "\n"
+                "  A typical processing pipeline is thus as follow,\n"
+                "described with makefile syntax:\n"
+                "\n"
+                "    PR := preparer\n"
+                "    CFLAGS := -O1 -std=c99 -Wall\n"
+                "\n"
+                "    # compile mylib to object\n"
+                "    mylib.o: mylib.c mylib.h\n"
+                "    	$(CC) -c $< -o $@ $(CFLAGS)\n"
+                "\n"
+                "    # prepare adapter file for mylib\n"
+                "    a-mylib.h: mylib.h $(PR)\n"
+                "    	$(PR) $< -o $@ $(CFLAGS)\n"
+                "\n"
+                "    # prepare adapter file for some standard function\n"
+                "    a-standard.h: cintre/standard.h $(PR)\n"
+                "    	$(PR) $< -o $@ $(CFLAGS)\n"
+                "\n"
+                "    # \"merge\" the adapter by preparing the entry point\n"
+                "    c-main.c: a-mylib.h a-standard.h\n"
+                "    	$(PR) -m $^ -o $@\n"
+                "\n"
+                "    # finally compile the REPL with the object for mylib\n"
+                "    c-main: mylib.o c-main.c\n"
+                "    	$(CC) $^ -o $@ $(CFLAGS) -Icintre -DUSE_READLINE -lreadline\n"
+                , prog, prog);
+        return EXIT_FAILURE;
+    }
 
     return !strcmp("-m", *argv) ? do_merge(argc, argv) : do_prepare(argc, argv);
 }

@@ -25,7 +25,6 @@
 /// and the result needs to be handled in the "accept" callback (or copied over
 /// to the heap at this point).
 
-// TODO: if (!tok.len) return tok;
 // TODO: once thoroughly tested, look for avoidable capture-copying
 // (that could be replaced with mutating an existing capture)
 
@@ -189,6 +188,21 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
 
 // ---
 
+#define _expect1(_tok)                                                \
+    if (!(_tok)->len && (                                             \
+        report_lex_locate(ps->ls, "Unexpected end of input"), true))  \
+        return
+#define _expect(_tok, ...)                                                                               \
+    for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                          \
+        if (*_it && bufis(*(_tok), *_it)) break;                                                         \
+        else if (                                                                                        \
+            report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got \"%.*s\"", bufmt(*(_tok))), true)  \
+            return
+#define _expectid(_tok)                                                                       \
+    if (((*(_tok)->ptr|32) < 'a' || 'z' < (*(_tok)->ptr|32)) && (                             \
+        report_lex_locate(ps->ls, "Expected identifier, got \"%.*s\"", bufmt(*_tok)), true))  \
+        return
+
 // parse declaration {{{
 struct _parse_decl_capture;
 typedef void _parse_decl_closure_t(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl);
@@ -199,21 +213,30 @@ struct _parse_decl_capture {
 };
 _parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_fixup, _parse_decl_post, _parse_decl_params, _parse_decl_enumer, _parse_decl_fields, _parse_decl_spec;
 
+#define _linked_it_type_comp struct decl_type_field
+#define _linked_it_type_enu struct decl_type_enumer
+#define _linked_it_type_fun struct decl_type_param
+#define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = (__info).__ty.first; curr; curr = curr->next)
+
 void _parse_on_array_size(void ref decl_ps_capt[3], expression ref expr, bufsl ref tok) {
     declaration ref arr = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
-    //_expect(tok, "]");
+    _expect1(tok);
+    _expect(tok, "]");
     arr->type.info.arr.count = expr;
     ps->tok = lext(ps->ls);
     _parse_decl_post(ps, capt, arr);
 }
 void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, bufsl ref tok) {
     declaration ref enu = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
-    //_expect(tok, "," or "}");
-    for (struct decl_type_enumer* curr = enu->type.info.enu.first ;3; curr = curr->next) if (!curr->next) {
+    _expect1(tok);
+    for_linked (enu->type.info,enu) if (!curr->next) {
         curr->expr = expr;
         break;
     }
-    if (',' == *tok->ptr) *tok = lext(ps->ls);
+    if (',' == *tok->ptr) {
+        *tok = lext(ps->ls);
+        _expect1(tok);
+    }
     if ('}' == *tok->ptr) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, enu);
@@ -221,13 +244,15 @@ void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, bufsl
 }
 void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, bufsl ref tok) {
     declaration ref comp = decl_ps_capt[0], ref base = decl_ps_capt[1]; parse_decl_state ref ps = decl_ps_capt[2]; struct _parse_decl_capture ref capt = decl_ps_capt[3];
-    //_expect(tok, "," or ";");
-    for (struct decl_type_field* curr = comp->type.info.comp.first ;3; curr = curr->next) if (!curr->next) {
+    _expect1(tok);
+    _expect(tok, ",", ";");
+    for_linked (comp->type.info,comp) if (!curr->next) {
         curr->bitw = expr;
         break;
     }
-    bool reset = ';' == *tok->ptr;
+    bool const reset = ';' == *tok->ptr;
     ps->tok = lext(ps->ls);
+    _expect1(&ps->tok);
     if (reset && '}' == *ps->tok.ptr) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, comp);
@@ -246,6 +271,7 @@ void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, buf
 
 /// pre-ish declarator part with '('<decl>')' | '*'<decl>
 void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
+    _expect1(&ps->tok);
     switch (*ps->tok.ptr) {
     case '(':
         ps->tok = lext(ps->ls);
@@ -292,7 +318,8 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
 /// skip closing parenthesis and parse post
 void _parse_decl_close(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl) {
-    //_expect(ps->tok, ")");
+    _expect1(&ps->tok);
+    _expect(&ps->tok, ")");
     ps->tok = lext(ps->ls);
 
     declaration ref before = capt->hold;
@@ -335,7 +362,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
     // '(' <params> ')'
     // '[' [static][const][idk] <expr>|*|<nothing> ']'
 
-    switch (*ps->tok.ptr) {
+    if (ps->tok.len) switch (*ps->tok.ptr) {
     case '(':
         ps->tok = lext(ps->ls);
         declaration fun = {
@@ -374,8 +401,9 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
         if (ps->tok.len) switch (*ps->tok.ptr) {
         case '*':
-            lext(ps->ls);
-            //_expect(ps->tok, "]");
+            ps->tok = lext(ps->ls);
+            _expect1(&ps->tok);
+            _expect(&ps->tok, "]");
             // fall through
         case ']':
             ps->tok = lext(ps->ls);
@@ -399,23 +427,24 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
     struct decl_type_param node = {.decl= decl}; // here so it's not deallocated before the recursion
     declaration ref fun = capt->hold;
 
+    _expect1(&ps->tok);
     bool last = ')' == *ps->tok.ptr;
     if (last || ',' == *ps->tok.ptr) {
-        struct decl_type_fun* const info = &fun->type.info.fun;
+        union decl_type_info ref info = &fun->type.info;
         ps->tok = lext(ps->ls);
 
         if (!decl) {
             if (last) {
-                info->count = -1; // eg. `int a();`
+                info->fun.count = -1; // eg. `int a();`
                 _parse_decl_post(ps, capt, fun);
                 return;
             } else exitf("NIY: syntax error in params");
         }
 
         if (!(last && !decl->name.len && 4 == decl->type.name.len && !memcmp("void", decl->type.name.ptr, 4))) {
-            info->count++;
-            if (!info->first) info->first = &node;
-            else for (struct decl_type_param* curr = info->first ;3; curr = curr->next) if (!curr->next) {
+            info->fun.count++;
+            if (!info->fun.first) info->fun.first = &node;
+            else for_linked (*info,fun) if (!curr->next) {
                 curr->next = &node;
                 break;
             }
@@ -436,15 +465,19 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
 /// parse values of an enum
 void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref _) {
     (void)_;
+    _expect1(&ps->tok);
+    _expectid(&ps->tok);
+
     struct decl_type_enumer node = {.name= ps->tok}; // here so it's not deallocated before the recursion
     declaration ref enu = capt->hold;
+    union decl_type_info ref info = &enu->type.info;
 
     ps->tok = lext(ps->ls);
+    _expect1(&ps->tok);
 
-    struct decl_type_enu* const info = &enu->type.info.enu;
-    info->count++;
-    if (!info->first) info->first = &node;
-    else for (struct decl_type_enumer* curr = info->first ;3; curr = curr->next) if (!curr->next) {
+    info->enu.count++;
+    if (!info->enu.first) info->enu.first = &node;
+    else for_linked (*info,enu) if (!curr->next) {
         curr->next = &node;
         break;
     }
@@ -459,7 +492,10 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
         return;
     }
 
-    if (',' == *ps->tok.ptr) ps->tok = lext(ps->ls);
+    if (',' == *ps->tok.ptr) {
+        ps->tok = lext(ps->ls);
+        _expect1(&ps->tok);
+    }
     if ('}' == *ps->tok.ptr) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, enu);
@@ -472,17 +508,19 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
     declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is all that
     declaration* ref base = ((declaration**)capt->hold)+1;
 
+    _expect1(&ps->tok);
     bool bitw = ':' == *ps->tok.ptr;
     bool reset = ';' == *ps->tok.ptr;
     if (bitw || reset || ',' == *ps->tok.ptr) {
-        struct decl_type_comp* const info = &comp->type.info.comp;
+        union decl_type_info ref info = &comp->type.info;
         ps->tok = lext(ps->ls);
+        _expect1(&ps->tok);
 
         if (!decl) exitf("NIY: syntax error in fields");
 
-        info->count++;
-        if (!info->first) info->first = &node;
-        else for (struct decl_type_field* curr = info->first ;3; curr = curr->next) if (!curr->next) {
+        info->comp.count++;
+        if (!info->comp.first) info->comp.first = &node;
+        else for_linked (*info,comp) if (!curr->next) {
             curr->next = &node;
             break;
         }
@@ -570,6 +608,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             return;
         }
         if (!e) decl->type.info.comp.count = -1;
+        if (!ps->tok.len) break;
         goto redo;
 
     default:
@@ -585,42 +624,41 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         //   - a ':' -> emit and return
         // - a '=' or a ',' or a ';' -> emit and return
 
-        if (ps->tok.len) {
-            if (isid()) {
-                if (!decl->type.name.len
-                        || (3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
-                            && ((6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6))
-                                || (3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3))
-                                )
+        if (isid()) {
+            if (!decl->type.name.len
+                    || (3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
+                        && ((6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6))
+                            || (3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3))
                             )
-                        ) {
-                    decl->type.name = ps->tok;
-                    continue;
-                }
-                declaration cpy = *decl;
-                _parse_decl_ator(ps, capt, &cpy);
-                return;
+                        )
+                    ) {
+                decl->type.name = ps->tok;
+                continue;
             }
-
-            switch (*ps->tok.ptr) {
-            case '=': case ',': case ';': case ')': case ':': // shortcut one stack frame
-                capt->then(ps, capt->next, decl);
-                return;
-            case '*': case '(':;
-                declaration cpy = *decl;
-                _parse_decl_ator(ps, capt, &cpy);
-                return;
-            }
+            declaration cpy = *decl;
+            _parse_decl_ator(ps, capt, &cpy);
+            return;
         }
 
-        exitf("NIY: syntax error in spec");
-    } // while-switch tok
+        switch (*ps->tok.ptr) {
+        case '=': case ',': case ';': case ')': case ':': // shortcut one stack frame
+            capt->then(ps, capt->next, decl);
+            return;
+        case '*': case '(':;
+            declaration cpy = *decl;
+            _parse_decl_ator(ps, capt, &cpy);
+            return;
+        }
+
+        _parse_decl_post(ps, capt, decl);
+        return;
+    } // for-switch tok
 
 #   undef case_iskw
 #   undef isid
 #   undef is1
 
-    exitf("NIY: syntax error (I *think* we're not supposed to be here?)");
+    capt->then(ps, capt->next, decl);
 }
 
 /// callback chain tail end which call user code
@@ -640,6 +678,11 @@ bufsl parse_declaration(parse_decl_state ref ps, bufsl tok) {
 #undef kw
 
 #undef kws
+
+#undef for_linked
+#undef _linked_it_type_fun
+#undef _linked_it_type_enu
+#undef _linked_it_type_comp
 // }}}
 
 // parse expression {{{
@@ -650,7 +693,7 @@ struct _parse_expr_capture {
     struct _parse_expr_capture ref next;
     _parse_expr_closure_t ref then; // its `hold` is in `next->hold`
 };
-_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_one_lext, _parse_expr_one_lext_whole, _parse_expr_one_after, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
+_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_one_after, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
 
 enum expr_kind _parse_is_postfix(bufsl const tok) {
     if (2 == tok.len) switch (tok.ptr[0]<<8 | tok.ptr[1]) {
@@ -719,9 +762,9 @@ enum expr_kind _parse_is_infix(bufsl const tok) {
 /// parse one, including the prefix: [<prefix>] (<atom> | '('<expr>')') [<postfix>]
 void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref _) {
     (void)_;
-    if (!ps->tok.len) return;
+    _expect1(&ps->tok);
 
-    enum expr_kind prefix = _parse_is_prefix(ps->tok);
+    enum expr_kind const prefix = _parse_is_prefix(ps->tok);
     if (prefix) {
         ps->tok = lext(ps->ls);
         expression pre = {.kind= prefix};
@@ -741,7 +784,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .next= capt,
-                    .then= _parse_expr_one_lext,
+                    .then= _parse_expr_one_lext_parenth,
                 },
                 .then= _parse_expr_continue,
             }, NULL);
@@ -760,21 +803,28 @@ void _parse_expr_one_post(parse_expr_state ref ps, struct _parse_expr_capture re
 }
 
 /// skip a closing parenthesis in: '('<expr>')' [<postfix>]
-void _parse_expr_one_lext(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
+void _parse_expr_one_lext_parenth(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
+    _expect1(&ps->tok);
+    _expect(&ps->tok, ")");
     ps->tok = lext(ps->ls);
     _parse_expr_one_after(ps, capt, expr);
 }
 
-/// skip a closing thingy and set the thing within (arg): <expr> ('('<arg>')' | '['<arg>']') [<postfix>]
-void _parse_expr_one_lext_whole(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref within) {
+/// skip a closing thingy and set the thing within (arg): <expr> ('('<arg>')' | '['<off>']') [<postfix>]
+void _parse_expr_one_lext_oneafter(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref within) {
+    _expect1(&ps->tok);
+    switch (capt->hold->kind) {
+    case BINOP_CALL:   _expect(&ps->tok, ")"); capt->hold->info.call.args = within;  break;
+    case BINOP_SUBSCR: _expect(&ps->tok, "]"); capt->hold->info.subscr.off = within; break;
+    default: exitf("unreachable");
+    }
     ps->tok = lext(ps->ls);
-    capt->hold->info.call.args = within;
     _parse_expr_one_after(ps, capt, capt->hold);
 }
 
-/// parse postfix part after expr: <expr> (<postfix> | '('<arg>')' | '['<arg>']' | ('.'|'->')<name>)
+/// parse postfix part after expr: <expr> (<postfix> | '('<arg>')' | '['<off>']' | ('.'|'->')<name>)
 void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
-    enum expr_kind postfix = _parse_is_postfix(ps->tok);
+    enum expr_kind const postfix = _parse_is_postfix(ps->tok);
     if (postfix) {
         ps->tok = lext(ps->ls);
         expression post = {.kind= postfix, .info.unary.opr= expr};
@@ -787,7 +837,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
     case '(':
         call = true;
         bufsl const nx = lext(ps->ls);
-        if (!nx.len || ')' == *nx.ptr) {
+        if (nx.len && ')' == *nx.ptr) {
             ps->tok = lext(ps->ls);
             expression access = {.kind= BINOP_CALL, .info.call.base= expr};
             _parse_expr_one_after(ps, capt, &access);
@@ -802,7 +852,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .next= capt,
-                    .then= _parse_expr_one_lext_whole,
+                    .then= _parse_expr_one_lext_oneafter,
                 },
                 .then= _parse_expr_continue,
             }, NULL);
@@ -811,15 +861,17 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
     case '-':
         if (2 != ps->tok.len || '>' != ps->tok.ptr[1]) break;
         pmem = true;
-        // fall through
+        if (0) // fall through
     case '.':
-        ;
+            if (1 != ps->tok.len) break;
         bufsl name = lext(ps->ls);
-        ps->tok = lext(ps->ls);
+        _expect1(&name);
+        _expectid(&name);
         expression access = {
             .kind= pmem ? UNOP_PMEMBER : UNOP_MEMBER,
             .info.member= {.base= expr, .name= &name},
         };
+        ps->tok = lext(ps->ls);
         _parse_expr_one_after(ps, capt, &access);
         return;
     }
@@ -829,7 +881,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
 
 /// parse two with lhs, lop and rhs known: <lhs> <lop> <rhs> [<nop>]
 void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref rhs) {
-    enum expr_kind infix = _parse_is_infix(ps->tok);
+    enum expr_kind const infix = _parse_is_infix(ps->tok);
     if (!infix) {
         capt->hold->info.binary.rhs = rhs;
         capt->then(ps, capt->next, capt->hold);
@@ -837,7 +889,7 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
     ps->tok = lext(ps->ls);
 
-    enum expr_kind l = capt->hold->kind, n = infix;
+    enum expr_kind const l = capt->hold->kind, n = infix;
     if (l < n || ( (BINOP_TERNCOND == l || BINOP_TERNBRANCH == l)
                 && (BINOP_TERNCOND == n || BINOP_TERNBRANCH == n) )
               || ( (BINOP_ASGN <= l && l <= BINOP_ASGN_MUL)
@@ -877,7 +929,7 @@ void _parse_expr_two_after(parse_expr_state ref ps, struct _parse_expr_capture r
 
 /// proper start the `_parse_expr_two` loop, sets up `_parse_expr_exit` at callback chain end
 void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref lhs) {
-    enum expr_kind infix = _parse_is_infix(ps->tok);
+    enum expr_kind const infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
@@ -896,7 +948,7 @@ void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref c
 
 /// similar to `_parse_expr_entry` for sub expr in: '('<expr>')' or arg in: <expr> ('('<arg>')' | '['<arg>'])
 void _parse_expr_continue(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref lhs) {
-    enum expr_kind infix = _parse_is_infix(ps->tok);
+    enum expr_kind const infix = _parse_is_infix(ps->tok);
     if (infix) {
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
@@ -923,5 +975,8 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl tok) {
     return ps->tok;
 }
 // }}}
+
+#undef _expect
+#undef _expect1
 
 #endif // CINTRE_PARSER_H

@@ -32,6 +32,7 @@ typedef struct lex_state {
     bufsl slice;
     char const* file;
     size_t line;
+    size_t sidx;
     unsigned macro_depth;
     dyarr(struct _lex_state_source {
         char const* file;
@@ -47,6 +48,7 @@ typedef struct lex_state {
         bufsl slice;
         char const* file;
         size_t line;
+        size_t sidx;
     }) include_stack;
     dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
     dyarr(buf) workbufs;
@@ -62,6 +64,8 @@ void lini(lex_state ref ls, char cref entry);
 void ldel(lex_state ref ls);
 /// true if no more token (also last token is empty)
 #define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
+/// current line (at the end of last token) or empty if end of input
+bufsl llne(lex_state ref ls);
 /// compute a preprocessor expression
 long lxpr(lex_state cref ls, bufsl ref xpr);
 /// next token, move forward
@@ -78,10 +82,9 @@ buf _lex_read_all(FILE ref f) {
         fseek(f, 0, SEEK_SET);
         fread(r.ptr, 1, r.len, f);
     } else do {
-        size_t a = r.len ? r.len*2 : 1024;
-        char* s = dyarr_insert(&r, r.len, a);
-        if (!s) exitf("OOM");
-        fread(s, 1, a, f);
+        size_t const a = r.len ? r.len*2 : 1024;
+        if (!dyarr_resize(&r, a)) exitf("OOM");
+        r.len+= fread(r.ptr+r.len, 1, a, f);
     } while (!feof(f) && !ferror(f));
     return r;
 }
@@ -118,6 +121,7 @@ void lini(lex_state ref ls, char cref entry) {
     ls->slice.len = src->text.len;
     ls->file = src->file;
     ls->line = 1;
+    ls->sidx = 0;
 }
 
 void ldel(lex_state ref ls) {
@@ -132,6 +136,16 @@ void ldel(lex_state ref ls) {
     dyarr_clear(&ls->ifdef_stack);
     for (size_t k = 0; k < ls->workbufs.len; k++) dyarr_clear(&ls->workbufs.ptr[k]);
     dyarr_clear(&ls->workbufs);
+}
+
+bufsl llne(lex_state ref ls) {
+    bufsl r = {.ptr= ls->slice.ptr};
+    if (!ls->slice.len) return r;
+    buf cref ins = &ls->sources.ptr[ls->sidx].text;
+    while (ins->ptr < r.ptr && '\n' != r.ptr[-1]) r.ptr--, r.len++;
+    char cref end = memchr(ls->slice.ptr, '\n', ins->len-(ls->slice.ptr-ins->ptr));
+    r.len = end ? (size_t)(end-r.ptr) : ins->len-(r.ptr-ins->ptr);
+    return r;
 }
 
 // preproc expression helpers {{{
@@ -406,10 +420,12 @@ bufsl lext(lex_state ref ls) {
                 hold->slice = ls->slice;
                 hold->file = ls->file;
                 hold->line = ls->line;
+                hold->sidx = ls->sidx;
                 ls->slice.ptr = src->text.ptr;
                 ls->slice.len = src->text.len;
                 ls->file = src->file;
                 ls->line = 1;
+                ls->sidx++;
                 return lext(ls);
             }
 #           ifdef on_lsys
@@ -548,6 +564,7 @@ bufsl lext(lex_state ref ls) {
             ls->slice = hold->slice;
             ls->file = hold->file;
             ls->line = hold->line;
+            ls->sidx = hold->sidx;
             if (ls->macro_depth) ls->macro_depth--;
             return lext(ls);
         }
@@ -693,6 +710,7 @@ bufsl lext(lex_state ref ls) {
                 hold->slice = ls->slice;
                 hold->file = ls->file;
                 hold->line = ls->line;
+                hold->sidx = ls->sidx;
                 ls->slice.ptr = work->ptr;
                 ls->slice.len = work->len;
                 ls->macro_depth++;

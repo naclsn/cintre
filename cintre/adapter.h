@@ -1,3 +1,5 @@
+/// TODO: head doc
+
 #ifndef CINTRE_ADAPT_H
 #define CINTRE_ADAPT_H
 

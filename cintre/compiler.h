@@ -1,4 +1,5 @@
 /// compile to some bytecode
+/// TODO: head doc
 
 #ifndef CINTRE_COMPILER_H
 #define CINTRE_COMPILER_H

@@ -1,3 +1,26 @@
+/// `int main()` of the REPL; typically included as the entry point in the
+/// <c-main.c> file generated from `$ preparer -m`:
+/// ```c
+/// #include "build/a-standard.h"
+///
+/// static struct adpt_namespace const namespaces[] = {
+///     {.name= "standard", .count= countof(adptns_standard), .items= adptns_standard},
+/// };
+///
+/// #define CINTRE_NAMESPACES_DEFINED
+/// #include "cintre.c"
+/// ```
+///
+/// see `$ preparer -h`
+///
+/// if `CINTRE_NAMESPACES_DEFINED` is defined, then a declaration like the
+/// following must have already been fully defined:
+/// ```c
+/// static struct adpt_namespace const namespaces[] = { /*-*/ };
+/// ```
+///
+/// if `USE_READLINE` is defined, readline will be used
+
 #include "common.h"
 #include "parser.h"
 #include "adapter.h"

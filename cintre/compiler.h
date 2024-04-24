@@ -49,11 +49,90 @@ typedef struct compile_state {
 } compile_state;
 
 /// does modify the expression by at least adding a typing info in the usr fields
-struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
+struct adpt_type const* check_expression(compile_state cref cs, expression ref expr);
 /// the expression should have been sieved through `check_expression` first
 void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot);
 
-struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
+// first pass (typing, checking, ..) {{{
+bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src) {
+    // yeah no idea either that'll do for now until it actually shows too much
+#   define _are_types_same(_d, _s) (  \
+        (_d)->tyty == (_s)->tyty &&   \
+        (_d)->size == (_s)->size &&   \
+        (_d)->align == (_s)->align )
+    if (_are_types_same(dst, src)) return true;
+
+    bool const dst_isnum = TYPE_CHAR <= dst->tyty && dst->tyty <= TYPE_DOUBLE;
+    bool const src_isnum = TYPE_CHAR <= src->tyty && src->tyty <= TYPE_DOUBLE;
+    if (dst_isnum && src_isnum) return true;
+
+    if (TYPE_STRUCT == dst->tyty && TYPE_STRUCT == src->tyty) {
+        if (dst->size != src->size || dst->align != src->align ||
+                dst->info.comp.count != src->info.comp.count)
+            return false;
+
+        for (size_t k = 0; k < dst->info.comp.count; k++)
+            if (!_are_types_same(
+                        dst->info.comp.fields[k].type,
+                        src->info.comp.fields[k].type
+                        )) return false;
+
+        return true;
+    }
+
+    if (TYPE_FUN == dst->tyty || TYPE_FUN == src->tyty) {
+        struct adpt_type const* dst_tail = dst;
+        while (TYPE_PTR == dst_tail->tyty) dst_tail = dst->info.ptr;
+        struct adpt_type const* src_tail = src;
+        while (TYPE_PTR == src_tail->tyty) src_tail = src->info.ptr;
+
+        if (TYPE_FUN != dst->tyty || TYPE_FUN != src->tyty ||
+                dst->info.fun.count != src->info.fun.count ||
+                !_are_types_same(dst->info.fun.ret, src->info.fun.ret))
+            return false;
+
+        for (size_t k = 0; k < dst->info.fun.count; k++)
+            if (!_are_types_same(
+                        dst->info.fun.params[k].type,
+                        src->info.fun.params[k].type
+                        )) return false;
+
+        return true;
+    }
+
+    if (TYPE_ARR == dst->tyty) return false;
+
+    if (TYPE_PTR == dst->tyty) switch (src->tyty) {
+        struct adpt_type const* src_under;
+    case TYPE_PTR: src_under = src->info.ptr; if (0)
+    case TYPE_ARR: src_under = src->info.arr.item;
+        return _are_types_same(dst->info.ptr, src_under) ||
+                TYPE_VOID == dst->info.ptr->tyty ||
+                TYPE_VOID == src_under->tyty;
+    default:;
+    }
+
+    return false;
+#   undef _are_types_same
+}
+
+bool _is_expr_assignable(expression cref expr) {
+    // yeah no idea either that'll do for now until it actually shows too much
+    switch (expr->kind) {
+    case ATOM:;
+        char const c = *expr->info.atom.ptr|32;
+        return 'a' <= c && c <= 'z';
+    case BINOP_SUBSCR:
+    case UNOP_DEREF:
+    case UNOP_PMEMBER:
+    case UNOP_MEMBER:
+        return true;
+    default:
+        return false;
+    }
+}
+
+struct adpt_type const* check_expression(compile_state cref cs, expression ref expr) {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
 #   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
 #   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)
@@ -121,7 +200,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         size_t k, count = base->info.fun.count;
         if (15 < count) fail("NIY: function call with more than 15 arguments");
         for (k = 0; k < count && cons; k++) {
-            struct adpt_type const* arg = base->info.fun.params[count-1-k].type;
+            struct adpt_type const* param = base->info.fun.params[count-1-k].type;
+            struct adpt_type const* arg;
             if (k+1 == count) {
                 if (BINOP_COMMA == cons->kind) {
                     while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
@@ -133,7 +213,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 failforward(arg, cons->info.binary.rhs);
                 cons = cons->info.binary.lhs;
             }
-            // TODO: assignable
+            if (!_are_types_compatible(param, arg)) fail("Argument %zu's type cannot be assigned to corresponding parameter", k);
         }
         if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
         return expr->usr = (void*)base->info.fun.ret;
@@ -162,7 +242,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
         // TODO: compatible with op (same as respective normal binop)
-        // TODO: assignable
+        if (!_are_types_compatible(lhs, rhs)) fail("Value's type cannot be assigned to destination");
+        if (!_is_expr_assignable(expr->info.binary.lhs)) fail("Expression is not assignable");
         return expr->usr = (void*)lhs;
 
     case BINOP_LOR:
@@ -252,8 +333,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case UNOP_PRE_INC:
     case UNOP_POST_DEC:
     case UNOP_POST_INC:
-        // TODO: assignable
         failforward(opr, expr->info.unary.opr);
+        if (!_is_expr_assignable(expr->info.unary.opr)) fail("Expression is not assignable");
         if (isnum(opr) || isindir(opr)) return expr->usr = (void*)opr; // XXX: forwards the array type :/
         fail("Operand is not of an arithmetic type");
     }
@@ -271,6 +352,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   undef failforward
 #   undef fail
 } // check_expression
+// }}}
 
 #define at(__slt)  ((__slt)->loc - cs->vsp)
 #define atv(__slt) ((__slt)->as.variable - cs->vsp)

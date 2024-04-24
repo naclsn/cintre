@@ -25,8 +25,9 @@ $(PR): cintre/preparer.c cintre/*.h; $(CC) $< -o $@ $(CFLAGS)
 
 tests =         \
     tok-stream  \
-    expr-tree   \
     decl-list   \
+    expr-tree   \
+    type-check  \
     comp-code   \
 
 test-%:; ./test/$* check && printf "\x1b[32m$@ success\x1b[m\n" || printf "\x1b[31m$@ failure\x1b[m\n"

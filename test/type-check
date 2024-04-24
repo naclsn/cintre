@@ -1,0 +1,98 @@
+#if 0
+prog=${0%/*}/../build/${0##*/}.exe
+base=${0%/*}/in/${0##*/}
+set -ex
+cc -ggdb -O0 -x c $0 -o $prog || exit 1
+case $1 in
+    check)  bla() { diff -u $1 -; };;
+    update) bla() { cat >$1; };;
+    *) exec $prog "$@";;
+esac
+
+$prog $base/literals.c | bla $base/literals.tape
+
+exit
+#endif
+
+#include "../cintre/compiler.h"
+
+// print {{{
+void print_type(struct adpt_type cref ty) {
+    switch (ty->tyty) {
+    case TYPE_VOID:   printf("void");   break;
+    case TYPE_CHAR:   printf("char");   break;
+    case TYPE_UCHAR:  printf("uchar");  break;
+    case TYPE_SCHAR:  printf("schar");  break;
+    case TYPE_SHORT:  printf("short");  break;
+    case TYPE_INT:    printf("int");    break;
+    case TYPE_LONG:   printf("long");   break;
+    case TYPE_USHORT: printf("ushort"); break;
+    case TYPE_UINT:   printf("uint");   break;
+    case TYPE_ULONG:  printf("ulong");  break;
+    case TYPE_FLOAT:  printf("float");  break;
+    case TYPE_DOUBLE: printf("double"); break;
+
+    case TYPE_STRUCT: printf("struct{"); if (0)
+    case TYPE_UNION:  printf("union{");
+        for (size_t k = 0; k < ty->info.comp.count; k++) {
+            struct adpt_comp_field const* it = ty->info.comp.fields+k;
+            printf(k ? ", [%zu]%s: " : "[%zu]%s: ", it->offset, it->name);
+            print_type(it->type);
+        }
+        printf("}");
+        break;
+
+    case TYPE_FUN:
+        printf("fun(");
+        for (size_t k = 0; k < ty->info.fun.count; k++) {
+            struct adpt_fun_param const* it = ty->info.fun.params+k;
+            printf(k ? ", %s: " : "%s: ", it->name);
+            print_type(it->type);
+        }
+        printf(") -> ");
+        print_type(ty->info.fun.ret);
+        break;
+
+    case TYPE_PTR:
+        printf("ptr[");
+        print_type(ty->info.ptr);
+        printf("]");
+        break;
+
+    case TYPE_ARR:
+        printf("arr[%zu, ", ty->info.arr.count);
+        print_type(ty->info.arr.item);
+        printf("]");
+        break;
+    }
+}
+// }}}
+
+void check(void ref _, expression ref expr, bufsl ref tok) {
+    (void)_;
+    struct adpt_type cref ty = check_expression(&(compile_state){0}, expr);
+
+    print_type(ty);
+    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+}
+
+int main(int argc, char** argv) {
+    if (1 == argc) return puts("Usage: <prog> <filename>");
+
+    lex_state ls = {0};
+    lini(&ls, argv[1]);
+
+    bufsl tok = lext(&ls);
+    parse_expr_state ps = {.ls= &ls, .on= check};
+    while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
+        switch (*tok.ptr) {
+        case ';':
+            tok = lext(&ls);
+            continue;
+
+        default:
+            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
+        }
+
+    ldel(&ls);
+}

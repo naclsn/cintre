@@ -1,4 +1,4 @@
-/// C parser around the lexer; examples:
+/// C parser on top of the lexer; examples:
 /// ```c
 /// lex_state ls = ...;
 /// my_state_t my_state = ...;
@@ -9,8 +9,8 @@
 /// {
 ///     parse_decl_state decl_ps = {.ls= &ls, .usr= &my_state, .on= accept_decl};
 ///     bufsl after = parse_declaration(&decl_ps, lext(&ls));
-///     // note: `int a, b;` have 2 declarations with the same "base", so it
-///     // will be 2 calls to `parse_declaration` with the same state
+///     // note: `int a, b;` has 2 declarations with the same "base", so it
+///     // will be 2 calls to `parse_declaration` with the same state;
 ///     // however when the ';' is found the usual behavior is to reset:
 ///     if (';' == *after.ptr) decl_ps.base = (declaration){0};
 /// }

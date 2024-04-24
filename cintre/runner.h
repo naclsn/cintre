@@ -1,4 +1,13 @@
-/// TODO: head doc
+/// Bytecode interpreter on top of the compiler; example:
+/// ```c
+/// struct slot slot = ...;
+/// bytecode bc = ...;
+///
+/// run_state rs = {.sp= sizeof rs.stack};
+///
+/// run(&rs, bc);
+/// // result is the `slot.ty->size` bytes at `rs.stack + rs.sp`
+/// ```
 
 #ifndef CINTRE_RUNNER_H
 #define CINTRE_RUNNER_H
@@ -11,15 +20,15 @@
 #define STACK_SIZE 1024*1024
 #endif
 
-typedef struct runner_state {
+typedef struct run_state {
     char stack[STACK_SIZE];
     size_t sp; // xxx: don't like that 0 is not sane default, it has
                //      to be explicitly initialized to `sizeof ::stack`
-} runner_state;
+} run_state;
 
-void run(runner_state ref rs, bytecode const code);
+void run(run_state ref rs, bytecode const code);
 
-void run(runner_state ref rs, bytecode const code) {
+void run(run_state ref rs, bytecode const code) {
     size_t a, b, c;
 #   define imm(nm) for (                        \
         unsigned xx = (nm = code.ptr[++k], 0);  \

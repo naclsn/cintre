@@ -1,5 +1,33 @@
-/// compile to some bytecode
-/// TODO: head doc
+/// Bytecode compiler on top of the parser; example:
+/// (interface is being worked on..)
+/// ```c
+/// compile_state cs = {0};
+///
+/// struct slot slot = {.ty= check_expression(&cs, expr)};
+/// if (!slot.ty) return false;
+/// _alloc_slot(&cs, &slot);
+///
+/// compile_expression(&cs, expr, &slot);
+/// switch (slot.usage) { ... }
+///
+/// cs->res; // this is the bytecode
+/// ```
+///
+/// A "slot" represents an expression's result "at runtime"; it consists of:
+///
+/// - a type (the type of the expression) mainly needed for its size and
+///   alignment (the real slot may be larger than the type size when a slot is
+///   being recycled for 'optimisation')
+///
+/// - a location on the runtime stack (end and codeat should be internal only)
+///
+/// - a "usage" which should be:
+///   * _slot_value: the slot is not used, and the value was computed at
+///     compile-time (found in `as.value.<ty>`)
+///   * _slot_used: the slot is used, that is a sequence of instruction was
+///     emitted that writes to the slot's stack location
+///   * _slot_variable: the slot is not used, the value will be found (at
+///     runtime) at the location `as.variable`
 
 #ifndef CINTRE_COMPILER_H
 #define CINTRE_COMPILER_H
@@ -13,9 +41,9 @@ typedef dyarr(unsigned char) bytecode;
 struct slot {
   struct adpt_type const* /*const*/ ty;
 
-  size_t /*const*/ loc;
-  size_t /*const*/ end;
-  size_t /*const*/ codeat;
+  size_t /*const*/ loc; // location of the slot on the stack, of alignment `ty->align` and size at least `ty->size`
+  size_t /*const*/ end; // end of the slot, so real size would be `end - loc`
+  size_t /*const*/ codeat; // len of code at time of stack allocation, ie where the `push <sz>` instruction is
 
   enum {
       //_slot_broken,

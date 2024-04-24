@@ -1,4 +1,16 @@
-/// TODO: head doc
+/// Collection of colorful print utils for various types:
+///
+/// `declaration` and `expression` from the parser
+///   declarations does not reflect the C-style declarations
+///   expressions are shown as a plain boring tree
+///
+/// `struct adpt_type` and `struct adpt_item` from the adapter
+///   items are printed with their type if depth is 0 and with their value
+///   (which may be taken from the stack)
+///
+/// `bytecode` from the compiler
+///   traditional assembly-looking, also works a decent reference for the
+///   instruction set as long as you can read it
 
 #ifndef CINTRE_PRINTS_H
 #define CINTRE_PRINTS_H

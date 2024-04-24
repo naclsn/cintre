@@ -1,4 +1,11 @@
-/// TODO: head doc
+/// Data types and util used to describe functions and objects in a parsed
+/// header. Typically included by an "adapter" <a-file.h> (see preparer).
+///
+/// A namespace has a name and a number of items, an item is (statically) an
+/// object or a function with its type. Everything is considered static and
+/// immutable, because that's how it would be in an adapter file.
+///
+/// Once again LP64 is assumed, this matters for `sizeof(long) == 8`.
 
 #ifndef CINTRE_ADAPT_H
 #define CINTRE_ADAPT_H

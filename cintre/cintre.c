@@ -33,7 +33,7 @@ typedef struct cintre_state {
     parse_decl_state decl;
     parse_expr_state expr;
     compile_state comp;
-    runner_state runr;
+    run_state runr;
 } cintre_state;
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {

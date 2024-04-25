@@ -28,6 +28,8 @@ typedef struct run_state {
 
 void run(run_state ref rs, bytecode const code);
 
+// ---
+
 void run(run_state ref rs, bytecode const code) {
     size_t a, b, c;
 #   define imm(nm) for (                        \

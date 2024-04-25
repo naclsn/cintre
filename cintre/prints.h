@@ -30,6 +30,8 @@ void print_code(FILE ref strm, bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
 void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count);
 
+// ---
+
 void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
     case QUAL_END:                                                  break;

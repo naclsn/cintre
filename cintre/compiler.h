@@ -73,7 +73,9 @@ struct slot {
 typedef struct compile_state {
     bytecode res;
     size_t vsp;
-    struct adpt_item const* (*lookup)(bufsl const name);
+
+    void* usr;
+    struct adpt_item const* (*lookup)(void* usr, bufsl const name);
 } compile_state;
 
 /// does modify the expression by at least adding a typing info in the usr fields
@@ -144,7 +146,7 @@ bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src)
 #   undef _are_types_same
 }
 
-bool _is_expr_assignable(expression cref expr) {
+bool _is_expr_lvalue(expression cref expr) {
     // yeah no idea either that'll do for now until it actually shows too much
     switch (expr->kind) {
     case ATOM:;
@@ -209,7 +211,7 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
                                       : isunsigned ? &adptb_uint_type : &adptb_int_type
                                       );
         }
-        struct adpt_item cref found = cs->lookup(expr->info.atom);
+        struct adpt_item cref found = cs->lookup(cs->usr, expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
         if (ITEM_TYPEDEF == found->kind) fail("Unexpected type name '%.*s'", bufmt(expr->info.atom));
         return expr->usr = (void*)found->type;
@@ -271,7 +273,7 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
         failforward(rhs, expr->info.binary.rhs);
         // TODO: compatible with op (same as respective normal binop)
         if (!_are_types_compatible(lhs, rhs)) fail("Value's type cannot be assigned to destination");
-        if (!_is_expr_assignable(expr->info.binary.lhs)) fail("Expression is not assignable");
+        if (!_is_expr_lvalue(expr->info.binary.lhs)) fail("Expression is not assignable");
         return expr->usr = (void*)lhs;
 
     case BINOP_LOR:
@@ -362,7 +364,7 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
     case UNOP_POST_DEC:
     case UNOP_POST_INC:
         failforward(opr, expr->info.unary.opr);
-        if (!_is_expr_assignable(expr->info.unary.opr)) fail("Expression is not assignable");
+        if (!_is_expr_lvalue(expr->info.unary.opr)) fail("Expression is not assignable");
         if (isnum(opr) || isindir(opr)) return expr->usr = (void*)opr; // XXX: forwards the array type :/
         fail("Operand is not of an arithmetic type");
     }
@@ -598,7 +600,7 @@ void _materialize_slot(compile_state ref cs, struct slot ref slot) {
 /// conversion step (allocates and de-allocates a slot if needed)
 void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot ref slot) {
     // so we have `slot` and `expr` of two types
-    // "assignablility" should already be ensured by `check_expression`
+    // compatibility should already be ensured by `check_expression`
 
     // ideal case when they have the same type is just compile the expr w/ res into the slot
     // otherwise ptr and num conversions must take place:
@@ -721,7 +723,7 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
                     memcpy(slot->as.value.bytes, memcpy((unsigned char[sizeof slot->as.value.bytes]){0}, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
                 else {
                     unsigned char x[sizeof slot->as.value.bytes] = {0};
-                    bool const sign_bit = tmp.as.value.bytes[expr_ty->size] & 0x80; // (yyy: endianness)
+                    bool const sign_bit = tmp.as.value.bytes[expr_ty->size-1] & 0x80; // (yyy: endianness)
                     if (sign_bit) memset(x, 0xff, sizeof x);
                     memcpy(slot->as.value.bytes, memcpy(x, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
                 }
@@ -867,7 +869,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             return;
         }
 
-        struct adpt_item const* found = cs->lookup(expr->info.atom);
+        struct adpt_item const* found = cs->lookup(cs->usr, expr->info.atom);
         if (ITEM_VALUE == found->kind) {
             slot->as.value.ul = (size_t)found->as.object;
             slot->usage = _slot_value;
@@ -945,36 +947,37 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case BINOP_ASGN: {
-            struct adpt_type const* dst_ty = expr->info.binary.lhs->usr;
-            struct adpt_type const* src_ty = expr->info.binary.rhs->usr;
-            // TODO: conversions and all
+            expression cref dst_ex = expr->info.binary.lhs;
+            expression cref src_ex = expr->info.binary.rhs;
 
-            struct slot dst = {.ty= dst_ty};
-            compile_expression(cs, expr->info.binary.lhs, &dst);
+            struct slot dst = {.ty= dst_ex->usr};
+            switch (dst_ex->kind) {
+            case ATOM:
+                compile_expression(cs, dst_ex, &dst);
+                // can be stack variable or static global object;
+                // for now only support stack variable
+                _fit_expr_to_slot(cs, src_ex, slot);
+                switch (slot->usage) {
+                case _slot_value:
+                    _emit_data(cs, atv(&dst), dst.ty->size, slot->as.value.bytes); // (yyy: endianness)
+                    break;
+                case _slot_used:
+                    _emit_move(cs, atv(&dst), dst.ty->size, at(slot));
+                    break;
+                case _slot_variable:
+                    _emit_move(cs, atv(&dst), dst.ty->size, atv(slot));
+                    break;
+                }
+                break; // return;
 
-            // xxx: only assigning to plain variable for now
-            slot->as.variable = dst.as.variable;
-            slot->usage = _slot_variable;
-
-            struct slot src = {.ty= src_ty};
-            _alloc_slot(cs, &src);
-            compile_expression(cs, expr->info.binary.rhs, &src);
-
-            switch (src.usage) {
-            case _slot_value:
-                _cancel_slot(cs, &src);
-                _emit_data(cs, atv(&dst), slot->ty->size, src.as.value.bytes);
+            case BINOP_SUBSCR:
+            case UNOP_DEREF:
+            case UNOP_PMEMBER:
+            case UNOP_MEMBER:
+                exitf("NIY: assigning to this kind of lvalue");
                 break;
 
-            case _slot_used:
-                _emit_move(cs, atv(&dst), slot->ty->size, at(&src));
-                _rewind_slot(cs, &src);
-                break;
-
-            case _slot_variable:
-                _cancel_slot(cs, &src);
-                _emit_move(cs, atv(&dst), slot->ty->size, atv(&src));
-                break;
+            default:;
             }
         }
         return;
@@ -1165,12 +1168,38 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case UNOP_PRE_DEC:
-    case UNOP_PRE_INC:
-    case UNOP_POST_DEC:
-    case UNOP_POST_INC:
-        exitf("NIY: post and pre inc/dec");
-        return;
+        {
+            bool post;
+            enum _arith_op op;
+    case UNOP_PRE_DEC: post = false; op = _ops_rsubi; goto sw_crement;
+    case UNOP_PRE_INC: post = false; op = _ops_addi;  goto sw_crement;
+    case UNOP_POST_DEC: post = true; op = _ops_rsubi; goto sw_crement;
+    case UNOP_POST_INC: post = true; op = _ops_addi;  goto sw_crement;
+        sw_crement:
+
+            switch (expr->info.unary.opr->kind) {
+            case ATOM:
+                compile_expression(cs, expr->info.unary.opr, slot);
+                // can be stack variable or static global object;
+                // for now only support stack variable
+                if (post) {
+                    _emit_move(cs, at(slot), slot->ty->size, atv(slot));
+                    slot->usage = _slot_used;
+                }
+                _emit_arith(cs, op, _slot_arith_w(slot), atv(slot), 1, atv(slot));
+                break;
+
+            case BINOP_SUBSCR:
+            case UNOP_DEREF:
+            case UNOP_PMEMBER:
+            case UNOP_MEMBER:
+                exitf("NIY: assigning to this kind of lvalue");
+                break;
+
+            default:;
+            }
+            return;
+        }
     }
 
 } // compile_expression

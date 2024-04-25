@@ -34,6 +34,7 @@ typedef struct cintre_state {
     parse_expr_state expr;
     compile_state comp;
     run_state runr;
+    dyarr(struct adpt_item) locs;
 } cintre_state;
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
@@ -109,11 +110,10 @@ bool prompt(char const* prompt, char** res) {
 static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
 #endif
 
-dyarr(struct adpt_item) locals;
-
-struct adpt_item const* lookup(bufsl const name) {
-    for (size_t k = 0; k < locals.len; k++) {
-        struct adpt_item const* const it = locals.ptr+k;
+struct adpt_item const* lookup(void* usr, bufsl const name) {
+    cintre_state cref gs = usr;
+    for (size_t k = 0; k < gs->locs.len; k++) {
+        struct adpt_item const* const it = gs->locs.ptr+k;
         if (!memcmp(it->name, name.ptr, name.len)) return it;
     }
     for (size_t ns = 0; ns < countof(namespaces); ns++)
@@ -134,6 +134,7 @@ bool is_decl_keyword(bufsl const tok) {
         || tokis("unsigned")
         || tokis("float")
         || tokis("double")
+        || tokis("void")
         || tokis("struct")
         || tokis("union")
         || tokis("enum")
@@ -206,9 +207,10 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
                     : _unsigned ? &adptb_uint_type : &adptb_int_type);
         if (nameis("float"))  cpyreturn(&adptb_float_type);
         if (nameis("double")) cpyreturn(&adptb_double_type);
+        if (nameis("void"))   cpyreturn(&adptb_void_type);
 #       undef nameis
 
-        struct adpt_item cref it = gs->comp.lookup(ty->name);
+        struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, ty->name);
         if (it && ITEM_TYPEDEF == it->kind) cpyreturn(it->type);
         break;
 
@@ -356,11 +358,16 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     //printf("\n");
     struct adpt_type cref ty = alloc_adpt_type(gs, &decl->type);
     if (!ty) return;
+    if (!ty->size) {
+        notif("Zero-sized variable type");
+        free_adpt_type(ty);
+        return;
+    }
 
     //size_t end = gs->sp;
     gs->runr.sp = ((gs->runr.sp-ty->size) / ty->align) * ty->align;
 
-    struct adpt_item* it = dyarr_push(&locals);
+    struct adpt_item* it = dyarr_push(&gs->locs);
     if (!it) exitf("OOM");
     char* name = malloc(decl->name.len+1);
     if (!name) free(it), exitf("OOM");
@@ -385,22 +392,24 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
-        printf("   h[elp]  - print this help and no more\n");
-        printf("   loc[ales]  -  list local names\n");
-        printf("   names[paces] or ns  -  list names in namespaces\n");
-        printf("   ast  -  ast of the expression\n");
-        printf("   ty[pe]  -  type of the expression, eg. `strlen; ty`\n");
-        printf("   bytec[ode] or bc  -  internal bytecode from compilation\n");
+        printf("   h[elp]                  -  print this help and no more\n");
+        printf("   loc[ales]               -  list local names\n");
+        printf("   names[paces] or ns      -  list names in namespaces\n");
+        printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
+        printf("   ast                     -  ast of the expression\n");
+        printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
+        printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
         printf("no command after the ; (or no ;) will simply execute the expression\n");
         return;
     }
 
     if (xcmdis("loc")) {
         printf("List of locals:\n");
-        for (size_t k = 0; k < locals.len; k++) {
-            struct adpt_item cref it = locals.ptr+k;
+        size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
+        for (size_t k = 0; k < gs->locs.len; k++) {
+            struct adpt_item cref it = gs->locs.ptr+k;
             if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
-            else printf("   [top-%zu] %-8s\t", STACK_SIZE-it->as.variable, it->name);
+            else printf("   [top-%zu] %-8s\t", sz-it->as.variable, it->name);
             print_type(stdout, it->type);
             printf("\n");
         }
@@ -419,6 +428,13 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
                 printf("\n");
             }
         }
+        return;
+    }
+
+    if (xcmdis("sta")) {
+        size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
+        printf("Stack top (sp= %zx /%zx @-%zu):\n", gs->runr.sp, sz, sz-gs->runr.sp);
+        print_tops(stdout, &gs->runr, gs->locs.ptr, gs->locs.len);
         return;
     }
 
@@ -472,8 +488,8 @@ int main(void) {
         .lexr= {.file= "<input>"},
         .decl= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_decl},
         .expr= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_expr},
-        .comp= {.lookup= lookup},
-        .runr= {.sp= sizeof _gs.runr.stack}, // xxx: don't like having to do that
+        .comp= {.usr= &_gs, .lookup= lookup},
+        .runr= {.sp= sizeof _gs.runr.stack}, // (xxx: sizeof stack)
     };
     cintre_state ref gs = &_gs;
 
@@ -483,7 +499,7 @@ int main(void) {
         gs->lexr.slice.len = strlen(gs->lexr.slice.ptr = line);
 
         bufsl tok = lext(&gs->lexr);
-        if (!tok.len || ';' == *tok.ptr) accept_expr(NULL, NULL, &tok);
+        if (!tok.len || ';' == *tok.ptr) accept_expr(gs, NULL, &tok);
 
         else if (is_decl_keyword(tok)) {
             do {
@@ -491,7 +507,7 @@ int main(void) {
 
                 if (1 == tok.len && '=' == *tok.ptr) {
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
-                    char cref name = dyarr_bot(&locals)->name;
+                    char cref name = dyarr_bot(&gs->locs)->name;
                     tok = parse_expression(&gs->expr, (bufsl){.ptr= name, .len= strlen(name)});
                 }
                 // FIXME: sometime incorrect until parsing of the comma operator is done properly
@@ -505,11 +521,11 @@ int main(void) {
     }
 
     ldel(&gs->lexr);
-    for (size_t k = 0; k < locals.len; k++) {
-        free((void*)locals.ptr[k].name);
-        free_adpt_type(locals.ptr[k].type);
+    for (size_t k = 0; k < gs->locs.len; k++) {
+        free((void*)gs->locs.ptr[k].name);
+        free_adpt_type(gs->locs.ptr[k].type);
     }
-    free(locals.ptr);
+    free(gs->locs.ptr);
 
     return EXIT_SUCCESS;
 }

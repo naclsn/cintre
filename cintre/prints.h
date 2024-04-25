@@ -11,6 +11,8 @@
 /// `bytecode` from the compiler
 ///   traditional assembly-looking, also works a decent reference for the
 ///   instruction set as long as you can read it
+///
+/// `run_state` for the top of its stack at runtime
 
 #ifndef CINTRE_PRINTS_H
 #define CINTRE_PRINTS_H
@@ -19,12 +21,14 @@
 #include "parser.h"
 #include "adapter.h"
 #include "compiler.h"
+#include "runner.h"
 
 void print_decl(FILE ref strm, declaration cref decl);
 void print_expr(FILE ref strm, expression cref expr, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty);
 void print_code(FILE ref strm, bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
+void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count);
 
 void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
@@ -398,6 +402,49 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     }
 
     fprintf(strm, "\n");
+}
+
+void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count) {
+    size_t const sz = sizeof rs->stack; // (xxx: sizeof stack)
+
+    size_t in_var_size = 0;
+    unsigned cur_var_color = 1;
+#   define col_n(_n) (((_n)&3)+31)
+
+    for (size_t at = sz; 16 <= at && rs->sp < at; at-= 16) {
+        fprintf(strm, "0x%08zx @-%-5zu | ", at, sz-at);
+
+        unsigned off_var_color = 0;
+        for (unsigned k = 0; k < 16; k++) {
+            if (rs->sp >= at-k) {
+                fprintf(strm, "   ");
+                continue;
+            }
+            fprintf(strm, " ");
+
+            if (!in_var_size) {
+                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-items[n].type->size-k) {
+                    in_var_size = items[n].type->size;
+                    break;
+                }
+                if (in_var_size) fprintf(strm, "\x1b[%u;4m", col_n(cur_var_color+off_var_color++));
+            }
+
+            fprintf(strm, "%02hhX", rs->stack[at-1-k]);
+
+            if (in_var_size && !--in_var_size) fprintf(strm, "\x1b[m");
+        }
+
+        fprintf(strm, "  |");
+        if (off_var_color)
+            for (unsigned k = 0; k < 16 && rs->sp < at-k; k++)
+                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-items[n].type->size-k)
+                    fprintf(strm, "  \x1b[%um%s\x1b[m(%zu)", col_n(cur_var_color++), items[n].name, items[n].type->size);
+
+        fprintf(strm, "\n");
+    }
+
+#   undef col_n
 }
 
 #endif // CINTRE_PRINTS_H

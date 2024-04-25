@@ -625,13 +625,12 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         // - a '=' or a ',' or a ';' -> emit and return
 
         if (isid()) {
-            if (!decl->type.name.len
-                    || (3 == decl->type.name.len && !memcmp("int", decl->type.name.ptr, 3)
-                        && ((6 == ps->tok.len && !memcmp("double", ps->tok.ptr, 6))
-                            || (3 == ps->tok.len && !memcmp("int", ps->tok.ptr, 3))
-                            )
-                        )
-                    ) {
+            if (!decl->type.name.len ||
+                    (bufis(decl->type.name, "int") &&
+                     ( bufis(ps->tok, "int")    ||
+                       bufis(ps->tok, "char")   || // signed/unsigned char
+                       bufis(ps->tok, "double") )) // long double
+               ) {
                 decl->type.name = ps->tok;
                 continue;
             }

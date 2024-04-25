@@ -81,3 +81,4 @@ enu E {
         C
     } -- tok: ;
 end: int -- tok: ;
+a: char uns -- tok: ;

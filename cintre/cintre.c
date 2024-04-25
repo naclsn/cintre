@@ -507,7 +507,7 @@ int main(void) {
 
                 if (1 == tok.len && '=' == *tok.ptr) {
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
-                    char cref name = dyarr_bot(&gs->locs)->name;
+                    char cref name = dyarr_top(&gs->locs)->name;
                     tok = parse_expression(&gs->expr, (bufsl){.ptr= name, .len= strlen(name)});
                 }
                 // FIXME: sometime incorrect until parsing of the comma operator is done properly

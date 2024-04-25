@@ -50,4 +50,4 @@ struct S {} ;
 enum E { A, B, C, };
 int end;
 
-
+unsigned char a;

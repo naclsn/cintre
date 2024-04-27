@@ -35,3 +35,6 @@ testup-%:; ./test/$* update
 test: $(addprefix test-,$(tests))
 testup: $(addprefix testup-,$(tests))
 .PHONY: test testup test-% testup-%
+
+build/coverage.html: test; gcovr -f cintre --html $@ #--html-css doc/gcovr-style.css
+build/coverage-details.html: test; gcovr -f cintre --html-details $@ #--html-css doc/gcovr-style.css

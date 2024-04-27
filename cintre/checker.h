@@ -23,10 +23,15 @@ typedef struct compile_state {
 
     void* usr;
     struct adpt_item const* (*lookup)(void* usr, bufsl const name);
+
+    // needed for cases:
+    // - ptr decay (arr type to ptr)
+    // - address of (ptr around type)
+    dyarr(struct adpt_type) chk_work;
 } compile_state;
 
 /// does modify the expression by at least adding a typing info in the usr fields
-struct adpt_type const* check_expression(compile_state cref cs, expression ref expr);
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
 
 // check utils {{{
 bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src) {
@@ -111,7 +116,7 @@ bool _is_expr_lvalue(expression cref expr) {
 struct slot;
 void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot);
 
-struct adpt_type const* check_expression(compile_state cref cs, expression ref expr) {
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
 #   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
 #   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)
@@ -197,10 +202,9 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
         if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
         return expr->usr = (void*)base->info.fun.ret;
 
-
     case BINOP_TERNCOND:
     case BINOP_TERNBRANCH:
-        fail("NIY: ternary");
+        fail("NIY: ternary"); // TODO
 
     case BINOP_COMMA:
         failforward(lhs, expr->info.binary.lhs);
@@ -220,9 +224,27 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
     case BINOP_ASGN_MUL:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        // TODO: compatible with op (same as respective normal binop)
-        if (!_are_types_compatible(lhs, rhs)) fail("Value's type cannot be assigned to destination");
         if (!_is_expr_lvalue(expr->info.binary.lhs)) fail("Expression is not assignable");
+        switch (expr->kind) {
+        case BINOP_ASGN_ADD:
+        case BINOP_ASGN_SUB:
+            if (isptr(lhs) && isint(rhs)) break;
+            // fall through
+        case BINOP_ASGN_DIV:
+        case BINOP_ASGN_MUL:
+            if (!isnum(rhs) || !isnum(lhs)) fail("Both operands are not of an arithmetic type");
+            break;
+        case BINOP_ASGN_BOR:
+        case BINOP_ASGN_BXOR:
+        case BINOP_ASGN_BAND:
+        case BINOP_ASGN_BSHL:
+        case BINOP_ASGN_BSHR:
+        case BINOP_ASGN_REM:
+            if (!isint(rhs) || !isint(lhs)) fail("Both operands are not of an integral type");
+            break;
+        default:
+            if (!_are_types_compatible(lhs, rhs)) fail("Value type cannot be assigned to destination");
+        }
         return expr->usr = (void*)lhs;
 
     case BINOP_LOR:
@@ -235,8 +257,10 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
     case BINOP_GE:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if ((isnum(lhs) || isindir(lhs)) && (isnum(rhs) || isindir(rhs))) // xxx: means can compare ptr and float for no reason..
-            return expr->usr = (void*)&adptb_int_type; // yyy
+        if ((isnum(lhs) && isnum(rhs)) ||
+                ( (isint(lhs) || isindir(lhs)) &&
+                  (isint(rhs) || isindir(rhs)) ))
+            return expr->usr = (void*)&adptb_int_type;
         fail("Values are not comparable");
 
     case BINOP_BOR:
@@ -247,22 +271,39 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
     case BINOP_REM:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if (isint(lhs) && isint(rhs)) return expr->usr = (void*)lhs; // yyy
+        // (yyy: approximation of implicit conversions' "common real type")
+        if (isint(lhs) && isint(rhs)) return expr->usr = (void*)(lhs->size < rhs->size ? rhs : lhs);
         fail("Both operands are not of an integral type");
 
     case BINOP_SUB:
     case BINOP_ADD:
-        failforward(lhs, expr->info.binary.lhs);
-        failforward(rhs, expr->info.binary.rhs);
-        if (isnum(lhs) && isindir(rhs)) return expr->usr = (void*)rhs; // XXX: forwards the array type :/
-        if (isnum(rhs) && isindir(lhs)) return expr->usr = (void*)lhs;
-        if (0) {
-            // fall through
     case BINOP_DIV:
     case BINOP_MUL:
-            failforward(lhs, expr->info.binary.lhs);
-            failforward(rhs, expr->info.binary.rhs);
-        }
+        failforward(lhs, expr->info.binary.lhs);
+        failforward(rhs, expr->info.binary.rhs);
+        if (BINOP_SUB == expr->kind || BINOP_ADD == expr->kind) {
+            struct adpt_type* pty;
+            if (isint(lhs)) {
+                if (isptr(rhs)) return expr->usr = (void*)rhs;
+                if (isarr(rhs)) return expr->usr = !(pty = dyarr_push(&cs->chk_work)) ? exitf("OOM"), NULL
+                    : memcpy(pty, &(struct adpt_type){
+                            .size= sizeof(void*),
+                            .align= sizeof(void*),
+                            .tyty= TYPE_PTR,
+                            .info.ptr= rhs->info.arr.item,
+                        }, sizeof *pty);
+            }
+            if (isint(rhs)) {
+                if (isptr(lhs)) return expr->usr = (void*)lhs;
+                if (isarr(lhs)) return expr->usr = !(pty = dyarr_push(&cs->chk_work)) ? exitf("OOM"), NULL
+                    : memcpy(pty, &(struct adpt_type){
+                            .size= sizeof(void*),
+                            .align= sizeof(void*),
+                            .tyty= TYPE_PTR,
+                            .info.ptr= lhs->info.arr.item,
+                        }, sizeof *pty);
+            }
+        } // ptr arith
         if (isnum(lhs) && isnum(rhs)) {
             bool const lf = isflt(lhs), rf = isflt(rhs);
             // (yyy: approximation of implicit conversions' "common real type")
@@ -272,15 +313,17 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
         }
         fail("Both operands are not of an arithmetic type");
 
-    case UNOP_ADDR: {
-            fail("NIY: address of");
-            static struct adpt_type const voidp = {
+    case UNOP_ADDR:
+        if (_is_expr_lvalue(expr->info.unary.opr)) {
+            failforward(opr, expr->info.unary.opr);
+            struct adpt_type ref pty = dyarr_push(&cs->chk_work);
+            if (!pty) exitf("OOM");
+            return expr->usr = memcpy(pty, &(struct adpt_type){
                 .size= sizeof(void*),
                 .align= sizeof(void*),
                 .tyty= TYPE_PTR,
-                .info.ptr= &adptb_void_type,
-            };
-            return expr->usr = (void*)&voidp; // XXX: yeah, nahh
+                .info.ptr= opr,
+            }, sizeof *pty);
         }
         fail("Cannot take the address of expression");
     case UNOP_DEREF:
@@ -289,12 +332,15 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
         fail("Operand is not of a pointer type");
 
     case UNOP_PMEMBER:
-        failforward(opr, expr->info.unary.opr);
-        if (!isindir(opr)) fail("Operand is not of a pointer type");
-        if (0)
     case UNOP_MEMBER:
-            failforward(opr, expr->info.unary.opr);
-        fail("NIY: member access");
+        failforward(opr, expr->info.member.base);
+        if (UNOP_MEMBER != expr->kind && !isindir(opr)) fail("Operand is not of a pointer type");
+        struct adpt_type const* comp = UNOP_MEMBER == expr->kind ? opr : isptr(opr) ? opr->info.ptr : opr->info.arr.item;
+        if (TYPE_STRUCT != comp->tyty && TYPE_UNION != comp->tyty) fail("Base of member expression is not a of a structure or union type");
+        for (size_t k = 0; k < comp->info.comp.count; k++)
+            if (bufis(*expr->info.member.name, comp->info.comp.fields[k].name))
+                return expr->usr = (void*)comp->info.comp.fields[k].type;
+        fail("Field '%.*s' not found in operand %s type", bufmt(*expr->info.member.name), TYPE_STRUCT == comp->tyty ? "structure" : "union");
 
     case UNOP_BNOT:
     case UNOP_LNOT:
@@ -314,7 +360,7 @@ struct adpt_type const* check_expression(compile_state cref cs, expression ref e
     case UNOP_POST_INC:
         failforward(opr, expr->info.unary.opr);
         if (!_is_expr_lvalue(expr->info.unary.opr)) fail("Expression is not assignable");
-        if (isnum(opr) || isindir(opr)) return expr->usr = (void*)opr; // XXX: forwards the array type :/
+        if (isnum(opr) || isptr(opr)) return expr->usr = (void*)opr;
         fail("Operand is not of an arithmetic type");
     }
 

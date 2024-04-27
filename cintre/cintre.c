@@ -38,6 +38,7 @@ typedef struct cintre_state {
 } cintre_state;
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
+    cs->chk_work.len = 0; // xxx: annoying
     struct slot slot = {.ty= check_expression(cs, expr)};
     if (!slot.ty) return false;
     _alloc_slot(cs, &slot);
@@ -449,6 +450,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     gs->comp.res.len = 0;
 
     if (xcmdis("ty")) {
+        gs->comp.chk_work.len = 0; // xxx: annoying
         struct adpt_type cref ty = check_expression(&gs->comp, expr);
         if (!ty) return;
         printf("Expression is of type: ");
@@ -526,6 +528,7 @@ int main(void) {
         free_adpt_type(gs->locs.ptr[k].type);
     }
     free(gs->locs.ptr);
+    free(gs->comp.chk_work.ptr); // xxx: annoying
 
     return EXIT_SUCCESS;
 }

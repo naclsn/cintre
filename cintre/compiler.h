@@ -451,6 +451,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     size_t plen = cs->res.len;
     size_t pvsp = cs->vsp;
 
+    // work variables that are better function-scoped and initialized early
+    struct slot tmp = {0};
+    enum _arith_op op = 0;
+
     switch (expr->kind) {
     case ATOM:;
         size_t const len = expr->info.atom.len;
@@ -639,9 +643,24 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_ASGN: {
+        {
+    case BINOP_ASGN_BOR:  op = _ops_bori;  goto sw_asgn;
+    case BINOP_ASGN_BXOR: op = _ops_bxori; goto sw_asgn;
+    case BINOP_ASGN_BAND: op = _ops_bandi; goto sw_asgn;
+    case BINOP_ASGN_BSHL: op = _ops_bshli; goto sw_asgn;
+    case BINOP_ASGN_BSHR: op = _ops_bshri; goto sw_asgn;
+    case BINOP_ASGN_SUB:  op = _ops_subi;  goto sw_asgn;
+    case BINOP_ASGN_ADD:  op = _ops_addi;  goto sw_asgn;
+    case BINOP_ASGN_REM:  op = _ops_remi;  goto sw_asgn;
+    case BINOP_ASGN_DIV:  op = _ops_divi;  goto sw_asgn;
+    case BINOP_ASGN_MUL:  op = _ops_muli;  goto sw_asgn;
+    case BINOP_ASGN:
+        sw_asgn:;
+
             expression cref dst_ex = expr->info.binary.lhs;
             expression cref src_ex = expr->info.binary.rhs;
+
+            _fit_expr_to_slot(cs, src_ex, slot);
 
             struct slot dst = {.ty= dst_ex->usr};
             switch (dst_ex->kind) {
@@ -649,7 +668,12 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 compile_expression(cs, dst_ex, &dst);
                 // can be stack variable or static global object;
                 // for now only support stack variable
-                _fit_expr_to_slot(cs, src_ex, slot);
+
+                if (op) {
+                    tmp = dst;
+                    goto sw_asgn_binop;
+                }
+
                 switch (slot->usage) {
                 case _slot_value:
                     _emit_data(cs, atv(&dst), dst.ty->size, slot->as.value.bytes); // (yyy: endianness)
@@ -675,46 +699,19 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_ASGN_BOR:
-    case BINOP_ASGN_BXOR:
-    case BINOP_ASGN_BAND:
-    case BINOP_ASGN_BSHL:
-    case BINOP_ASGN_BSHR:
-    case BINOP_ASGN_SUB:
-    case BINOP_ASGN_ADD:
-    case BINOP_ASGN_REM:
-    case BINOP_ASGN_DIV:
-    case BINOP_ASGN_MUL:
-        exitf("NIY: compound assignment");
-        return;
+        {
+    case BINOP_BOR:  op = _ops_bori;  goto sw_binop;
+    case BINOP_BXOR: op = _ops_bxori; goto sw_binop;
+    case BINOP_BAND: op = _ops_bandi; goto sw_binop;
+    case BINOP_BSHL: op = _ops_bshli; goto sw_binop; // asy
+    case BINOP_BSHR: op = _ops_bshri; goto sw_binop; // asy
+    case BINOP_SUB:  op = _ops_subi;  goto sw_binop; // asy
+    case BINOP_ADD:  op = _ops_addi;  goto sw_binop;
+    case BINOP_REM:  op = _ops_remi;  goto sw_binop; // asy
+    case BINOP_DIV:  op = _ops_divi;  goto sw_binop; // asy
+    case BINOP_MUL:  op = _ops_muli;  goto sw_binop;
+        sw_binop:;
 
-    case BINOP_LOR:
-    case BINOP_LAND:
-        exitf("NIY: branches");
-        return;
-
-    case BINOP_EQ:
-    case BINOP_NE:
-    case BINOP_LT:
-    case BINOP_GT:
-    case BINOP_LE:
-    case BINOP_GE:
-        exitf("NIY: comparisons");
-        return;
-
-    case BINOP_BOR:
-    case BINOP_BXOR:
-    case BINOP_BAND:
-    case BINOP_BSHL:
-    case BINOP_BSHR:
-        exitf("NIY: bitwise operations");
-        return;
-
-    case BINOP_SUB:
-    case BINOP_ADD:
-    case BINOP_REM:
-    case BINOP_DIV:
-    case BINOP_MUL: {
             struct slot lhs = *slot, rhs;
             _fit_expr_to_slot(cs, expr->info.binary.lhs, &lhs);
             if (_slot_used != lhs.usage)
@@ -726,48 +723,58 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             _fit_expr_to_slot(cs, expr->info.binary.rhs, &rhs);
             if (_slot_used == lhs.usage && _slot_used != rhs.usage) _cancel_slot(cs, &rhs);
 
+            bool was_asgn = false;
+            if (0) {
+        sw_asgn_binop:
+                was_asgn = true;
+
+                rhs = *slot;
+                lhs = *slot = tmp;
+                // wip: only comming from case ATOM in assignment
+                // so for now the destination is a stack variable
+            }
+
+            // TODO: pointer arithmetic (is only correct for size 1 ie char)
             switch (lhs.usage <<8| rhs.usage) {
                 // neither is "physical"
             case _slot_value <<8| _slot_value:
-                switch (expr->kind) {
-                case BINOP_SUB: _cfold_arith     (slot, &lhs, -, &rhs); break;
-                case BINOP_ADD: _cfold_arith     (slot, &lhs, +, &rhs); break;
-                case BINOP_REM: _cfold_arith_ints(slot, &lhs, %, &rhs); break;
-                case BINOP_DIV: _cfold_arith     (slot, &lhs, /, &rhs); break;
-                case BINOP_MUL: _cfold_arith     (slot, &lhs, *, &rhs); break;
+                switch (op) {
+                case _ops_bori:  _cfold_arith_ints(slot, &lhs, |,  &rhs); break;
+                case _ops_bxori: _cfold_arith_ints(slot, &lhs, ^,  &rhs); break;
+                case _ops_bandi: _cfold_arith_ints(slot, &lhs, &,  &rhs); break;
+                case _ops_bshli: _cfold_arith_ints(slot, &lhs, <<, &rhs); break;
+                case _ops_bshri: _cfold_arith_ints(slot, &lhs, >>, &rhs); break;
+                case _ops_subi:  _cfold_arith     (slot, &lhs, -,  &rhs); break;
+                case _ops_addi:  _cfold_arith     (slot, &lhs, +,  &rhs); break;
+                case _ops_remi:  _cfold_arith_ints(slot, &lhs, %,  &rhs); break;
+                case _ops_divi:  _cfold_arith     (slot, &lhs, /,  &rhs); break;
+                case _ops_muli:  _cfold_arith     (slot, &lhs, *,  &rhs); break;
                 default:;
                 }
                 slot->usage = _slot_value;
                 break;
-
-                enum _arith_op op;
 
                 // one is "physical"
                 struct slot const* val, * xhs;
             case _slot_used     <<8| _slot_value:
             case _slot_variable <<8| _slot_value:
                 // rhs is value, use the r[..]i form
-                val = &rhs, xhs = &lhs, op = 0;
-                switch (expr->kind) {
-                case BINOP_SUB: op = _ops_rsubi; break;
-                case BINOP_REM: op = _ops_rremi; break;
-                case BINOP_DIV: op = _ops_rdivi; break;
+                val = &rhs, xhs = &lhs;
+                switch (op) {
+                case _ops_bshli: op = _ops_rbshli; break;
+                case _ops_bshri: op = _ops_rbshri; break;
+                case _ops_subi:  op = _ops_rsubi;  break;
+                case _ops_remi:  op = _ops_rremi;  break;
+                case _ops_divi:  op = _ops_rdivi;  break;
                 default:;
                 }
                 if (0)
             case _slot_value    <<8| _slot_used:
             case _slot_value    <<8| _slot_variable:
                     // lhs is value, use the [..]i form
-                    val = &lhs, xhs = &rhs, op = 0;
-                if (!op) switch (expr->kind) {
-                case BINOP_SUB: op = _ops_subi; break;
-                case BINOP_ADD: op = _ops_addi; break;
-                case BINOP_REM: op = _ops_remi; break;
-                case BINOP_DIV: op = _ops_divi; break;
-                case BINOP_MUL: op = _ops_muli; break;
-                default:;
-                }
-                _emit_arith(cs, op, _slot_arith_w(slot), at(slot),
+                    val = &lhs, xhs = &rhs;
+                _emit_arith(cs, op, _slot_arith_w(slot),
+                        _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_arith_v(val),
                         _slot_variable == xhs->usage ? atv(xhs) : at(xhs));
                 slot->usage = _slot_used;
@@ -778,22 +785,34 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case _slot_used     <<8| _slot_variable:
             case _slot_variable <<8| _slot_used:
             case _slot_variable <<8| _slot_variable:
-                switch (expr->kind) {
-                case BINOP_SUB: op = _ops_sub; break;
-                case BINOP_ADD: op = _ops_add; break;
-                case BINOP_REM: op = _ops_rem; break;
-                case BINOP_DIV: op = _ops_div; break;
-                case BINOP_MUL: op = _ops_mul; break;
-                default: exitf("unreachable");
+                switch (op) {
+                case _ops_bori:  op = _ops_bor;  break;
+                case _ops_bxori: op = _ops_bxor; break;
+                case _ops_bandi: op = _ops_band; break;
+                case _ops_bshli: op = _ops_bshl; break;
+                case _ops_bshri: op = _ops_bshr; break;
+                case _ops_subi:  op = _ops_sub;  break;
+                case _ops_addi:  op = _ops_add;  break;
+                case _ops_remi:  op = _ops_rem;  break;
+                case _ops_divi:  op = _ops_div;  break;
+                case _ops_muli:  op = _ops_mul;  break;
+                default:;
                 }
-                _emit_arith(cs, op, _slot_arith_w(slot), at(slot),
+                _emit_arith(cs, op, _slot_arith_w(slot),
+                        _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_variable == lhs.usage ? atv(&lhs) : at(&lhs),
                         _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
                 slot->usage = _slot_used;
                 break;
             } // switch both usages
 
-            if (_slot_used == lhs.usage && _slot_used == rhs.usage) _rewind_slot(cs, &rhs);
+            if (was_asgn) {
+                *slot = rhs;
+                _emit_move(cs, at(slot), slot->ty->size, atv(&lhs));
+                slot->usage = _slot_used;
+            } else {
+                if (_slot_used == lhs.usage && _slot_used == rhs.usage) _rewind_slot(cs, &rhs);
+            }
         }
         return;
 
@@ -830,6 +849,20 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         exitf("NIY: member access");
         return;
 
+    case BINOP_LOR:
+    case BINOP_LAND:
+        exitf("NIY: branches");
+        return;
+
+    case BINOP_EQ:
+    case BINOP_NE:
+    case BINOP_LT:
+    case BINOP_GT:
+    case BINOP_LE:
+    case BINOP_GE:
+        exitf("NIY: comparisons");
+        return;
+
     case UNOP_BNOT:
     case UNOP_LNOT:
     case UNOP_MINUS:
@@ -863,7 +896,6 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
         {
             bool post;
-            enum _arith_op op;
     case UNOP_PRE_DEC: post = false; op = _ops_rsubi; goto sw_crement;
     case UNOP_PRE_INC: post = false; op = _ops_addi;  goto sw_crement;
     case UNOP_POST_DEC: post = true; op = _ops_rsubi; goto sw_crement;
@@ -879,7 +911,9 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                     _emit_move(cs, at(slot), slot->ty->size, atv(slot));
                     slot->usage = _slot_used;
                 }
-                _emit_arith(cs, op, _slot_arith_w(slot), atv(slot), 1, atv(slot));
+                _emit_arith(cs, op, _slot_arith_w(slot), atv(slot),
+                        TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
+                        atv(slot));
                 break;
 
             case BINOP_SUBSCR:

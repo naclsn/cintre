@@ -1,0 +1,26 @@
+#if 0
+srce=${1%.c}
+test -z "$srce" && exit 1
+prog=${srce%/*}/../build/${srce##*/}.exe
+base=${srce%/*}/in/${srce##*/}
+
+set -ex
+cc --coverage -g -O0 $srce.c -o $prog
+
+case $2 in
+  check)  bla() { diff -u $1 -; };;
+  update) bla() { cat >$1; };;
+  *)      shift; exec $prog "$@";;
+esac
+
+for tape in $base/*.tape #*/
+  do $prog ${tape%.tape} 2>&1| bla $tape
+done
+
+exit
+#endif
+
+#include "../cintre/prints.h"
+
+void run_test(char* file);
+int main(int argc, char** argv) { run_test(1 < argc ? argv[1] : ""); }

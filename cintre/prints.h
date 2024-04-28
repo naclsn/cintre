@@ -96,8 +96,12 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
 
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
-        if (!ty->info.arr.count) fprintf(strm, "_, ");
-        else fprintf(strm, "(expression*)%p, ", (void*)ty->info.arr.count);
+        if (!ty->info.arr.count) fprintf(strm, "*, ");
+        // TODO: this was temporary to generate the test tapes, but because
+        //       we're not going to just compile and run the expression here
+        //       we'll need to print the expression which gets complicated and
+        //       more importantly unneeded for now and before a long time
+        else fprintf(strm, "%.*s, ", (unsigned)ty->info.arr.count->info.atom.len, ty->info.arr.count->info.atom.ptr);
         _print_decl_type(strm, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;

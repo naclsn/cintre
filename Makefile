@@ -30,11 +30,13 @@ tests =         \
     type-check  \
     comp-code   \
 
-test-%:; ./test/$* check && printf "\x1b[32m$@ success\x1b[m\n" || printf "\x1b[31m$@ failure\x1b[m\n"
-testup-%:; ./test/$* update
+test-%:; test/run test/$* check && printf "\x1b[32m$@ success\x1b[m\n" || printf "\x1b[31m$@ failure\x1b[m\n"
+testup-%:; test/run test/$* update
 test: $(addprefix test-,$(tests))
 testup: $(addprefix testup-,$(tests))
-.PHONY: test testup test-% testup-%
 
 build/coverage.html: test; gcovr -f cintre --html $@ #--html-css doc/gcovr-style.css
 build/coverage-details.html: test; gcovr -f cintre --html-details $@ #--html-css doc/gcovr-style.css
+
+clean:; $(RM) build/a-*.h build/c-*.c $(foreach t,$(tests),build/$(t)*)
+.PHONY: test testup clean

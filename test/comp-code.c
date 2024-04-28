@@ -1,19 +1,4 @@
-#if 0
-prog=${0%/*}/../build/${0##*/}.exe
-base=${0%/*}/in/${0##*/}
-set -ex
-cc --coverage -g -O0 -x c $0 -o $prog || exit 1
-case $1 in
-    check)  bla() { diff -u $1 -; };;
-    update) bla() { cat >$1; };;
-    *) exec $prog "$@";;
-esac
-
-$prog $base/cfolded.c | bla $base/cfolded.tape
-
-exit
-#endif
-
+#include "run"
 #include "../cintre/compiler.h"
 
 void comp(void ref _, expression ref expr, bufsl ref tok) {
@@ -56,20 +41,21 @@ void comp(void ref _, expression ref expr, bufsl ref tok) {
 
     case _slot_used:
         printf("TODO: slot used");
+        //run();
+        //print_item();
         break;
     case _slot_variable:
         printf("TODO: slot variable");
+        //print_item();
         break;
     }
 
     printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
 }
 
-int main(int argc, char** argv) {
-    if (1 == argc) return puts("Usage: <prog> <filename>");
-
+void run_test(char* file) {
     lex_state ls = {0};
-    lini(&ls, argv[1]);
+    lini(&ls, file);
 
     bufsl tok = lext(&ls);
     parse_expr_state ps = {.ls= &ls, .on= comp};

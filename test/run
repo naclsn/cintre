@@ -4,7 +4,7 @@ test -z "$srce" && exit 1
 prog=${srce%/*}/../build/${srce##*/}.exe
 base=${srce%/*}/in/${srce##*/}
 
-set -ex
+set -exo pipefail
 cc --coverage -g -O0 $srce.c -o $prog
 
 case $2 in
@@ -20,6 +20,7 @@ done
 exit
 #endif
 
+#define TRY_EXITF
 #include "../cintre/prints.h"
 
 void run_test(char* file);

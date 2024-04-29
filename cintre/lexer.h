@@ -75,7 +75,6 @@ bufsl lext(lex_state ref ls);
 
 buf _lex_read_all(FILE ref f) {
     buf r = {0};
-    if (!f) return r;
     if (!fseek(f, 0, SEEK_END)) {
         r.ptr = malloc(r.len = r.cap = ftell(f));
         if (!r.ptr) exitf("OOM");
@@ -105,6 +104,8 @@ void linc(lex_state ref ls, char cref path) {
 }
 
 void lini(lex_state ref ls, char cref entry) {
+    FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
+    if (!f) exitf("Could not open entry file %s", entry);
     struct _lex_state_source* src = dyarr_push(&ls->sources);
     if (src) src->file = src->text.ptr = NULL;
     size_t n = strlen(entry);
@@ -113,10 +114,9 @@ void lini(lex_state ref ls, char cref entry) {
     memcpy(dup, entry, n);
     dup[n] = '\0';
     src->file = dup;
-    FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
     src->text = _lex_read_all(f);
     if (stdin != f) fclose(f);
-    if (!src->text.len) exitf("Could not open entry file %s", entry);
+    if (!src->text.len) exitf("Could not read entry file %s", entry);
     ls->slice.ptr = src->text.ptr;
     ls->slice.len = src->text.len;
     ls->file = src->file;
@@ -405,6 +405,7 @@ bufsl lext(lex_state ref ls) {
                     }
                     file[n] = '\0';
                     FILE* f = fopen(file, "rb");
+                    if (!f) continue;
                     src->text = _lex_read_all(f);
                     fclose(f);
                     if (src->text.len) {
@@ -417,6 +418,7 @@ bufsl lext(lex_state ref ls) {
                     }
                     it = ls->include_paths.ptr + ++k;
                 } while (k < ls->include_paths.len);
+                //if (!src->text.len) ; // xxx: file not found
                 hold->slice = ls->slice;
                 hold->file = ls->file;
                 hold->line = ls->line;
@@ -672,6 +674,7 @@ bufsl lext(lex_state ref ls) {
                                 break;
                             }
                             if (!f) break;
+                            // XXX: escaping (need to escape: newline, double quote, backslash)
                             size_t ln = (name.ptr+name.len)-(work->ptr+st);
                             work->ptr[st] = work->ptr[st+ln-1] = '"';
                             if (ln < 2) break;
@@ -695,7 +698,12 @@ bufsl lext(lex_state ref ls) {
                             char tmp[32];
                             time_t tt;
                             if (nameis("__VA_ARGS__") && isva) repl.len = argv[argc-1].ptr - (repl.ptr = argv[macro->params.len-1].ptr) + argv[argc-1].len;
-                            else if (nameis("__FILE__")) repl.len = strlen(repl.ptr = ls->file);
+                            else if (nameis("__FILE__")) {
+                                // XXX: escaping (need to escape: newline, double quote, backslash)
+                                repl.len = strlen(repl.ptr = ls->file);
+                                work->ptr[name.ptr-work->ptr] = work->ptr[name.ptr-work->ptr+7] = '"';
+                                name.ptr++, name.len-= 2;
+                            }
                             else if (nameis("__LINE__")) repl.len = snprintf((void*)(repl.ptr = tmp), sizeof tmp, "%zu", ls->line);
                             else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
                             else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));

@@ -609,16 +609,25 @@ bufsl lext(lex_state ref ls) {
                 bool isva = false;
                 if ('(' == dyarr_top(&macro->name)[1]) { // xxx: 1-char read overrun
                     isva = macro->params.len && !memcmp("...", dyarr_top(&macro->params)->name.ptr, 3);
+                    skip('(' != at());
                     do {
                         nx();
                         skip(strchr(" \t\n", at()));
-                        if (sizeof argv/sizeof*argv == argc) continue;
+                        if (countof(argv) == argc) continue;
                         accu(argv[argc]) {
                             char const* pat = &at();
                             for (unsigned depth = 0; has(1); nx()) {
-                                bool c = is(')');
-                                if (!depth && (is(',') || c)) break;
-                                depth+= is('(')-c;
+                                if (is('\'') || is('"')) { // xxx: will not handle <backslash><backslash><newline> correctly
+                                    char const c = at();
+                                    if (nx(), has(1)) {
+                                        if (!is(c)) do if (has(1) && is('\\')) nx();
+                                        while (nx(), has(1) && !is(c) && !is('\n'));
+                                    }
+                                } else {
+                                    bool const c = is(')');
+                                    if (!depth && (is(',') || c)) break;
+                                    depth+= is('(')-c;
+                                }
                             }
                             if (&at() == pat) break;
                         }
@@ -626,10 +635,7 @@ bufsl lext(lex_state ref ls) {
                         argc++;
                     } while (!is(')'));
                     nx();
-                    while (argc < macro->params.len) {
-                        argv[argc].ptr = argv[argc-1].ptr;
-                        argv[argc++].len = 0;
-                    }
+                    while (argc < macro->params.len) argv[argc++].len = 0;
                 }
                 struct _lex_state_hold* hold = dyarr_push(&ls->include_stack);
                 buf* work = dyarr_push(&ls->workbufs);
@@ -733,12 +739,7 @@ bufsl lext(lex_state ref ls) {
                             char tmp[32];
                             time_t tt;
                             if (nameis("__VA_ARGS__") && isva) repl.len = argv[argc-1].ptr - (repl.ptr = argv[macro->params.len-1].ptr) + argv[argc-1].len;
-                            else if (nameis("__FILE__")) {
-                                // XXX: escaping (need to escape: newline, double quote, backslash)
-                                repl.len = strlen(repl.ptr = ls->file);
-                                work->ptr[name.ptr-work->ptr] = work->ptr[name.ptr-work->ptr+7] = '"';
-                                name.ptr++, name.len-= 2;
-                            }
+                            else if (nameis("__FILE__")) repl.len = strlen(repl.ptr = ls->file), work->ptr[name.ptr-work->ptr] = work->ptr[name.ptr-work->ptr+7] = '"', name.ptr++, name.len-= 2;
                             else if (nameis("__LINE__")) repl.len = snprintf((void*)(repl.ptr = tmp), sizeof tmp, "%zu", ls->line);
                             else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
                             else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));
@@ -763,7 +764,7 @@ bufsl lext(lex_state ref ls) {
         }
 
         else if (is('\'') || is('"')) { // xxx: will not handle <backslash><backslash><newline> correctly
-            char c = at();
+            char const c = at();
             if (nx(), has(1)) {
                 if (!is(c)) do if (has(1) && is('\\')) nx();
                 while (nx(), has(1) && !is(c) && !is('\n'));

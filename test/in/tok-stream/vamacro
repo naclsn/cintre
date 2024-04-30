@@ -1,14 +1,32 @@
 #define expand(...) __VA_ARGS__
 #define make(ident, items) ident = {  \
-            .id= "hello " #ident,     \
+            .id= "hello~" #ident,     \
             .init_str= #items,        \
-            /*expand items*/              \
+            /* 'removes' the () */    \
+            expand items              \
         }
 
 struct idk make(a, (.one= 1, .two= "two"));
 struct idk make(salkdfjaslkjdflasjdf, (
-    .this= 0,
-    .is= 1,
-    .a= 2,
-    .test= 3,
+    .this= "\o",
+    .is= "o/",
+    .a= "o7",
+    .test= "o3o",
 ));
+
+#define oneof(...) printf("one of " #__VA_ARGS__)
+#define expected(_got, ...) do {      \
+        printf("expected ");          \
+        oneof(__VA_ARGS__);           \
+        printf(" but got %s", _got);  \
+        return;                       \
+    } while (1) // this not in macro  \
+    and this still in comment
+expected(token, ";", ",", ")", "]", "}");
+
+// not standard, was to reduce error handling
+#define takes_two(a, b) _##a##_##b##_
+takes_two(x,y)
+takes_two(x,)
+takes_two(,)
+takes_two()

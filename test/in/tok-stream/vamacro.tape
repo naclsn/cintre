@@ -1,37 +1,97 @@
-[test/in/tok-stream/vamacro:  8]	struct
-[test/in/tok-stream/vamacro:  8]	idk
-[test/in/tok-stream/vamacro:  8]	a
-[test/in/tok-stream/vamacro:  8]	=
-[test/in/tok-stream/vamacro:  8]	{
-[test/in/tok-stream/vamacro:  8]	.
-[test/in/tok-stream/vamacro:  8]	id
-[test/in/tok-stream/vamacro:  8]	=
-[test/in/tok-stream/vamacro:  8]	"hello "
-[test/in/tok-stream/vamacro:  8]	"a"
-[test/in/tok-stream/vamacro:  8]	,
-[test/in/tok-stream/vamacro:  8]	.
-[test/in/tok-stream/vamacro:  8]	init_str
-[test/in/tok-stream/vamacro:  8]	=
-[test/in/tok-stream/vamacro:  8]	"(.one= 1, .two= \"two\")"
-[test/in/tok-stream/vamacro:  8]	,
-[test/in/tok-stream/vamacro:  8]	}
-[test/in/tok-stream/vamacro:  8]	;
 [test/in/tok-stream/vamacro:  9]	struct
 [test/in/tok-stream/vamacro:  9]	idk
-[test/in/tok-stream/vamacro: 14]	salkdfjaslkjdflasjdf
-[test/in/tok-stream/vamacro: 14]	=
-[test/in/tok-stream/vamacro: 14]	{
-[test/in/tok-stream/vamacro: 14]	.
-[test/in/tok-stream/vamacro: 14]	id
-[test/in/tok-stream/vamacro: 14]	=
-[test/in/tok-stream/vamacro: 14]	"hello "
-[test/in/tok-stream/vamacro: 14]	"salkdfjaslkjdflasjdf"
-[test/in/tok-stream/vamacro: 14]	,
-[test/in/tok-stream/vamacro: 14]	.
-[test/in/tok-stream/vamacro: 14]	init_str
-[test/in/tok-stream/vamacro: 14]	=
-[test/in/tok-stream/vamacro: 14]	"(     .this= 0,     .is= 1,     .a= 2,     .test= 3, )"
-[test/in/tok-stream/vamacro: 14]	,
-[test/in/tok-stream/vamacro: 14]	}
-[test/in/tok-stream/vamacro: 14]	;
-[test/in/tok-stream/vamacro: 14]	
+[test/in/tok-stream/vamacro:  9]	a
+[test/in/tok-stream/vamacro:  9]	=
+[test/in/tok-stream/vamacro:  9]	{
+[test/in/tok-stream/vamacro:  9]	.
+[test/in/tok-stream/vamacro:  9]	id
+[test/in/tok-stream/vamacro:  9]	=
+[test/in/tok-stream/vamacro:  9]	"hello~"
+[test/in/tok-stream/vamacro:  9]	"a"
+[test/in/tok-stream/vamacro:  9]	,
+[test/in/tok-stream/vamacro:  9]	.
+[test/in/tok-stream/vamacro:  9]	init_str
+[test/in/tok-stream/vamacro:  9]	=
+[test/in/tok-stream/vamacro:  9]	"(.one= 1, .two= \"two\")"
+[test/in/tok-stream/vamacro:  9]	,
+[test/in/tok-stream/vamacro:  9]	.
+[test/in/tok-stream/vamacro:  9]	one
+[test/in/tok-stream/vamacro:  9]	=
+[test/in/tok-stream/vamacro:  9]	1
+[test/in/tok-stream/vamacro:  9]	,
+[test/in/tok-stream/vamacro:  9]	.
+[test/in/tok-stream/vamacro:  9]	two
+[test/in/tok-stream/vamacro:  9]	=
+[test/in/tok-stream/vamacro:  9]	"two"
+[test/in/tok-stream/vamacro:  9]	}
+[test/in/tok-stream/vamacro:  9]	;
+[test/in/tok-stream/vamacro: 10]	struct
+[test/in/tok-stream/vamacro: 10]	idk
+[test/in/tok-stream/vamacro: 15]	salkdfjaslkjdflasjdf
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	{
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	id
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"hello~"
+[test/in/tok-stream/vamacro: 15]	"salkdfjaslkjdflasjdf"
+[test/in/tok-stream/vamacro: 15]	,
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	init_str
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"(     .this= \"\\o\",     .is= \"o/\",     .a= \"o7\",     .test= \"o3o\", )"
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	this
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"\o"
+[test/in/tok-stream/vamacro: 15]	,
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	is
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"o/"
+[test/in/tok-stream/vamacro: 15]	,
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	a
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"o7"
+[test/in/tok-stream/vamacro: 15]	,
+[test/in/tok-stream/vamacro: 15]	.
+[test/in/tok-stream/vamacro: 15]	test
+[test/in/tok-stream/vamacro: 15]	=
+[test/in/tok-stream/vamacro: 15]	"o3o"
+[test/in/tok-stream/vamacro: 15]	,
+[test/in/tok-stream/vamacro: 15]	}
+[test/in/tok-stream/vamacro: 15]	;
+[test/in/tok-stream/vamacro: 25]	do
+[test/in/tok-stream/vamacro: 25]	{
+[test/in/tok-stream/vamacro: 25]	printf
+[test/in/tok-stream/vamacro: 25]	(
+[test/in/tok-stream/vamacro: 25]	"expected "
+[test/in/tok-stream/vamacro: 25]	)
+[test/in/tok-stream/vamacro: 25]	;
+[test/in/tok-stream/vamacro: 25]	printf
+[test/in/tok-stream/vamacro: 25]	(
+[test/in/tok-stream/vamacro: 25]	"one of "
+[test/in/tok-stream/vamacro: 25]	"\";\", \",\", \")\", \"]\", \"}\""
+[test/in/tok-stream/vamacro: 25]	)
+[test/in/tok-stream/vamacro: 25]	;
+[test/in/tok-stream/vamacro: 25]	printf
+[test/in/tok-stream/vamacro: 25]	(
+[test/in/tok-stream/vamacro: 25]	" but got %s"
+[test/in/tok-stream/vamacro: 25]	,
+[test/in/tok-stream/vamacro: 25]	token
+[test/in/tok-stream/vamacro: 25]	)
+[test/in/tok-stream/vamacro: 25]	;
+[test/in/tok-stream/vamacro: 25]	return
+[test/in/tok-stream/vamacro: 25]	;
+[test/in/tok-stream/vamacro: 25]	}
+[test/in/tok-stream/vamacro: 25]	while
+[test/in/tok-stream/vamacro: 25]	(
+[test/in/tok-stream/vamacro: 25]	1
+[test/in/tok-stream/vamacro: 25]	)
+[test/in/tok-stream/vamacro: 25]	;
+[test/in/tok-stream/vamacro: 29]	_x_y_
+[test/in/tok-stream/vamacro: 30]	_x__
+[test/in/tok-stream/vamacro: 31]	___
+[test/in/tok-stream/vamacro: 32]	___
+[test/in/tok-stream/vamacro: 32]	

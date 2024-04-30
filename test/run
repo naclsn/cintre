@@ -4,14 +4,19 @@ test -z "$srce" && exit 1
 prog=${srce%/*}/../build/${srce##*/}.exe
 base=${srce%/*}/in/${srce##*/}
 
-set -exo pipefail
-cc --coverage -g -O0 $srce.c -o $prog
-
+cflags='-g -O0'
+doexec=
 case $2 in
+  cover)  cflags="--coverage $cflags";&
   check)  bla() { diff -u $1 -; };;
   update) bla() { cat >$1; };;
-  *)      shift; exec $prog "$@";;
+  *)      shift; doexec=1;;
 esac
+
+set -exo pipefail
+cc $cflags $srce.c -o $prog
+
+test -n "$doexec" && exec $prog "$@"
 
 for tape in $base/*.tape #*/
   do $prog ${tape%.tape} 2>&1| bla $tape
@@ -21,6 +26,7 @@ exit
 #endif
 
 #define TRY_EXITF
+//#define LOC_NOTIF
 #include "../cintre/prints.h"
 
 void run_test(char* file);

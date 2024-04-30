@@ -37,6 +37,7 @@ static struct adpt_type {
                 char const* const name;
                 struct adpt_type const* const type;
                 size_t const offset;
+                // TODO: does not handle bitfields
             } const* const fields;
             size_t const count;
         } const comp; // struct and union

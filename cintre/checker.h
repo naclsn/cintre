@@ -120,6 +120,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   define fail(...)  return notif(__VA_ARGS__), NULL
 #   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
 #   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)
+#   define issgn(__ty)  (TYPE_SCHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_LONG)
 #   define isflt(__ty)  (TYPE_FLOAT <= (__ty)->tyty && (__ty)->tyty <= TYPE_DOUBLE)
 #   define isnum(__ty)  (isint(__ty) || isflt(__ty))
 #   define isfun(__ty)  (TYPE_FUN == (__ty)->tyty)
@@ -272,7 +273,9 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
         // (yyy: approximation of implicit conversions' "common real type")
-        if (isint(lhs) && isint(rhs)) return expr->usr = (void*)(lhs->size < rhs->size ? rhs : lhs);
+        if (isint(lhs) && isint(rhs)) return expr->usr = (void*)(
+                lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
+                lhs->size < rhs->size ? rhs : lhs );
         fail("Both operands are not of an integral type");
 
     case BINOP_SUB:
@@ -307,7 +310,9 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (isnum(lhs) && isnum(rhs)) {
             bool const lf = isflt(lhs), rf = isflt(rhs);
             // (yyy: approximation of implicit conversions' "common real type")
-            return expr->usr = (void*)( lf == rf ? (lhs->size < rhs->size ? rhs : lhs)
+            return expr->usr = (void*)( lf == rf ? (
+                                            lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
+                                            lhs->size < rhs->size ? rhs : lhs )
                                       : lf ? lhs : rhs
                                       );
         }

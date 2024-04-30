@@ -9,3 +9,4 @@
 [32mdouble[m -- tok: ;
 [32mfloat[m -- tok: ;
 [32mlong[m -- tok: ;
+[32mlong[m -- tok: ;

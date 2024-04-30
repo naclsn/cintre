@@ -3,7 +3,24 @@ a + b;
 (1 + 2)*3;
 0;
 strlen("coucou");
-a->b(0);
+a->b(+0);
 a + b + c + d;
 a + b * c / d;
 a = b = c;
+
+'_' == c || ('a' <= (c|32) && 'z' >= (c|32));
+n<<= n>>1<2;
+n>>= n<<1>2;
+ESC = '['^64;
+
+// & has lower precedence than !=; != will be evaluated first (fixes available) [-Wparentheses]
+!(0 != --z&1) ? "no" : "yes";
+
+a+= b ;
+a-= b ;
+a*= b ;
+a/= b ;
+a%= b ;
+a&= b ;
+a|= b ;
+a^= b ;

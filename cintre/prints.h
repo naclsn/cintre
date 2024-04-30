@@ -57,6 +57,9 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
             fprintf(strm, " {");
             for (struct decl_type_field const* it = ty->info.comp.first; it; it = it->next) {
                 print_decl(strm, it->decl);
+                // TODO: same as an array's length, this is incorrect but
+                //       avoids unneeded complication
+                if (it->bitw) fprintf(strm, ":%.*s", bufmt(it->bitw->info.atom));
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -101,7 +104,7 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
         //       we're not going to just compile and run the expression here
         //       we'll need to print the expression which gets complicated and
         //       more importantly unneeded for now and before a long time
-        else fprintf(strm, "%.*s, ", (unsigned)ty->info.arr.count->info.atom.len, ty->info.arr.count->info.atom.ptr);
+        else fprintf(strm, "%.*s, ", bufmt(ty->info.arr.count->info.atom));
         _print_decl_type(strm, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;
@@ -176,7 +179,7 @@ void print_type(FILE ref strm, struct adpt_type cref ty) {
     case TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m{");
         for (size_t k = 0; k < ty->info.comp.count; k++) {
             struct adpt_comp_field const* it = ty->info.comp.fields+k;
-            fprintf(strm, k ? ", [%zu]%s: " : "[%zu]%s: ", it->offset, it->name);
+            fprintf(strm, k ? ", %s@%zu: " : "%s@%zu: ", it->name, it->offset);
             print_type(strm, it->type);
         }
         fprintf(strm, "}");

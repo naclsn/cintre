@@ -1,0 +1,13 @@
+si;
+2 % si; // signed
+2 % ui; // unsigned
+ui % 2; // unsigned
+ui % si; // unsigned
+ui & si; // unsigned
+abuf;
+&abuf;
+abuf.ptr;
+abuf.ptr[0];
+*abuf.ptr;
+(&abuf)->len;
+&(&abuf)->len;

@@ -1,0 +1,13 @@
+[32mint[m -- tok: ;
+[32mint[m -- tok: ;
+[32muint[m -- tok: ;
+[32muint[m -- tok: ;
+[32muint[m -- tok: ;
+[32muint[m -- tok: ;
+[34mstruct[m{ptr@0: [34mptr[m[[32mchar[m], len@8: [32mulong[m} -- tok: ;
+[34mptr[m[[34mstruct[m{ptr@0: [34mptr[m[[32mchar[m], len@8: [32mulong[m}] -- tok: ;
+[34mptr[m[[32mchar[m] -- tok: ;
+[32mchar[m -- tok: ;
+[32mchar[m -- tok: ;
+[32mulong[m -- tok: ;
+[34mptr[m[[32mulong[m] -- tok: ;

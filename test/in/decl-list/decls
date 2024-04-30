@@ -7,6 +7,7 @@ char (y);
 char (*const yy);
 char (*yyy)(void);
 char (*yyyy)[2];
+char (*yyyyy[5]);
 signed v;
 typedef float b;
 long long c, * const d, e;
@@ -51,3 +52,15 @@ enum E { A, B, C, };
 int end;
 
 unsigned char a;
+
+struct {
+    int me;
+    unsigned is :1;
+    int hi;
+} flags;
+
+int main(int, char[][const volatile restrict*]);
+
+// to hit that one last branch in _parse_decl_spec (end of input in declaration)
+void const
+

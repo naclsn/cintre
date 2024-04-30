@@ -194,7 +194,7 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
         return
 #define _expect(_tok, ...)                                                                               \
     for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                          \
-        if (*_it && bufis(*(_tok), *_it)) break;                                                         \
+        if (*_it) if (bufis(*(_tok), *_it)) break; else continue;                                        \
         else if (                                                                                        \
             report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got \"%.*s\"", bufmt(*(_tok))), true)  \
             return
@@ -350,7 +350,7 @@ void _parse_decl_fixup(parse_decl_state ref ps, struct _parse_decl_capture ref c
         case KIND_PTR: it = (declaration**)&(*it)->type.info.ptr;      break;
         case KIND_FUN: it = (declaration**)&(*it)->type.info.fun.ret;  break;
         case KIND_ARR: it = (declaration**)&(*it)->type.info.arr.item; break;
-        default: exitf("unreachable");
+        default:;
     } while (before != *it);
     *it = after;
 
@@ -437,8 +437,8 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
             if (last) {
                 info->fun.count = -1; // eg. `int a();`
                 _parse_decl_post(ps, capt, fun);
-                return;
-            } else exitf("NIY: syntax error in params");
+            } else report_lex_locate(ps->ls, "Expected parameter declaration, got \"%.*s\"", bufmt(ps->tok));
+            return;
         }
 
         if (!(last && !decl->name.len && 4 == decl->type.name.len && !memcmp("void", decl->type.name.ptr, 4))) {
@@ -454,6 +454,12 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
             _parse_decl_post(ps, capt, fun);
             return;
         }
+
+        _expect1(&ps->tok);
+    }
+    if (')' == *ps->tok.ptr) {
+        report_lex_locate(ps->ls, "Expected parameter declaration, got \"%.*s\"", bufmt(ps->tok));
+        return;
     }
 
     _parse_decl_spec(ps, &(struct _parse_decl_capture){
@@ -516,7 +522,10 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
         ps->tok = lext(ps->ls);
         _expect1(&ps->tok);
 
-        if (!decl) exitf("NIY: syntax error in fields");
+        if (!decl) {
+            report_lex_locate(ps->ls, "Expected field declaration, got \"%.*s\"", bufmt(ps->tok));
+            return;
+        }
 
         info->comp.count++;
         if (!info->comp.first) info->comp.first = &node;
@@ -535,7 +544,10 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
         }
 
         if ('}' == *ps->tok.ptr) {
-            if (!reset) exitf("NIY: syntax error in fields (found , where ; expected)");
+            if (!reset) {
+                _expect(&ps->tok, ";");
+                return;
+            }
             ps->tok = lext(ps->ls);
             _parse_decl_ator(ps, capt, comp);
             return;
@@ -543,7 +555,10 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
     }
 
     if ('}' == *ps->tok.ptr) {
-        if (decl) exitf("NIY: syntax error in fields (missing ; after declaration)");
+        if (decl) {
+            _expect(&ps->tok, ";");
+            return;
+        }
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, comp);
         return;
@@ -751,7 +766,7 @@ enum expr_kind _parse_is_infix(bufsl const tok) {
     case '<'<<8 | '<': return BINOP_BSHL;
     case '>'<<8 | '>': return BINOP_BSHR;
     }
-    if (3 == tok.len && '<' == tok.ptr[1] && '=' == tok.ptr[2]) switch (tok.ptr[0]) {
+    if (3 == tok.len && tok.ptr[0] == tok.ptr[1] && '=' == tok.ptr[2]) switch (tok.ptr[0]) {
     case '<': return BINOP_ASGN_BSHL;
     case '>': return BINOP_ASGN_BSHR;
     }
@@ -815,7 +830,7 @@ void _parse_expr_one_lext_oneafter(parse_expr_state ref ps, struct _parse_expr_c
     switch (capt->hold->kind) {
     case BINOP_CALL:   _expect(&ps->tok, ")"); capt->hold->info.call.args = within;  break;
     case BINOP_SUBSCR: _expect(&ps->tok, "]"); capt->hold->info.subscr.off = within; break;
-    default: exitf("unreachable");
+    default:;
     }
     ps->tok = lext(ps->ls);
     _parse_expr_one_after(ps, capt, capt->hold);

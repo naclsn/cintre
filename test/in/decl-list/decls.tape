@@ -7,6 +7,7 @@ y: [32mchar[m -- tok: ;
 yy: [34mconst[m [34mptr[m[[32mchar[m] -- tok: ;
 yyy: [34mptr[m[[34mfun[m([36mvoid[m) -> [32mchar[m] -- tok: ;
 yyyy: [34mptr[m[[34marr[m[2, [32mchar[m]] -- tok: ;
+yyyyy: [34marr[m[5, [34mptr[m[[32mchar[m]] -- tok: ;
 v: [34msigned[m [32mint[m -- tok: ;
 [36mtypedef[m b: [32mfloat[m -- tok: ;
 c: [34mlong[m [34mlong[m [32mint[m -- tok: ,
@@ -48,3 +49,6 @@ a: [34munion[m aaaaa -- tok: ;
 : [34menum[m E {A, B, C} -- tok: ;
 end: [32mint[m -- tok: ;
 a: [34munsigned[m [32mchar[m -- tok: ;
+flags: [34mstruct[m {me: [32mint[m, is: [34munsigned[m [32mint[m:1, hi: [32mint[m} -- tok: ;
+main: [34mfun[m(: [32mint[m, : [34mconst[m [34mvolatile[m [34mrestrict[m [34marr[m[*, [34marr[m[*, [32mchar[m]]) -> [32mint[m -- tok: ;
+: [34mconst[m [32mvoid[m -- tok: 

@@ -6,7 +6,9 @@ void run_test(char* file) {
 
     ldef(&ls, "ONE", "1");
     ldef(&ls, "TWO", "2");
-    //ldef(&ls, "COMP", "");
+
+    linc(&ls, "./include"); // this one won't find "coucou.h"
+    linc(&ls, "test/in/tok-stream/include/");
 
     try while (!lend(&ls)) {
         bufsl const token = lext(&ls);

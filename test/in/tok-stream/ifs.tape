@@ -1,10 +1,18 @@
-[test/in/tok-stream/ifs:  6]	one
-[test/in/tok-stream/ifs:  6]	&
-[test/in/tok-stream/ifs:  6]	two
-[test/in/tok-stream/ifs: 29]	(
-[test/in/tok-stream/ifs: 29]	1
-[test/in/tok-stream/ifs: 29]	+
-[test/in/tok-stream/ifs: 29]	2
-[test/in/tok-stream/ifs: 29]	)
-[test/in/tok-stream/ifs: 29]	!
-Error: "Success"
+[1m[yey:23][m # error "Success" [1m##[m Error: "Success"
+[test/in/tok-stream/ifs:  5]	one
+[test/in/tok-stream/ifs:  5]	&
+[test/in/tok-stream/ifs:  5]	two
+[test/in/tok-stream/ifs: 28]	(
+[test/in/tok-stream/ifs: 28]	1
+[test/in/tok-stream/ifs: 28]	+
+[test/in/tok-stream/ifs: 28]	2
+[test/in/tok-stream/ifs: 28]	)
+[test/in/tok-stream/ifs: 28]	!
+[test/in/tok-stream/ifs: 37]	coucou
+[test/in/tok-stream/ifs: 40]	coucou
+[test/in/tok-stream/ifs: 43]	coucou
+[test/in/tok-stream/ifs: 46]	coucou
+[test/in/tok-stream/ifs: 43]	coucou
+[yey: 18]	coucou
+[test/in/tok-stream/include/coucou.h:  1]	coucou
+Stopping at preprocessor error

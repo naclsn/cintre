@@ -1,6 +1,5 @@
 // #define ONE 1
 // #define TWO 2
-// #define COMP(a, ...) ((a){__VA_ARGS__})
 
 #if defined(ONE) && defined TWO
 one&two
@@ -33,6 +32,27 @@ THREE!
 #ifdef ONE
 kljljlj
 #endif
+
+#if -0xc >= -'\r'
+coucou
+#endif
+#if !(0X9 != '\t')
+coucou
+#endif
+#if '\0' < '\''
+coucou
+#endif
+#if 1 ? 2 : 3
+coucou
+#endif
+
+#line 42
+coucou
+
+#line 17 "yeye"
+coucou
+
+#include "coucou.h"
 
 #if '\n' == 10
 # error "Success"

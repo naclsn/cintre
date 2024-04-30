@@ -1,0 +1,14 @@
+#define expand(...) __VA_ARGS__
+#define make(ident, items) ident = {  \
+            .id= "hello " #ident,     \
+            .init_str= #items,        \
+            /*expand items*/              \
+        }
+
+struct idk make(a, (.one= 1, .two= "two"));
+struct idk make(salkdfjaslkjdflasjdf, (
+    .this= 0,
+    .is= 1,
+    .a= 2,
+    .test= 3,
+));

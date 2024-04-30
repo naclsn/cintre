@@ -371,7 +371,8 @@ bufsl lext(lex_state ref ls) {
                 do if (has(1) && is('\\')) nx();
                 while (nx(), has(1) && !is('\n'));
             }
-            exitf("Error: %.*s", (unsigned)err.len, err.ptr);
+            report_lex_locate(ls, "Error: %.*s", bufmt(err));
+            exitf("Stopping at preprocessor error");
         }
 
         else if (!disab && diris("include")) {
@@ -405,16 +406,17 @@ bufsl lext(lex_state ref ls) {
                     }
                     file[n] = '\0';
                     FILE* f = fopen(file, "rb");
-                    if (!f) continue;
-                    src->text = _lex_read_all(f);
-                    fclose(f);
-                    if (src->text.len) {
-                        char* dup = malloc(n+1);
-                        if (!dup) exitf("OOM");
-                        memcpy(dup, file, n);
-                        dup[n] = '\0';
-                        src->file = dup;
-                        break;
+                    if (f) {
+                        src->text = _lex_read_all(f);
+                        fclose(f);
+                        if (src->text.len) {
+                            char* dup = malloc(n+1);
+                            if (!dup) exitf("OOM");
+                            memcpy(dup, file, n);
+                            dup[n] = '\0';
+                            src->file = dup;
+                            break;
+                        }
                     }
                     it = ls->include_paths.ptr + ++k;
                 } while (k < ls->include_paths.len);
@@ -438,7 +440,7 @@ bufsl lext(lex_state ref ls) {
         else if (!disab && diris("line")) { // xxx: (<backslash><newline>)+ not handled in directive
             skip(strchr(" \t", at()));
             ls->line = 0;
-            while (has(1) && isin('0', '9')) ls->line = ls->line*10 + at()-'0';
+            while (has(1) && isin('0', '9')) ls->line = ls->line*10 + at()-'0', nx();
             skip(strchr(" \t", at()));
             if (has(1) && is('"')) {
                 nx();
@@ -451,6 +453,7 @@ bufsl lext(lex_state ref ls) {
                 dup[path.len] = '\0';
                 memcpy(dup, path.ptr, path.len);
                 ls->file = dup;
+                ls->sources.ptr[ls->sidx].file = dup;
             }
         }
 
@@ -636,8 +639,19 @@ bufsl lext(lex_state ref ls) {
                 while (k < work->len) {
 #                   define nameis(li) (strlen(li) == name.len && !memcmp(li, name.ptr, strlen(li)))
 #                   define cin(lo, hi) ((lo) <= c && c <= (hi))
-                    char c = work->ptr[k];
+                    char const c = work->ptr[k];
                     switch (c) {
+                    case '/':
+                        k++;
+                        if (k < work->len) {
+                            if ('*' == work->ptr[k]) {
+                                while (++k < work->len) if ('*' == work->ptr[k] && k < work->len && '/' == work->ptr[k+1]) {
+                                    k+= 2;
+                                    break;
+                                }
+                            } else if ('/' == work->ptr[k]) k = work->len;
+                        }
+                        break;
                     case '\'':
                     case '"':
                         k++;
@@ -658,7 +672,7 @@ bufsl lext(lex_state ref ls) {
                             while (k < work->len && strchr(" \r\n\\", work->ptr[k])) k++;
                             if (work->len == k) break;
                             bufsl name = {.ptr= work->ptr+k};
-                            c = work->ptr[k];
+                            char c = work->ptr[k];
                             while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
                                 c = work->ptr[++k];
                             name.len = work->ptr+k-name.ptr;
@@ -674,22 +688,43 @@ bufsl lext(lex_state ref ls) {
                                 break;
                             }
                             if (!f) break;
-                            // XXX: escaping (need to escape: newline, double quote, backslash)
-                            size_t ln = (name.ptr+name.len)-(work->ptr+st);
-                            work->ptr[st] = work->ptr[st+ln-1] = '"';
-                            if (ln < 2) break;
-                            if (!dyarr_replace(work, st+1, ln-2, &repl)) exitf("OOM");
-                            for (size_t k = 0; k < repl.len; k++) {
-                                if ('\\' == work->ptr[st+1+k]) k++;
-                                else if ('\n' == work->ptr[st+1+k]) work->ptr[st+1+k] = ' ';
+                            size_t const being_repl_len = (name.ptr+name.len-work->ptr)-st;
+                            size_t esc_repl_len = repl.len;
+                            for (size_t kk = 0; kk < repl.len; kk++) {
+                                if (strchr("\"'", repl.ptr[kk])) esc_repl_len++;
+                                else if ('\\' == repl.ptr[kk] && kk+1 < repl.len && '\n' == repl.ptr[kk+1]) esc_repl_len--;
                             }
+                            // needs less
+                            if (esc_repl_len+2 < being_repl_len) dyarr_remove(work, st+1, being_repl_len-esc_repl_len-2);
+                            // needs more
+                            else if (!dyarr_insert(work, st+1, esc_repl_len+2-being_repl_len)) exitf("OOM");
+                            memset(work->ptr+st, '?', esc_repl_len+2);
+                            k = st;
+                            work->ptr[k++] = '"';
+                            while (repl.len) switch (*repl.ptr) {
+                            case '\\':
+                                if (1 == repl.len || '\n' == repl.ptr[1]) {
+                            case '\n':
+                                    work->ptr[k++] = ' ';
+                                    ++repl.ptr, --repl.len;
+                                    break;
+                                }
+                                // fall through
+                            case '"':
+                                work->ptr[k++] = '\\';
+                                // fall through
+                            default:
+                                work->ptr[k++] = *repl.ptr;
+                                ++repl.ptr, --repl.len;
+                            } // for inserting characters
+                            work->ptr[k++] = '"';
                         } // '#name'
                         break;
                     default:
                         if ('_' == c || cin('A', 'Z') || cin('a', 'z')) {
                             bufsl name = {.ptr= work->ptr+k++};
                             if (k < work->len) {
-                                c = work->ptr[k];
+                                char c = work->ptr[k];
                                 while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
                                     c = work->ptr[++k];
                             }

@@ -1,10 +1,21 @@
 /// program to generate the <a-file.h> and <c-main.h>
 /// see `$ preparer -h` (or the main function at the end of the file)
+///
+/// function declarations and other static objects make a `name_adapt_type`
+/// describing their type, and an entry in the namespace with the normal name
+///
+/// tag type declarations (eg. `struct name {}`) make an associated
+/// `name_adapt_tag_type` for the type itself, and an entry in the namespace
+/// with a name like `@name`
+///
+/// typedefs make refs (pointers) to other types, `name_adapt_tdf_type`, and an
+/// entry in the namespace with the normal name
 
-// big ol' TODO: all of it
+// TODO: more of it
 // - typedef
 // - struct/enum/union
 // - static vars
+// - (also coverage and cleanup as it's already quite messy)
 
 #include "common.h"
 #include "parser.h"
@@ -13,8 +24,10 @@ lex_state ls = {0};
 FILE* result = NULL;
 
 struct {
-    dyarr(struct seen_fun { bufsl name; }) fun;
-    dyarr(struct seen_var { bufsl name; }) var;
+    dyarr(struct seen_fun { bufsl name; }) funs;
+    dyarr(struct seen_tag { bufsl name; }) tags;
+    dyarr(struct seen_tdf { bufsl name; }) tdfs;
+    dyarr(struct seen_var { bufsl name; }) objs;
 } seen = {0};
 
 #define errdie(...) (report_lex_locate(&ls, "preparer: " __VA_ARGS__), exit(EXIT_FAILURE))
@@ -33,12 +46,35 @@ void _emit_comp(declaration cref decl) {
     if (KIND_STRUCT != decl->type.kind)
         errdie("NIY (union declaration)");
 
+    // eg. `struct bidoof a;` or `typedef struct bidoof a` (so `decl->type.name.len` implied)
+    if (decl->name.len && -1ul == decl->type.info.comp.count) {
+        if (SPEC_TYPEDEF == decl->spec) {
+            fprintf(result, "struct %.*s %.*s;\n", bufmt(decl->type.name), bufmt(decl->name));
+            // for tentative definitions (ie. `struct bidoof {};` is expected later on)
+            fprintf(result, "static struct adpt_type const %.*s_adapt_tag_type;\n", bufmt(decl->type.name));
+            fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &%.*s_adapt_tag_type;\n", bufmt(decl->name), bufmt(decl->type.name));
+            bool found = false;
+            search_namespace (decl->name, seen.tdfs) { found = true; break; }
+            if (!found) {
+                struct seen_tdf* p = dyarr_push(&seen.tdfs);
+                if (!p) exitf("OOM");
+                p->name = decl->name;
+            }
+            fprintf(result, "\n");
+        } else errdie("NIY (static variable def of already declared tag type)");
+        return;
+    }
+
     fprintf(result, "struct ");
     if (decl->type.name.len) {
         fprintf(result, "%.*s ", bufmt(decl->type.name));
-        if (0 == decl->type.info.comp.count)
-            errdie("NIY (forward declaration for struct)");
+        // eg. `struct bidoof;`
+        if (-1ul == decl->type.info.comp.count) {
+            fprintf(result, ";\n\n");
+            return;
+        }
     }
+    // if reaching here, we should really have a full declaration body
 
     fprintf(result, "{\n");
     for_linked (decl->type.info,comp) {
@@ -54,11 +90,24 @@ void _emit_comp(declaration cref decl) {
         fprintf(result, "};\n");
 
     if (decl->type.name.len) {
-        fprintf(result, "static struct adpt_type const struct_%.*s_adapt_type = {\n", bufmt(decl->type.name));
-        // TODO: add to correct namespace
+        fprintf(result, "static struct adpt_type const %.*s_adapt_tag_type = {\n", bufmt(decl->type.name));
+        bool found = false;
+        search_namespace (decl->type.name, seen.tags) { found = true; break; }
+        if (!found) {
+            struct seen_tag* p = dyarr_push(&seen.tags);
+            if (!p) exitf("OOM");
+            p->name = decl->type.name;
+        }
     } else if (SPEC_TYPEDEF == decl->spec) {
-        fprintf(result, "static struct adpt_type const %.*s_adapt_type = {\n", bufmt(decl->name));
-        // TODO: add to correct namespace
+        // XXX
+        fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &{\n", bufmt(decl->name));
+        bool found = false;
+        search_namespace (decl->name, seen.tdfs) { found = true; break; }
+        if (!found) {
+            struct seen_tdf* p = dyarr_push(&seen.tdfs);
+            if (!p) exitf("OOM");
+            p->name = decl->name;
+        }
     } else errdie("NIY (static annon struct variable declaration)");
 
     fprintf(result, "    .size= sizeof("); emit_type(&decl->type); fprintf(result, "), .align= alignof("); emit_type(&decl->type); fprintf(result, "),\n");
@@ -68,7 +117,7 @@ void _emit_comp(declaration cref decl) {
     size_t count = 0;
     for_linked (decl->type.info,comp) {
         fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
-        fprintf(result, "            , .type= &"); emit_adpt_type(&curr->decl->type); fprintf(result, ",\n");
+        fprintf(result, "            , .type= &"); emit_adpt_type(&curr->decl->type); fprintf(result, "\n");
         fprintf(result, "            , .offset= offsetof("); emit_type(&decl->type); fprintf(result, ", %.*s) },\n", bufmt(curr->decl->name));
         count++;
     }
@@ -78,8 +127,14 @@ void _emit_comp(declaration cref decl) {
 
     fprintf(result, "};\n");
     if (decl->type.name.len && SPEC_TYPEDEF == decl->spec) {
-        fprintf(result, "static struct adpt_type const %.*s = struct_%.*s_adapt_type;\n", bufmt(decl->name), bufmt(decl->type.name));
-        // TODO: add to correct namespace
+        fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &%.*s_adapt_tag_type;\n", bufmt(decl->name), bufmt(decl->type.name));
+        bool found = false;
+        search_namespace (decl->name, seen.tdfs) { found = true; break; }
+        if (!found) {
+            struct seen_tdf* p = dyarr_push(&seen.tdfs);
+            if (!p) exitf("OOM");
+            p->name = decl->name;
+        }
     }
 
     // handle nested struct/union/enum definitions
@@ -92,11 +147,13 @@ void _emit_comp(declaration cref decl) {
 
     default:;
     }
+
+    fprintf(result, "\n");
 }
 
 void _emit_fun(declaration cref decl) {
-    search_namespace (decl->name, seen.fun) return;
-    struct seen_fun* p = dyarr_push(&seen.fun);
+    search_namespace (decl->name, seen.funs) return;
+    struct seen_fun* p = dyarr_push(&seen.funs);
     if (!p) exitf("OOM");
     p->name = decl->name;
 
@@ -397,13 +454,23 @@ int do_prepare(int argc, char** argv) {
 
     bufsl thisns = name_space(file);
     fprintf(result, "static struct adpt_item const adptns_%.*s[] = {\n", bufmt(thisns));
-    for (size_t k = 0; k < seen.fun.len; k++) {
-        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.fun.ptr[k].name));
-        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.fun.ptr[k].name));
-        fprintf(result, "    , .as.function= %.*s_adapt_call\n", bufmt(seen.fun.ptr[k].name));
+    for (size_t k = 0; k < seen.funs.len; k++) {
+        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.funs.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.funs.ptr[k].name));
+        fprintf(result, "    , .as.function= %.*s_adapt_call\n", bufmt(seen.funs.ptr[k].name));
         fprintf(result, "    , .kind= ITEM_VALUE },\n");
     }
-    if (seen.var.len) errdie("NIY (other kinds of static variable declaration)");
+    for (size_t k = 0; k < seen.tags.len; k++) {
+        fprintf(result, "    { .name= \"@%.*s\"\n", bufmt(seen.tags.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_tag_type\n", bufmt(seen.tags.ptr[k].name));
+        fprintf(result, "    , .kind= ITEM_TYPEDEF },\n");
+    }
+    for (size_t k = 0; k < seen.tdfs.len; k++) {
+        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.tdfs.ptr[k].name));
+        fprintf(result, "    , .type= %.*s_adapt_tdf_type\n", bufmt(seen.tdfs.ptr[k].name));
+        fprintf(result, "    , .kind= ITEM_TYPEDEF },\n");
+    }
+    if (seen.objs.len) errdie("NIY (other kinds of static variable declaration)");
     fprintf(result, "};\n");
 
     return EXIT_SUCCESS;

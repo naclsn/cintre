@@ -35,7 +35,36 @@ typedef struct cintre_state {
     compile_state comp;
     run_state runr;
     dyarr(struct adpt_item) locs;
+
+    // needed for `decl_to_adpt_type`
+    dyarr(struct adpt_type) ty_work;
 } cintre_state;
+
+void free_cintre_state(cintre_state ref gs) {
+    ldel(&gs->lexr);
+
+    for (size_t k = 0; k < gs->locs.len; k++)
+        free((void*)gs->locs.ptr[k].name);
+    free(gs->locs.ptr);
+
+    for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
+    case TYPE_STRUCT:
+    case TYPE_UNION:;
+        struct adpt_comp_desc cref comp = &gs->ty_work.ptr[k].info.comp;
+        for (size_t kk = 0; kk < comp->count; kk++) free((void*)comp->fields[kk].name);
+        free((void*)comp->fields);
+        break;
+    case TYPE_FUN:;
+        struct adpt_fun_desc cref fun = &gs->ty_work.ptr[k].info.fun;
+        for (size_t kk = 0; kk < fun->count; kk++) free((void*)fun->params[kk].name);
+        free((void*)fun->params);
+        break;
+    default:;
+    }
+    free(gs->ty_work.ptr);
+
+    free(gs->comp.chk_work.ptr); // xxx: annoying
+}
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
     cs->chk_work.len = 0; // xxx: annoying
@@ -115,19 +144,19 @@ struct adpt_item const* lookup(void* usr, bufsl const name) {
     cintre_state cref gs = usr;
     for (size_t k = 0; k < gs->locs.len; k++) {
         struct adpt_item const* const it = gs->locs.ptr+k;
-        if (!memcmp(it->name, name.ptr, name.len)) return it;
+        if (bufis(name, it->name)) return it;
     }
     for (size_t ns = 0; ns < countof(namespaces); ns++)
         for (size_t k = 0; k < namespaces[ns].count; k++) {
             struct adpt_item const* const it = namespaces[ns].items+k;
-            if (!memcmp(it->name, name.ptr, name.len)) return it;
+            if (bufis(name, it->name)) return it;
         }
     return NULL;
 }
 
-bool is_decl_keyword(bufsl const tok) {
+bool is_decl_keyword(cintre_state cref gs, bufsl const tok) {
 #   define tokis(l) (strlen(l) == tok.len && !memcmp(l, tok.ptr, strlen(l)))
-    return tokis("char")
+    if (   tokis("char")
         || tokis("short")
         || tokis("int")
         || tokis("long")
@@ -141,127 +170,106 @@ bool is_decl_keyword(bufsl const tok) {
         || tokis("enum")
         || tokis("typedef")
         || tokis("const")
-        ;
+       ) return true;
 #   undef tokis
+
+    struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, tok);
+    return it && ITEM_TYPEDEF == it->kind;
 }
 
-void free_adpt_type(struct adpt_type cref ty) {
-    switch (ty->tyty) {
-    default: break;
-
-    case TYPE_STRUCT:
-    case TYPE_UNION:
-        for (size_t k = 0; k < ty->info.comp.count; k++) {
-            free((void*)ty->info.comp.fields[k].name);
-            free_adpt_type(ty->info.comp.fields[k].type);
-        }
-        free((void*)ty->info.comp.fields);
-        break;
-
-    case TYPE_FUN:
-        free_adpt_type(ty->info.fun.ret);
-        for (size_t k = 0; k < ty->info.fun.count; k++) {
-            free((void*)ty->info.fun.params[k].name);
-            free_adpt_type(ty->info.fun.params[k].type);
-        }
-        free((void*)ty->info.fun.params);
-        break;
-
-    case TYPE_PTR:
-        free_adpt_type(ty->info.ptr);
-        break;
-
-    case TYPE_ARR:
-        free_adpt_type(ty->info.arr.item);
-        break;
-    }
-
-    free((void*)ty);
-}
-
-struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cref ty) {
-    struct adpt_type ref r = malloc(sizeof *r);
-    if (!r) exitf("OOM");
-#   define cpyreturn(...) return memcpy(r, (__VA_ARGS__), sizeof*r)
-
+/// allocates using `gs->ty_work`; on failure, it is safe to set the length of
+/// it back to what it was to free wip temporaries, it should not cause a leak
+struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type cref ty) {
     switch (ty->kind) {
+        struct adpt_type* r;
+
     case KIND_NOTAG:;
         bool _signed = false, _unsigned = false, _short = false, _long = false;
         for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
-            default: break;
             case QUAL_SIGNED:    _signed = true;          break;
             case QUAL_UNSIGNED:  _unsigned = true;        break;
             case QUAL_SHORT:     _short = true;           break;
             case QUAL_LONG:      _long = true;            break;
             case QUAL_COMPLEX:   exitf("NIY: complex");   break;
             case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            default:;
         }
 
 #       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
         if (nameis("char"))
-            cpyreturn(_signed ? &adptb_schar_type
+            return _signed ? &adptb_schar_type
                     : _unsigned ? &adptb_uchar_type
-                    : &adptb_char_type);
+                    : &adptb_char_type;
         if (nameis("int") || !ty->name.len)
-            cpyreturn(_short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
+            return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
                     : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
-                    : _unsigned ? &adptb_uint_type : &adptb_int_type);
-        if (nameis("float"))  cpyreturn(&adptb_float_type);
-        if (nameis("double")) cpyreturn(&adptb_double_type);
-        if (nameis("void"))   cpyreturn(&adptb_void_type);
+                    : _unsigned ? &adptb_uint_type : &adptb_int_type;
+        if (nameis("float"))  return &adptb_float_type;
+        if (nameis("double")) return &adptb_double_type;
+        if (nameis("void"))   return &adptb_void_type;
 #       undef nameis
 
         struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, ty->name);
-        if (it && ITEM_TYPEDEF == it->kind) cpyreturn(it->type);
-        break;
+        if (it && ITEM_TYPEDEF == it->kind) return it->type;
+        return NULL;
 
     case KIND_STRUCT:
     case KIND_UNION:
-        // XXX: for now only support via looking up the tag
-        //      (because otherwise will have to do the layout for size/align)
-        if ((size_t)-1 == ty->info.comp.count) {
-            // XXX: wrong lookup space
-            //struct adpt_item cref it = gs->lookup(ty->name);
-            //if (it && ITEM_TYPEDEF == it->kind) cpyreturn(it->type);
-            //break;
+        if (-1ul == ty->info.comp.count) {
+            char copy[ty->name.len+1];
+            memcpy(copy+1, ty->name.ptr, ty->name.len);
+            copy[0] = '@';
+            struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, (bufsl){.ptr= copy, .len= ty->name.len});
+            if (it && ITEM_TYPEDEF == it->kind) return it->type;
+            return NULL;
         }
 
-        return NULL;
-        cpyreturn(&(struct adpt_type){
-                .size= 0, // TODO: uuuhh :' didn't think about thaaat
-                .align= 0, // (same)
+        // XXX: for now only support via looking up the tag
+        //      (because otherwise will have to do the layout for size/align)
+        return notif("NIY: struct/union from annon"), NULL;
+
+        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        return memcpy(r, &(struct adpt_type){
+                .size= 0,
+                .align= 0,
                 .tyty= KIND_STRUCT == ty->kind ? TYPE_STRUCT : TYPE_UNION,
                 .info.comp = {
                     .fields= NULL,
                     .count= 0,
                 },
-            });
+            }, sizeof*r);
 
-    case KIND_ENUM: cpyreturn(&adptb_int_type);
+    case KIND_ENUM: return &adptb_int_type;
 
     case KIND_PTR:;
-        struct adpt_type cref ptr = alloc_adpt_type(gs, &ty->info.ptr->type);
-        if (!ptr) break;
-        cpyreturn(&(struct adpt_type){
+        struct adpt_type cref ptr = decl_to_adpt_type(gs, &ty->info.ptr->type);
+        if (!ptr) return NULL;
+
+        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        return memcpy(r, &(struct adpt_type){
                 .size= sizeof(void*),
-                .align= sizeof(void*), // yyy: approximation
+                .align= sizeof(void*),
                 .tyty= TYPE_PTR,
                 .info.ptr= ptr,
-            });
+            }, sizeof*r);
 
     case KIND_FUN:
-        if ((size_t)-1 == ty->info.fun.count) break;
+        if (-1ul == ty->info.fun.count) return NULL;
 
-        struct adpt_type cref ret = alloc_adpt_type(gs, &ty->info.fun.ret->type);
-        if (!ret) break;
+        struct adpt_type cref ret = decl_to_adpt_type(gs, &ty->info.fun.ret->type);
+        if (!ret) return NULL;
 
         struct adpt_fun_param* const params = malloc(ty->info.fun.count*sizeof*params);
         if (!params) exitf("OOM");
 
         size_t k = 0;
         for (struct decl_type_param const* curr = ty->info.fun.first; curr; curr = curr->next, k++) {
-            struct adpt_type cref type = alloc_adpt_type(gs, &curr->decl->type);
-            if (!type) break;
+            struct adpt_type cref type = decl_to_adpt_type(gs, &curr->decl->type);
+            if (!type) {
+                while (k--) free((void*)params[k].name);
+                free(params);
+                return NULL;
+            }
 
             char* name = NULL;
             if (curr->decl->name.len) {
@@ -271,23 +279,11 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
                 memcpy(name, curr->decl->name.ptr, curr->decl->name.len);
             }
 
-            memcpy(params+k, &(struct adpt_fun_param){
-                    .name= name,
-                    .type= type,
-                }, 0);
-        }
-        // early break (alloc_adpt_type returned NULL)
-        if (k < ty->info.fun.count) {
-            while (k--) {
-                free((void*)params[k].name);
-                free_adpt_type(params[k].type);
-            }
-            free(params);
-            free_adpt_type(ret);
-            break;
+            memcpy(params+k, &(struct adpt_fun_param){.name= name, .type= type}, sizeof*params);
         }
 
-        cpyreturn(&(struct adpt_type){
+        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        return memcpy(r, &(struct adpt_type){
                 .size= sizeof(void(*)()),
                 .align= sizeof(void(*)()),
                 .tyty= TYPE_FUN,
@@ -296,11 +292,11 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
                     .params= params,
                     .count= ty->info.fun.count,
                 },
-            });
+            }, sizeof*r);
 
     case KIND_ARR:;
-        struct adpt_type cref item = alloc_adpt_type(gs, &ty->info.arr.item->type);
-        if (!item) break;
+        struct adpt_type cref item = decl_to_adpt_type(gs, &ty->info.arr.item->type);
+        if (!item) return NULL;
 
         size_t count = 0;
         if (ty->info.arr.count) {
@@ -309,10 +305,10 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
 
             // TODO: once UNOP_CAST is added, use it by wrapping `ty->info.arr.count`
             struct adpt_type cref count_expr = check_expression(&gs->comp, ty->info.arr.count);
-            if (!count_expr) break;
+            if (!count_expr) return NULL;
             if (!(TYPE_CHAR <= count_expr->tyty && count_expr->tyty <= TYPE_ULONG)) {
                 notif("Array size is not of an integral type");
-                break;
+                return NULL;
             }
 
             struct slot slot = {.ty= &adptb_ulong_type};
@@ -325,16 +321,23 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
                 break;
 
             case _slot_used:
-            case _slot_variable:
                 run(&gs->runr, gs->comp.res);
                 count = *(size_t*)(gs->runr.stack+gs->runr.sp);
                 gs->comp.res.len = plen;
                 gs->runr.sp = psp;
                 break;
-            }
-        }
 
-        cpyreturn(&(struct adpt_type){
+            case _slot_variable:
+                run(&gs->runr, gs->comp.res);
+                count = *(size_t*)(gs->runr.stack+slot.as.variable);
+                gs->comp.res.len = plen;
+                gs->runr.sp = psp;
+                break;
+            }
+        } else exitf("NIY: inferred length (or it's a function param, but those are not handled correctly at many more level anyways)");
+
+        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        return memcpy(r, &(struct adpt_type){
                 .size= item->size*count,
                 .align= item->align,
                 .tyty= TYPE_ARR,
@@ -342,11 +345,10 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
                     .item= item,
                     .count= count,
                 },
-            });
-    }
+            }, sizeof*r);
+    } // switch kind
 
-#   undef cpyreturn
-    return free(r), NULL;
+    return NULL;
 }
 // }}}
 
@@ -354,14 +356,21 @@ struct adpt_type const* alloc_adpt_type(cintre_state ref gs, struct decl_type cr
 void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     cintre_state ref gs = usr;
 
-    //printf("decl: ");
-    //print_decl(stdout, decl);
-    //printf("\n");
-    struct adpt_type cref ty = alloc_adpt_type(gs, &decl->type);
-    if (!ty) return;
-    if (!ty->size) {
-        notif("Zero-sized variable type");
-        free_adpt_type(ty);
+    if (!decl->name.len) {
+        notif("Declaration does not declare anything");
+        return;
+    }
+    if (gs->comp.lookup(gs->comp.usr, decl->name)) {
+        notif("Name already exits, no shadowing for now");
+        return;
+    }
+
+    size_t const pwork = gs->ty_work.len;
+    struct adpt_type cref ty = decl_to_adpt_type(gs, &decl->type);
+    if (!ty || !ty->size) {
+        if (!ty) notif("Could not understand type");
+        else notif("Zero-sized variable type");
+        gs->ty_work.len = pwork;
         return;
     }
 
@@ -501,9 +510,11 @@ int main(void) {
         gs->lexr.slice.len = strlen(gs->lexr.slice.ptr = line);
 
         bufsl tok = lext(&gs->lexr);
-        if (!tok.len || ';' == *tok.ptr) accept_expr(gs, NULL, &tok);
+        if (!tok.len || ';' == *tok.ptr) accept_expr(gs->expr.usr, NULL, &tok);
 
-        else if (is_decl_keyword(tok)) {
+        else if (is_decl_keyword(gs, tok)) {
+            gs->decl.base = (declaration){0};
+
             do {
                 tok = parse_declaration(&gs->decl, tok);
 
@@ -515,20 +526,12 @@ int main(void) {
                 // FIXME: sometime incorrect until parsing of the comma operator is done properly
                 //        (if there was an '=')
             } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs->lexr), true : false);
-
-            gs->decl.base = (declaration){0};
         }
 
         else parse_expression(&gs->expr, tok);
     }
 
-    ldel(&gs->lexr);
-    for (size_t k = 0; k < gs->locs.len; k++) {
-        free((void*)gs->locs.ptr[k].name);
-        free_adpt_type(gs->locs.ptr[k].type);
-    }
-    free(gs->locs.ptr);
-    free(gs->comp.chk_work.ptr); // xxx: annoying
+    free_cintre_state(gs);
 
     return EXIT_SUCCESS;
 }

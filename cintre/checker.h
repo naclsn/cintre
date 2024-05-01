@@ -203,9 +203,26 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
         return expr->usr = (void*)base->info.fun.ret;
 
-    case BINOP_TERNCOND:
     case BINOP_TERNBRANCH:
-        fail("NIY: ternary"); // TODO
+        fail("Broken tree with dangling ternary branches");
+    case BINOP_TERNCOND:
+        if (BINOP_TERNBRANCH != expr->info.binary.rhs->kind) fail("Broken tree with dangling ternary condition");
+        failforward(opr, expr->info.binary.lhs); // condition
+        if (!isint(opr)) fail("Condition is not of an integral type");
+        failforward(lhs, expr->info.binary.rhs->info.binary.lhs); // consequence
+        failforward(rhs, expr->info.binary.rhs->info.binary.rhs); // alternative
+        if (isnum(lhs) && isnum(rhs)) {
+            bool const lf = isflt(lhs), rf = isflt(rhs);
+            // (yyy: approximation of implicit conversions' "common real type")
+            return expr->usr = (void*)( lf == rf ? (
+                                            lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
+                                            lhs->size < rhs->size ? rhs : lhs )
+                                      : lf ? lhs : rhs
+                                      );
+        }
+        // xxx: this is quite incorrect but whatever for now
+        if (_are_types_compatible(lhs, rhs)) return expr->usr = (void*)lhs;
+        fail("Branches are not of compatible types");
 
     case BINOP_COMMA:
         failforward(lhs, expr->info.binary.lhs);

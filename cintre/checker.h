@@ -15,7 +15,10 @@
 #include "parser.h"
 #include "adapter.h"
 
-typedef dyarr(unsigned char) bytecode;
+typedef struct bytecode {
+    unsigned char *ptr;
+    size_t len, cap;
+} bytecode;
 
 typedef struct compile_state {
     bytecode res;
@@ -357,7 +360,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case UNOP_MEMBER:
         failforward(opr, expr->info.member.base);
         if (UNOP_MEMBER != expr->kind && !isindir(opr)) fail("Operand is not of a pointer type");
-        struct adpt_type const* comp = UNOP_MEMBER == expr->kind ? opr : isptr(opr) ? opr->info.ptr : opr->info.arr.item;
+        struct adpt_type cref comp = UNOP_MEMBER == expr->kind ? opr : isptr(opr) ? opr->info.ptr : opr->info.arr.item;
         if (TYPE_STRUCT != comp->tyty && TYPE_UNION != comp->tyty) fail("Base of member expression is not a of a structure or union type");
         for (size_t k = 0; k < comp->info.comp.count; k++)
             if (bufis(*expr->info.member.name, comp->info.comp.fields[k].name))

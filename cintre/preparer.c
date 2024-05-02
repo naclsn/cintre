@@ -8,8 +8,8 @@
 /// `name_adapt_tag_type` for the type itself, and an entry in the namespace
 /// with a name like `@name`
 ///
-/// typedefs make refs (pointers) to other types, `name_adapt_tdf_type`, and an
-/// entry in the namespace with the normal name
+/// typedefs translate to preprocessor macros to the underlying type; when
+/// needed (eg. `typedef struct {} name`) it makes a `name_adapt_tdf_type`
 
 // TODO: more of it
 // - typedef
@@ -52,7 +52,7 @@ void _emit_comp(declaration cref decl) {
             fprintf(result, "struct %.*s %.*s;\n", bufmt(decl->type.name), bufmt(decl->name));
             // for tentative definitions (ie. `struct bidoof {};` is expected later on)
             fprintf(result, "static struct adpt_type const %.*s_adapt_tag_type;\n", bufmt(decl->type.name));
-            fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &%.*s_adapt_tag_type;\n", bufmt(decl->name), bufmt(decl->type.name));
+            fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tag_type\n", bufmt(decl->name), bufmt(decl->type.name));
             bool found = false;
             search_namespace (decl->name, seen.tdfs) { found = true; break; }
             if (!found) {
@@ -99,8 +99,9 @@ void _emit_comp(declaration cref decl) {
             p->name = decl->type.name;
         }
     } else if (SPEC_TYPEDEF == decl->spec) {
-        // XXX
-        fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &{\n", bufmt(decl->name));
+        // XXX: xxx, but I don't remember why
+        fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tdf_type\n", bufmt(decl->name), bufmt(decl->name));
+        fprintf(result, "static struct adpt_type const %.*s_adapt_tdf_type = {\n", bufmt(decl->name));
         bool found = false;
         search_namespace (decl->name, seen.tdfs) { found = true; break; }
         if (!found) {
@@ -127,7 +128,7 @@ void _emit_comp(declaration cref decl) {
 
     fprintf(result, "};\n");
     if (decl->type.name.len && SPEC_TYPEDEF == decl->spec) {
-        fprintf(result, "static struct adpt_type const* const %.*s_adapt_tdf_type = &%.*s_adapt_tag_type;\n", bufmt(decl->name), bufmt(decl->type.name));
+        fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tag_type\n", bufmt(decl->name), bufmt(decl->type.name));
         bool found = false;
         search_namespace (decl->name, seen.tdfs) { found = true; break; }
         if (!found) {
@@ -260,7 +261,11 @@ void emit_type(struct decl_type cref type) {
 void emit_adpt_type(struct decl_type cref type) {
     switch (type->kind) {
     case KIND_NOTAG:
-        if (bufis(type->name, "size_t")) {
+        search_namespace (type->name, seen.tdfs) {
+            fprintf(result, "%.*s_adapt_type", bufmt(type->name));
+            return;
+        }
+        if (bufis(type->name, "size_t")) { // XXX: tmp, these should be done proper
             fprintf(result, "adptb_ulong_type");
             break;
         }
@@ -467,7 +472,7 @@ int do_prepare(int argc, char** argv) {
     }
     for (size_t k = 0; k < seen.tdfs.len; k++) {
         fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.tdfs.ptr[k].name));
-        fprintf(result, "    , .type= %.*s_adapt_tdf_type\n", bufmt(seen.tdfs.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.tdfs.ptr[k].name));
         fprintf(result, "    , .kind= ITEM_TYPEDEF },\n");
     }
     if (seen.objs.len) errdie("NIY (other kinds of static variable declaration)");

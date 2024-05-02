@@ -29,6 +29,7 @@ void print_type(FILE ref strm, struct adpt_type cref ty);
 void print_code(FILE ref strm, bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
 void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count);
+void print_slot(FILE ref strm, struct slot cref slt);
 
 // ---
 
@@ -454,6 +455,38 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
     }
 
 #   undef col_n
+}
+
+void print_slot(FILE ref strm, struct slot cref slot) {
+    fprintf(strm, "slot ");
+    print_type(strm, slot->ty);
+    switch (slot->usage) {
+    case _slot_value:
+        fprintf(strm, " \x1b[36mvalue\x1b[m = ");
+        switch (slot->ty->tyty) {
+        case TYPE_CHAR:   fprintf(strm, "'%c'",     slot->as.value.c);  break;
+        case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", slot->as.value.uc); break;
+        case TYPE_SCHAR:  fprintf(strm, "%hhi",     slot->as.value.sc); break;
+        case TYPE_SHORT:  fprintf(strm, "%hi",      slot->as.value.ss); break;
+        case TYPE_INT:    fprintf(strm, "%i",       slot->as.value.si); break;
+        case TYPE_LONG:   fprintf(strm, "%li",      slot->as.value.sl); break;
+        case TYPE_USHORT: fprintf(strm, "%hu",      slot->as.value.us); break;
+        case TYPE_UINT:   fprintf(strm, "%u",       slot->as.value.ui); break;
+        case TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
+        case TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
+        case TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
+        default:          fprintf(strm, "%p",       slot->as.value.p);  break;
+        }
+        break;
+
+    case _slot_used:
+        fprintf(strm, " \x1b[36mused\x1b[m (runtime)");
+        break;
+
+    case _slot_variable:
+        fprintf(strm, " \x1b[36mvariable\x1b[m @ %zu", slot->as.variable);
+        break;
+    }
 }
 
 #endif // CINTRE_PRINTS_H

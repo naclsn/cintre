@@ -66,6 +66,7 @@ struct slot {
           unsigned long ul;
           float f;
           double d;
+          void* p;
           unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
       } value;
       size_t variable;
@@ -123,6 +124,7 @@ void _alloc_slot(compile_state ref cs, struct slot ref slot) {
 
 void _cancel_slot(compile_state ref cs, struct slot cref slot) {
     cs->res.len = slot->codeat;
+    cs->vsp = slot->end;
 }
 
 void _rewind_slot(compile_state ref cs, struct slot cref slot) {
@@ -607,24 +609,20 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 args[k].ty = fun.ty->info.fun.params[count-1-k].type;
                 _alloc_slot(cs, args+k);
 
-                expression cref arg_expr = k < count ? cons->info.binary.rhs : cons;
-                if (k < count) cons = cons->info.binary.lhs;
+                expression cref arg_expr = k < count-1 ? cons->info.binary.rhs : cons;
+                if (k < count-1) cons = cons->info.binary.lhs;
 
                 _fit_expr_to_slot(cs, arg_expr, args+k);
-                if (_slot_variable == args[k].usage) {
-                    _cancel_slot(cs, args+k);
-                    args[k].loc = args[k].as.variable;
-                } else _materialize_slot(cs, args+k);
+                if (_slot_variable == args[k].usage) _cancel_slot(cs, args+k);
+                else _materialize_slot(cs, args+k);
             }
 
             _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? atv(&fun) : at(&fun));
-            for (size_t k = count; k; k--) _emit_call_arg(cs, at(args+k-1));
+            for (size_t k = count; k; k--) _emit_call_arg(cs, _slot_variable == args[k-1].usage ? atv(args+k-1) : at(args+k-1));
 
+            for (size_t k = count; k; k--) if (_slot_used == args[k-1].usage) _rewind_slot(cs, args+k-1);
+            if (_slot_used == fun.usage) _rewind_slot(cs, &fun);
             slot->usage = _slot_used;
-            // call rewind even if the slot for fun itself isn't used because
-            // there might have been arguments; rewind itself is smart enough
-            // to not emit a 0 pop anyways
-            _rewind_slot(cs, &fun);
         }
         return;
 
@@ -665,9 +663,11 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             struct slot dst = {.ty= dst_ex->usr};
             switch (dst_ex->kind) {
             case ATOM:
+            case UNOP_MEMBER:
                 compile_expression(cs, dst_ex, &dst);
                 // can be stack variable or static global object;
                 // for now only support stack variable
+                if (_slot_variable != dst.usage) exitf("NIY: only supports stack variables for now");
 
                 if (op) {
                     tmp = dst;
@@ -690,7 +690,6 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case BINOP_SUBSCR:
             case UNOP_DEREF:
             case UNOP_PMEMBER:
-            case UNOP_MEMBER:
                 exitf("NIY: assigning to this kind of lvalue");
                 break;
 
@@ -845,8 +844,27 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case UNOP_PMEMBER:
-    case UNOP_MEMBER:
-        exitf("NIY: member access");
+        exitf("NIY: pmember");
+    case UNOP_MEMBER: {
+            expression cref base_ex = expr->info.member.base;
+            bufsl const name = *expr->info.member.name;
+            struct adpt_comp_desc cref comp = &((struct adpt_type*)base_ex->usr)->info.comp;
+
+            size_t off = 0;
+            for (size_t k = 0; k < comp->count; k++) if (bufis(name, comp->fields[k].name)) {
+                off = comp->fields[k].offset;
+                break;
+            }
+
+            struct slot base = {.ty= base_ex->usr};
+            compile_expression(cs, base_ex, &base);
+            // can be stack variable or static global object or a function's return;
+            // for now only support stack variable
+            if (_slot_variable != base.usage) exitf("NIY: only supports stack variables for now");
+
+            slot->as.variable = base.as.variable+off;
+            slot->usage = _slot_variable;
+        }
         return;
 
     case BINOP_LOR:
@@ -904,9 +922,12 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
             switch (expr->info.unary.opr->kind) {
             case ATOM:
+            case UNOP_MEMBER:
                 compile_expression(cs, expr->info.unary.opr, slot);
                 // can be stack variable or static global object;
                 // for now only support stack variable
+                if (_slot_variable != slot->usage) exitf("NIY: only supports stack variables for now");
+
                 if (post) {
                     _emit_move(cs, at(slot), slot->ty->size, atv(slot));
                     slot->usage = _slot_used;
@@ -919,7 +940,6 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case BINOP_SUBSCR:
             case UNOP_DEREF:
             case UNOP_PMEMBER:
-            case UNOP_MEMBER:
                 exitf("NIY: assigning to this kind of lvalue");
                 break;
 

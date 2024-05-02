@@ -17,3 +17,7 @@ void sayhi(char const* to) {
     if (to) printf("hi %s\n", to);
     else puts("oh :<");
 }
+
+void show_bidoof(abidoof a) {
+    printf("-> name: %s, level: %d\n", a.name, a.level);
+}

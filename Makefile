@@ -1,5 +1,5 @@
 warnings := -Wall -Wextra -Wpedantic -Werror -Wno-unused-function -Wno-unused-variable -Wno-unused-value -Wno-unused-parameter
-override CFLAGS += -ggdb -O1 -std=c99 $(warnings)
+override CFLAGS += -ggdb -O0 -std=c99 $(warnings)
 
 PR = build/preparer.exe
 

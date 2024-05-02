@@ -45,4 +45,20 @@ static bool _try_jmp_flg = false;
 
 #define search_namespace(n, ns) for (size_t k = 0; k < ns.len; k++) if (!dyarr_cmp(&ns.ptr[k].name, &n))
 
+struct declaration;
+struct expression;
+struct adpt_type;
+struct adpt_item;
+struct slot;
+struct bytecode;
+struct run_state;
+
+void print_decl(FILE ref strm, struct declaration cref decl);
+void print_expr(FILE ref strm, struct expression cref expr, unsigned const depth);
+void print_type(FILE ref strm, struct adpt_type cref ty);
+void print_code(FILE ref strm, struct bytecode const code);
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
+void print_tops(FILE ref strm, struct run_state cref rs, struct adpt_item cref items, size_t const count);
+void print_slot(FILE ref strm, struct slot cref slt);
+
 #endif // CINTRE_COMMON_H

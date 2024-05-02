@@ -11,3 +11,4 @@
 [32mlong[m -- tok: ;
 [32mlong[m -- tok: ;
 [32mlong[m -- tok: ;
+[34mptr[m[[32mchar[m] -- tok: ;

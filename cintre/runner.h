@@ -47,6 +47,7 @@ void run(run_state ref rs, bytecode const code) {
 
     case 0x0d: imm(a); rs->sp+= a; continue; // pop
     case 0x0f: imm(a); rs->sp-= a; continue; // push
+
     case 0x1d: // data
         imm(a);
         imm(b);
@@ -59,8 +60,23 @@ void run(run_state ref rs, bytecode const code) {
         imm(c);
         memmove(at(a, char), at(c, char), b);
         continue;
-    case 0x2d: exitf("NIY: (run) write");
-    case 0x2f: exitf("NIY: (run) read");
+
+    case 0x2d: // write
+        imm(a);
+        imm(b);
+        imm(c);
+        memmove(*at(a, char*), at(c, char), b);
+    case 0x2f: // read
+        imm(a);
+        imm(b);
+        imm(c);
+        memmove(at(c, char), *at(a, char*), b);
+        continue;
+
+    case 0x20: // lea
+        imm(a);
+        imm(b);
+        *at(a, char*) = at(b, char);
         continue;
 
 #       define cvt(code, from, to)  \

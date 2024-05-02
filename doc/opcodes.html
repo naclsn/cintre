@@ -89,8 +89,10 @@
           case 0x0f: se('push', ['stack'], "stack alloc <sze>"); continue;
           case 0x1d: se('data', ['stack'], "copy to stack <dst> <sze> <... sze bytes>"); continue;
           case 0x1f: se('move', ['stack'], "move on stack <dst> <sze> <src>"); continue;
-          case 0x2d: se('write', ['stack'], "far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
-          case 0x2f: se('read', ['stack'], "far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
+          case 0x2d: se('write', ['stack'], "write to far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
+          case 0x2f: se('read', ['stack'], "read from far memory <ptr> <sze> <slt> (<ptr> is a slot containing a pointer)"); continue;
+
+          case 0x20: se('lea', ['stack'], "<dst> <off>, put the address of sp plus offset off (dst must be large enough and aligned)"); continue;
 
           case 0x0a: se('jmp', ['flow'], "jump forward <sze>"); continue;
           case 0x1a: se('jmb', ['flow'], "jump backward <sze>"); continue;

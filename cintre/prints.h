@@ -218,7 +218,7 @@ void print_code(FILE ref strm, bytecode const code) {
         unsigned char c = code.ptr[k];
         unsigned hi = c>>4&0xf, lo = c&0xf, w = c&3;
 
-        size_t src, dst, lhs, rhs, opr, sze, val, ret, fun, arg, slt, ptr;
+        size_t src, dst, lhs, rhs, opr, sze, val, ret, fun, arg, slt, ptr, off;
 #       define imm(nm) for (                                          \
             unsigned xx = (nm = code.ptr[++k], 0);                    \
             code.ptr[k]&0x80                                          \
@@ -319,6 +319,12 @@ void print_code(FILE ref strm, bytecode const code) {
             imm(ptr);
             imm(sze);
             imm(slt);
+            break;
+
+        case 0x20:
+            fprintf(strm, "\x1b[34mlea\x1b[m");
+            imm(dst);
+            imm(off);
             break;
 
         default: fprintf(strm, "\x1b[31merrop\x1b[m");

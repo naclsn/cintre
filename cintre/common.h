@@ -34,11 +34,12 @@ static bool _try_jmp_flg = false;
 # define exitf(...) (fflush(stdout), notif(__VA_ARGS__), _try_jmp_flg ? longjmp(_try_jmp_buf, 1) : exit(EXIT_FAILURE))
 #else
 # define try if (1)
-# define exitf(...) (fflush(stdout), notif(__VA_ARGS__), exit(EXIT_FAILURE))
+# define exitf(...) (notif(__VA_ARGS__), exit(EXIT_FAILURE))
 #endif
-#define notif(...) (fprintf(stderr, HERE __VA_ARGS__), fputc(10, stderr))
+#define notif(...) (fflush(stdout), fprintf(stderr, HERE __VA_ARGS__), fputc(10, stderr))
 
 #define report_lex_locate(ls, ...) (                                \
+    fflush(stdout),                                                 \
     fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %.*s \x1b[1m##\x1b[m ",  \
             (ls)->file, (ls)->line, bufmt(llne((ls)))),             \
     notif(__VA_ARGS__))

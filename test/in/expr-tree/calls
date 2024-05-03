@@ -9,4 +9,4 @@ a(1), -1;
 (a())();
 a()();
 a(1)(2)(3);
-a((1, 2), 3); // XXX/REM: no way to distinguish from a(1, 2, 3)
+a((1, 2), 3);

@@ -2,5 +2,5 @@
 1 ? 2 : 3 ? 4 : 5;
 a ? (b, c) : (d, e);
 a ? b, c : d;
-a ? b, c : d, e; // XXX/REM: this one will not be parsed correctly for now
+a ? b, c : d, e;
 1 ? "one" : 2 ? "two" : 3 ? "tree" : "sun";

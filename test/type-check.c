@@ -83,12 +83,11 @@ struct adpt_item const* test_lookup(void* _, bufsl const name) {
 }
 // }}}
 
-void check(void ref _, expression ref expr, bufsl ref tok) {
-    (void)_;
+void check(void ref usr, expression ref expr, bufsl ref tok) {
     struct adpt_type cref ty = check_expression(&(compile_state){.lookup= test_lookup}, expr);
-
     print_type(stdout, ty);
-    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+    lex_state cref ls = usr;
+    report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
 void run_test(char* file) {
@@ -96,7 +95,7 @@ void run_test(char* file) {
     lini(&ls, file);
 
     bufsl tok = lext(&ls);
-    parse_expr_state ps = {.ls= &ls, .on= check};
+    parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= check};
     while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
         switch (*tok.ptr) {
         case ';':

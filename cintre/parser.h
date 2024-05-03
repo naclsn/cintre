@@ -25,8 +25,9 @@
 /// and the result needs to be handled in the "accept" callback (or copied over
 /// to the heap at this point).
 
-// TODO: once thoroughly tested, look for avoidable capture-copying
-// (that could be replaced with mutating an existing capture)
+// TODO: once thoroughly tested, look for avoidable capture-copying (that could
+// be replaced with mutating an existing capture) and extraneous calls
+// (especially to _parse_expr_one_after)
 
 #ifndef CINTRE_PARSER_H
 #define CINTRE_PARSER_H
@@ -167,7 +168,7 @@ typedef struct expression {
         bufsl atom;
         struct { struct expression* opr; } unary;
         struct { struct expression* lhs, * rhs; } binary;
-        struct { struct expression* base, * args; } call;
+        struct { struct expression* base; struct expr_call_arg { struct expression* expr; struct expr_call_arg* next; }* first; } call;
         struct { struct expression* base, * off; } subscr;
         struct { struct expression* base; bufsl* name; } member;
     } info;
@@ -182,6 +183,12 @@ typedef struct parse_expr_state {
     void* usr;
     void (*on)(void ref usr, expression ref expr, bufsl ref tok);
     bufsl tok;
+    // comma op not allowed in:
+    // - declaration init (eg `int a = 42, b`)
+    // - function args (eg `printf("d: %d", d)`)
+    // - conditional alternative branch (eg `a ? b :3, d`)
+    // - bitfield width (eg `struct { int a :3, b; }`)
+    bool disallow_comma;
 } parse_expr_state;
 
 bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
@@ -707,7 +714,7 @@ struct _parse_expr_capture {
     struct _parse_expr_capture ref next;
     _parse_expr_closure_t ref then; // its `hold` is in `next->hold`
 };
-_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_one_after, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
+_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
 
 enum expr_kind _parse_is_postfix(bufsl const tok) {
     if (2 == tok.len) switch (tok.ptr[0]<<8 | tok.ptr[1]) {
@@ -731,11 +738,11 @@ enum expr_kind _parse_is_prefix(bufsl const tok) {
     }
     return 0;
 }
-enum expr_kind _parse_is_infix(bufsl const tok) {
+enum expr_kind _parse_is_infix(bufsl const tok, bool const disallow_comma) {
     if (1 == tok.len) switch (tok.ptr[0]) {
     case '?': return BINOP_TERNCOND;
-    case ':': return BINOP_TERNBRANCH;
-    case ',': return BINOP_COMMA;
+    //case ':': return BINOP_TERNBRANCH;
+    case ',': return disallow_comma ? 0 : BINOP_COMMA;
     case '=': return BINOP_ASGN;
     case '|': return BINOP_BOR;
     case '^': return BINOP_BXOR;
@@ -794,6 +801,9 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
 
     if ('(' == *ps->tok.ptr) {
+        // yyy: any non null if disallow comma was set
+        capt->hold = NULL+ps->disallow_comma; // (yyy: avoids capture copy?)
+        ps->disallow_comma = false;
         ps->tok = lext(ps->ls);
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
@@ -813,6 +823,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
 /// sets the operand (expr) of the prefix op in: <prefix> <expr> [<postfix>]
 void _parse_expr_one_post(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
     capt->hold->info.unary.opr = expr;
+    //capt->then(ps, capt->next, capt->hold); // yyy: extraneous call?
     _parse_expr_one_after(ps, capt, capt->hold);
 }
 
@@ -820,20 +831,55 @@ void _parse_expr_one_post(parse_expr_state ref ps, struct _parse_expr_capture re
 void _parse_expr_one_lext_parenth(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
     _expect1(&ps->tok);
     _expect(&ps->tok, ")");
+    // yyy: any non null if disallow comma was set
+    ps->disallow_comma = !!capt->hold;
     ps->tok = lext(ps->ls);
+    //capt->then(ps, capt->next, capt->hold); // yyy: extraneous call?
     _parse_expr_one_after(ps, capt, expr);
 }
 
-/// skip a closing thingy and set the thing within (arg): <expr> ('('<arg>')' | '['<off>']') [<postfix>]
+/// skip a closing bracket and set the offset ("within"): <expr> '['<off>']' [<postfix>]
 void _parse_expr_one_lext_oneafter(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref within) {
     _expect1(&ps->tok);
-    switch (capt->hold->kind) {
-    case BINOP_CALL:   _expect(&ps->tok, ")"); capt->hold->info.call.args = within;  break;
-    case BINOP_SUBSCR: _expect(&ps->tok, "]"); capt->hold->info.subscr.off = within; break;
-    default:;
-    }
+    _expect(&ps->tok, "]");
+    capt->hold->info.subscr.off = within;
+    // yyy: any non null if disallow comma was set
+    ps->disallow_comma = !!capt->hold->usr;
+    capt->hold->usr = NULL;
     ps->tok = lext(ps->ls);
+    //capt->then(ps, capt->next, capt->hold); // yyy: extraneous call?
     _parse_expr_one_after(ps, capt, capt->hold);
+}
+
+/// parse the arguments of a function call: <expr> '('<args>','..')' [<postfix>]
+void _parse_expr_fun_args(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
+    _expect1(&ps->tok);
+    _expect(&ps->tok, ",", ")");
+
+    expression ref callbase = capt->hold;
+    struct expr_call_arg* it = callbase->info.call.first;
+    while (it->next) it = it->next;
+    it->expr = expr;
+
+    if (')' == *ps->tok.ptr) {
+        // yyy: any non null if disallow comma was set
+        ps->disallow_comma = !!callbase->usr;
+        callbase->usr = NULL;
+        ps->tok = lext(ps->ls);
+        //capt->then(ps, capt->next, callbase); // yyy: extraneous call?
+        _parse_expr_one_after(ps, capt, callbase);
+        return;
+    }
+
+    it->next = &(struct expr_call_arg){0};
+    ps->tok = lext(ps->ls);
+    _parse_expr_one(ps, &(struct _parse_expr_capture){
+            .next= &(struct _parse_expr_capture){
+                .next= capt,
+                .then= _parse_expr_fun_args,
+            },
+            .then= _parse_expr_continue,
+        }, NULL);
 }
 
 /// parse postfix part after expr: <expr> (<postfix> | '('<arg>')' | '['<off>']' | ('.'|'->')<name>)
@@ -846,23 +892,46 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
         return;
     }
 
-    bool call = false, pmem = false;
+    bool pmem = false;
     if (ps->tok.len) switch (*ps->tok.ptr) {
     case '(':
-        call = true;
-        bufsl const nx = lext(ps->ls);
-        if (nx.len && ')' == *nx.ptr) {
+        ps->tok = lext(ps->ls);
+        if (ps->tok.len && ')' == *ps->tok.ptr) {
             ps->tok = lext(ps->ls);
             expression access = {.kind= BINOP_CALL, .info.call.base= expr};
             _parse_expr_one_after(ps, capt, &access);
             return;
         }
-        ps->tok = nx;
-        if (0) // fall through
+        expression callbase = {
+            .kind= BINOP_CALL,
+            .info.call= {
+                .base= expr,
+                .first= &(struct expr_call_arg){0},
+            },
+            // yyy: any non null if disallow comma was set
+            .usr= NULL+ps->disallow_comma,
+        };
+        ps->disallow_comma = true;
+        capt->hold = &callbase; // (yyy: avoids capture copy?)
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= capt,
+                    .then= _parse_expr_fun_args,
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+
     case '[':
-            ps->tok = lext(ps->ls);
-        expression whole = {.kind= call ? BINOP_CALL : BINOP_SUBSCR, .info.call.base= expr};
-        capt->hold = &whole;
+        ps->tok = lext(ps->ls);
+        expression whole = {
+            .kind= BINOP_SUBSCR,
+            .info.subscr.base= expr,
+            // yyy: any non null if disallow comma was set
+            .usr= NULL+ps->disallow_comma,
+        };
+        ps->disallow_comma = false;
+        capt->hold = &whole; // (yyy: avoids capture copy?)
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .next= capt,
@@ -893,9 +962,58 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
     capt->then(ps, capt->next, expr);
 }
 
+/// lands there after the first branch of the ternary, so on the ':', no comma op in the third operand
+void _parse_expr_tern_cond(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref consequence) {
+    _expect1(&ps->tok);
+    _expect(&ps->tok, ":");
+    expression ref condition_root = capt->hold;
+    expression branches = {.kind= BINOP_TERNBRANCH, .info.binary.lhs= consequence};
+    condition_root->info.binary.rhs = &branches;
+
+    ps->disallow_comma = true;
+    ps->tok = lext(ps->ls);
+    // <cond_root.lhs> '?' <conseq> ':' <altern>
+    //                                  ^
+    _parse_expr_one(ps, &(struct _parse_expr_capture){
+            .next= &(struct _parse_expr_capture){
+                .next= capt,
+                .then= _parse_expr_tern_branch,
+            },
+            .then= _parse_expr_continue,
+        }, NULL);
+}
+
+/// after the third operand; finishs the whole ternary and restores the disallow comma state
+void _parse_expr_tern_branch(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref alternative) {
+    expression ref condition_root = capt->hold;
+    condition_root->info.binary.rhs->info.binary.rhs = alternative;
+    // yyy: any non null if disallow comma was set
+    ps->disallow_comma = !!condition_root->usr;
+    condition_root->usr = NULL;
+
+    if (!ps->disallow_comma && 1 == ps->tok.len && ',' == *ps->tok.ptr) {
+        ps->tok = lext(ps->ls);
+        expression in = {.kind= BINOP_COMMA, .info.binary.lhs= condition_root};
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .hold= &in,
+                        .next= capt->next,
+                        .then= capt->then,
+                    },
+                    .then= _parse_expr_two_after,
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+    }
+
+    capt->then(ps, capt->next, condition_root);
+}
+
 /// parse two with lhs, lop and rhs known: <lhs> <lop> <rhs> [<nop>]
 void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref rhs) {
-    enum expr_kind const infix = _parse_is_infix(ps->tok);
+    enum expr_kind const infix = _parse_is_infix(ps->tok, ps->disallow_comma);
     if (!infix) {
         capt->hold->info.binary.rhs = rhs;
         capt->then(ps, capt->next, capt->hold);
@@ -903,10 +1021,25 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
     ps->tok = lext(ps->ls);
 
+    if (BINOP_COMMA == infix) {
+        capt->hold->info.binary.rhs = rhs;
+        expression in = {.kind= infix, .info.binary.lhs= capt->hold};
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .hold= &in,
+                        .next= capt->next,
+                        .then= capt->then,
+                    },
+                    .then= _parse_expr_two_after
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+    }
+
     enum expr_kind const l = capt->hold->kind, n = infix;
-    if (l < n || ( (BINOP_TERNCOND == l || BINOP_TERNBRANCH == l)
-                && (BINOP_TERNCOND == n || BINOP_TERNBRANCH == n) )
-              || ( (BINOP_ASGN <= l && l <= BINOP_ASGN_MUL)
+    if (l < n || ( (BINOP_ASGN <= l && l <= BINOP_ASGN_MUL)
                 && (BINOP_ASGN <= n && n <= BINOP_ASGN_MUL) )) {
         expression in = {.kind= infix, .info.binary.lhs= rhs};
         _parse_expr_one(ps, &(struct _parse_expr_capture){
@@ -942,11 +1075,46 @@ void _parse_expr_two_after(parse_expr_state ref ps, struct _parse_expr_capture r
 }
 
 /// proper start the `_parse_expr_two` loop, sets up `_parse_expr_exit` at callback chain end
-void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref lhs) {
-    enum expr_kind const infix = _parse_is_infix(ps->tok);
+void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref _, expression ref lhs) {
+    (void)_;
+    enum expr_kind const infix = _parse_is_infix(ps->tok, ps->disallow_comma);
     if (infix) {
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
+
+        if (BINOP_TERNCOND == infix) {
+            // yyy: any non null if disallow comma was set
+            in.usr = NULL+ps->disallow_comma;
+            ps->disallow_comma = false;
+            // <lhs> '?' <..> ':' <..>
+            //           ^
+            _parse_expr_one(ps, &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .next= &(struct _parse_expr_capture){
+                            .hold= &in,
+                            .then= _parse_expr_exit,
+                        },
+                        .then= _parse_expr_tern_cond,
+                    },
+                    .then= _parse_expr_continue,
+                }, NULL);
+            return;
+        }
+
+        if (BINOP_COMMA == infix) {
+            _parse_expr_one(ps, &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .next= &(struct _parse_expr_capture){
+                            .hold= &in,
+                            .then= _parse_expr_exit,
+                        },
+                        .then= _parse_expr_two_after,
+                    },
+                    .then= _parse_expr_continue,
+                }, NULL);
+            return;
+        }
+
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .hold= &in,
@@ -960,13 +1128,49 @@ void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref c
     _parse_expr_exit(ps, NULL, lhs);
 }
 
-/// similar to `_parse_expr_entry` for sub expr in: '('<expr>')' or arg in: <expr> ('('<arg>')' | '['<arg>'])
+/// similar to `_parse_expr_entry` for sub expr in: '('<expr>')' and '?'<expr>':' and ','<expr> or arg in: <expr> ('('<arg>')' | '['<arg>'])
 void _parse_expr_continue(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref lhs) {
-    enum expr_kind const infix = _parse_is_infix(ps->tok);
+    enum expr_kind const infix = _parse_is_infix(ps->tok, ps->disallow_comma);
     if (infix) {
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
-        capt->hold = &in;
+
+        if (BINOP_TERNCOND == infix) {
+            // yyy: any non null if disallow comma was set
+            in.usr = NULL+ps->disallow_comma;
+            ps->disallow_comma = false;
+            // <lhs> '?' <..> ':' <..>
+            //           ^
+            _parse_expr_one(ps, &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .next= &(struct _parse_expr_capture){
+                            .hold= &in,
+                            .next= capt->next,
+                            .then= capt->then,
+                        },
+                        .then= _parse_expr_tern_cond,
+                    },
+                    .then= _parse_expr_continue,
+                }, NULL);
+            return;
+        }
+
+        if (BINOP_COMMA == infix) {
+            _parse_expr_one(ps, &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .next= &(struct _parse_expr_capture){
+                            .hold= &in,
+                            .next= capt->next,
+                            .then= capt->then,
+                        },
+                        .then= _parse_expr_two_after,
+                    },
+                    .then= _parse_expr_continue,
+                }, NULL);
+            return;
+        }
+
+        capt->hold = &in; // yyy: modifies capture
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= capt,
                 .then= _parse_expr_two,

@@ -30,7 +30,7 @@ tests =         \
     type-check  \
     comp-code   \
 
-test-%:; test/run test/$* check && printf "\x1b[32m$@ success\x1b[m\n" || printf "\x1b[31m$@ failure\x1b[m\n"
+test-%:; test/run test/$* check && printf '\x1b[32m$@ success\x1b[m\n' || printf "\x1b[31m$@ $$? failure(s)\x1b[m\n"
 testup-%:; test/run test/$* update
 cover-%:; test/run test/$* cover
 test: $(addprefix test-,$(tests))

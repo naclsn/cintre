@@ -1,0 +1,7 @@
+1, 2; // allowed 'top level' (expr stmt)
+a(3, 4); // disallowed in fn args
+a((5, 6)); // allowed in just par expr
+a(b[7, 8]); // allowed in subscript off
+a ? b : c, d; // disallowed in conditional alt branch
+z, a ? b, y, w : c, d; // (A, B, C) with B the ?:
+1, 2, 3, soleil; // associativity ended up being right-to-left which is technically wrong but doesn matter enough for it to be corrected

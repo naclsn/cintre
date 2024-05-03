@@ -1,10 +1,10 @@
 #include "run"
 #include "../cintre/parser.h"
 
-void show(void ref _, declaration cref decl, bufsl ref tok) {
-    (void)_;
+void show(void ref usr, declaration cref decl, bufsl ref tok) {
     print_decl(stdout, decl);
-    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+    lex_state cref ls = usr;
+    report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
 void run_test(char* file) {
@@ -12,7 +12,7 @@ void run_test(char* file) {
     lini(&ls, file);
 
     bufsl tok = lext(&ls);
-    parse_decl_state ps = {.ls= &ls, .on= show};
+    parse_decl_state ps = {.ls= &ls, .usr= &ls, .on= show};
     while (tok.len) if ((tok = parse_declaration(&ps, tok)).len)
         switch (*tok.ptr) {
         case '{':
@@ -26,7 +26,7 @@ void run_test(char* file) {
             continue;
 
         case '=':
-            tok = parse_expression(&(parse_expr_state){.ls= &ls}, lext(&ls));
+            tok = parse_expression(&(parse_expr_state){.ls= &ls, .disallow_comma= true}, lext(&ls));
             if (tok.len && ';' == *tok.ptr)
         case ';':
                 ps.base = (declaration){0}; // reset

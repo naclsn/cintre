@@ -4,25 +4,30 @@ test -z "$srce" && exit 1
 prog=${srce%/*}/../build/${srce##*/}.exe
 base=${srce%/*}/in/${srce##*/}
 
-cflags='-g -O0'
+does() { echo "$0: $@" >/dev/tty; "$@"; }
+
+cflags='-g -O'
 doexec=
 case $2 in
-  cover)  cflags="--coverage $cflags";&
+  cover)  cflags="--coverage ${cflags}1";&
   check)  bla() { diff -u $1 -; };;
   update) bla() { cat >$1; };;
-  *)      shift; doexec=1;;
+  *)      cflags="-DLOC_NOTIF ${cflags}0"; shift; doexec=1;;
 esac
 
-set -exo pipefail
-cc $cflags $srce.c -o $prog
+does cc $cflags $srce.c -o $prog || exit $?
+test -n "$doexec" && does exec $prog "$@"
 
-test -n "$doexec" && exec $prog "$@"
-
+set -o pipefail
+fail=0
 for tape in $base/*.tape #*/
-  do $prog ${tape%.tape} 2>&1| bla $tape
+  do
+    does $prog ${tape%.tape} 2>&1| bla $tape
+    one=$?
+    fail=$((fail+one))
+    test 0 -ne $one && echo exit with code $one
 done
-
-exit
+exit $fail
 #endif
 
 #define TRY_EXITF

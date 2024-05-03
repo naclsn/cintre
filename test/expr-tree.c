@@ -1,9 +1,9 @@
 #include "run"
 
-void show(void ref _, expression ref expr, bufsl ref tok) {
-    (void)_;
+void show(void ref usr, expression ref expr, bufsl ref tok) {
+    lex_state cref ls = usr;
     print_expr(stdout, expr, 0);
-    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+    report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
 void run_test(char* file) {
@@ -11,7 +11,7 @@ void run_test(char* file) {
     lini(&ls, file);
 
     bufsl tok = lext(&ls);
-    parse_expr_state ps = {.ls= &ls, .on= show};
+    parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= show};
     while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
         switch (*tok.ptr) {
         case ';':

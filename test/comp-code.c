@@ -1,8 +1,7 @@
 #include "run"
 #include "../cintre/compiler.h"
 
-void comp(void ref _, expression ref expr, bufsl ref tok) {
-    (void)_;
+void comp(void ref usr, expression ref expr, bufsl ref tok) {
     static char stack[1042];
     compile_state cs = {.vsp= sizeof stack};
 
@@ -50,7 +49,8 @@ void comp(void ref _, expression ref expr, bufsl ref tok) {
         break;
     }
 
-    printf(" -- tok: %.*s\n", (unsigned)tok->len, tok->ptr);
+    lex_state cref ls = usr;
+    report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
 void run_test(char* file) {
@@ -58,7 +58,7 @@ void run_test(char* file) {
     lini(&ls, file);
 
     bufsl tok = lext(&ls);
-    parse_expr_state ps = {.ls= &ls, .on= comp};
+    parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= comp};
     while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
         switch (*tok.ptr) {
         case ';':

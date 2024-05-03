@@ -126,33 +126,58 @@ void print_decl(FILE ref strm, declaration cref decl) {
 }
 
 void print_expr(FILE ref strm, expression cref expr, unsigned const depth) {
-    static char const* const op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
+    static char cref op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
     for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
 
     if (!expr) {
         fprintf(strm, "\x1b[31m(nil)\x1b[m\n");
         return;
     }
-    char const* const name = op_kind_names[expr->kind];
 
     if (ATOM == expr->kind) {
-        char c = *expr->info.atom.ptr;
+        char const c = *expr->info.atom.ptr;
         fprintf(strm, "\x1b[%dm%.*s\x1b[m\n", '"' == c ? 36 : ('0' <= c && c <= '9') || '\'' == c || '.' == c ? 33 : 0, bufmt(expr->info.atom));
+        return;
     }
 
-    else if (!memcmp("UNOP", name, 4)) {
-        fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
-        if (strstr(name, "MEMBER")) {
-            print_expr(strm, expr->info.member.base, depth+1);
-            for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
-            fprintf(strm, "%s%.*s\n", UNOP_MEMBER == expr->kind ? "." : "->", bufmt(*expr->info.member.name));
-        } else print_expr(strm, expr->info.unary.opr, depth+1);
-    }
+    fprintf(strm, "\x1b[34m%s\x1b[m\n", op_kind_names[expr->kind]);
 
-    else if (!memcmp("BINO", name, 4)) {
-        fprintf(strm, "\x1b[34m%s\x1b[m\n", name);
+    switch (expr->kind) {
+    case UNOP_MEMBER:
+    case UNOP_PMEMBER:
+        print_expr(strm, expr->info.member.base, depth+1);
+        for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
+        fprintf(strm, "%s%.*s\n", UNOP_MEMBER == expr->kind ? "." : "->", bufmt(*expr->info.member.name));
+        break;
+
+    case UNOP_ADDR:     case UNOP_DEREF:
+    case UNOP_BNOT:     case UNOP_LNOT:
+    case UNOP_MINUS:    case UNOP_PLUS:
+    case UNOP_PRE_DEC:  case UNOP_PRE_INC:
+    case UNOP_POST_DEC: case UNOP_POST_INC:
+        print_expr(strm, expr->info.unary.opr, depth+1);
+        break;
+
+    case BINOP_CALL:
+        print_expr(strm, expr->info.call.base, depth+1);
+        size_t count = 0;
+        for (struct expr_call_arg const* it = expr->info.call.first; it; it = it->next)
+            count++;
+        for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
+        fprintf(strm, "|  \x1b[32m(%zu)\x1b[m\n", count);
+        for (struct expr_call_arg const* it = expr->info.call.first; it; it = it->next)
+            print_expr(strm, it->expr, depth+2);
+        break;
+
+    case BINOP_SUBSCR:
+        print_expr(strm, expr->info.subscr.base, depth+1);
+        print_expr(strm, expr->info.subscr.off, depth+1);
+        break;
+
+    default:
         print_expr(strm, expr->info.binary.lhs, depth+1);
         print_expr(strm, expr->info.binary.rhs, depth+1);
+        break;
     }
 }
 

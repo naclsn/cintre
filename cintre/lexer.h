@@ -65,7 +65,7 @@ void ldel(lex_state ref ls);
 /// true if no more token (also last token is empty)
 #define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
 /// current line (at the end of last token) or empty if end of input
-bufsl llne(lex_state ref ls);
+bufsl llne(lex_state cref ls);
 /// compute a preprocessor expression
 long lxpr(lex_state cref ls, bufsl ref xpr);
 /// next token, move forward
@@ -138,7 +138,7 @@ void ldel(lex_state ref ls) {
     dyarr_clear(&ls->workbufs);
 }
 
-bufsl llne(lex_state ref ls) {
+bufsl llne(lex_state cref ls) {
     bufsl r = {.ptr= ls->slice.ptr};
     if (!ls->slice.len) return r;
     buf cref ins = &ls->sources.ptr[ls->sidx].text;

@@ -241,10 +241,10 @@ void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, bufsl
         break;
     }
     if (',' == *tok->ptr) {
-        *tok = lext(ps->ls);
-        _expect1(tok);
-    }
-    if ('}' == *tok->ptr) {
+        ps->tok = lext(ps->ls);
+        _expect1(&ps->tok);
+    } else ps->tok = *tok;
+    if ('}' == *ps->tok.ptr) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, enu);
     } else _parse_decl_enumer(ps, capt, NULL);
@@ -501,6 +501,7 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
                 .ls= ps->ls,
                 .usr= (void*[3]){enu, ps, capt},
                 .on= (void(*)())_parse_on_enumer_value,
+                .disallow_comma= true,
             }, ps->tok);
         return;
     }
@@ -546,6 +547,7 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
                     .ls= ps->ls,
                     .usr= (void*[4]){comp, *base, ps, capt},
                     .on= (void(*)())_parse_on_bitfield_width,
+                    .disallow_comma= true,
                 }, ps->tok);
             return;
         }
@@ -802,7 +804,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
 
     if ('(' == *ps->tok.ptr) {
         // yyy: any non null if disallow comma was set
-        capt->hold = NULL+ps->disallow_comma; // (yyy: avoids capture copy?)
+        capt->hold = ps->disallow_comma ? (void*)"" : NULL; // (yyy: avoids capture copy?)
         ps->disallow_comma = false;
         ps->tok = lext(ps->ls);
         _parse_expr_one(ps, &(struct _parse_expr_capture){
@@ -909,7 +911,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
                 .first= &(struct expr_call_arg){0},
             },
             // yyy: any non null if disallow comma was set
-            .usr= NULL+ps->disallow_comma,
+            .usr= ps->disallow_comma ? (void*)"" : NULL,
         };
         ps->disallow_comma = true;
         capt->hold = &callbase; // (yyy: avoids capture copy?)
@@ -928,7 +930,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
             .kind= BINOP_SUBSCR,
             .info.subscr.base= expr,
             // yyy: any non null if disallow comma was set
-            .usr= NULL+ps->disallow_comma,
+            .usr= ps->disallow_comma ? (void*)"" : NULL,
         };
         ps->disallow_comma = false;
         capt->hold = &whole; // (yyy: avoids capture copy?)
@@ -1021,6 +1023,28 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
     ps->tok = lext(ps->ls);
 
+    if (BINOP_TERNCOND == infix) {
+        capt->hold->info.binary.rhs = rhs;
+        expression in = {.kind= infix, .info.binary.lhs= capt->hold};
+        // yyy: any non null if disallow comma was set
+        in.usr = ps->disallow_comma ? (void*)"" : NULL;
+        ps->disallow_comma = false;
+        // <in> '?' <..> ':' <..>
+        //          ^
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= &(struct _parse_expr_capture){
+                        .hold= &in,
+                        .next= capt->next,
+                        .then= capt->then,
+                    },
+                    .then= _parse_expr_tern_cond,
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+    }
+
     if (BINOP_COMMA == infix) {
         capt->hold->info.binary.rhs = rhs;
         expression in = {.kind= infix, .info.binary.lhs= capt->hold};
@@ -1084,7 +1108,7 @@ void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref _
 
         if (BINOP_TERNCOND == infix) {
             // yyy: any non null if disallow comma was set
-            in.usr = NULL+ps->disallow_comma;
+            in.usr = ps->disallow_comma ? (void*)"" : NULL;
             ps->disallow_comma = false;
             // <lhs> '?' <..> ':' <..>
             //           ^
@@ -1137,7 +1161,7 @@ void _parse_expr_continue(parse_expr_state ref ps, struct _parse_expr_capture re
 
         if (BINOP_TERNCOND == infix) {
             // yyy: any non null if disallow comma was set
-            in.usr = NULL+ps->disallow_comma;
+            in.usr = ps->disallow_comma ? (void*)"" : NULL;
             ps->disallow_comma = false;
             // <lhs> '?' <..> ':' <..>
             //           ^

@@ -6,13 +6,13 @@ base=${srce%/*}/in/${srce##*/}
 
 does() { echo "$0: $@" >/dev/tty; "$@"; }
 
-cflags='-g -O'
+cflags='-g -O0'
 doexec=
 case $2 in
-  cover)  cflags="--coverage ${cflags}1";&
+  cover)  cflags="$cflags --coverage";&
   check)  bla() { diff -u $1 -; };;
   update) bla() { cat >$1; };;
-  *)      cflags="-DLOC_NOTIF ${cflags}0"; shift; doexec=1;;
+  *)      cflags="$cflags -DLOC_NOTIF"; shift; doexec=1;;
 esac
 
 does cc $cflags $srce.c -o $prog || exit $?

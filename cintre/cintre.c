@@ -521,10 +521,10 @@ int main(void) {
                 if (1 == tok.len && '=' == *tok.ptr) {
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
                     char cref name = dyarr_top(&gs->locs)->name;
+                    gs->expr.disallow_comma = true;
                     tok = parse_expression(&gs->expr, (bufsl){.ptr= name, .len= strlen(name)});
+                    gs->expr.disallow_comma = false;
                 }
-                // FIXME: sometime incorrect until parsing of the comma operator is done properly
-                //        (if there was an '=')
             } while (1 == tok.len && ',' == *tok.ptr ? tok = lext(&gs->lexr), true : false);
         }
 

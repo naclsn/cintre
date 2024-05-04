@@ -3,6 +3,7 @@
 
 void show(void ref usr, declaration cref decl, bufsl ref tok) {
     print_decl(stdout, decl);
+    printf("\n");
     lex_state cref ls = usr;
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }

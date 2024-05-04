@@ -36,9 +36,9 @@ int c, d(void), e[1][2][3];
 int (f);
 void (g()) {}
 int (* h(int) )(void);
-//struct A { int x, y; int z :3, t; }; // TODO: fix comma operator
+struct A { int x, y; int z :3, t; };
 typedef union {} B, *pB;
-//enum { X, Y= 0, Z, } i; // TODO: fix comma operator
+enum { X, Y= 0, Z, } i;
 
 
 int begin;

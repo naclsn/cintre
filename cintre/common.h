@@ -31,7 +31,7 @@ typedef struct { char const* ptr; size_t len; } bufsl;
 static jmp_buf _try_jmp_buf = {0};
 static bool _try_jmp_flg = false;
 # define try if ((_try_jmp_flg = !setjmp(_try_jmp_buf)))
-# define exitf(...) (fflush(stdout), notif(__VA_ARGS__), _try_jmp_flg ? longjmp(_try_jmp_buf, 1) : exit(EXIT_FAILURE))
+# define exitf(...) (notif(__VA_ARGS__), _try_jmp_flg ? longjmp(_try_jmp_buf, 1) : exit(EXIT_FAILURE))
 #else
 # define try if (1)
 # define exitf(...) (notif(__VA_ARGS__), exit(EXIT_FAILURE))

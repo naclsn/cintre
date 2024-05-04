@@ -1,4 +1,3 @@
-[1m[yey:23][m # error "Success" [1m##[m Error: "Success"
 [test/in/tok-stream/ifs:  5]	one
 [test/in/tok-stream/ifs:  5]	&
 [test/in/tok-stream/ifs:  5]	two
@@ -15,4 +14,5 @@
 [test/in/tok-stream/ifs: 43]	coucou
 [yey: 18]	coucou
 [test/in/tok-stream/include/coucou.h:  1]	coucou
+[1m[yey:23][m # error "Success" [1m##[m Error: "Success"
 Stopping at preprocessor error

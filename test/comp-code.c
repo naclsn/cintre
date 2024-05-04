@@ -48,6 +48,7 @@ void comp(void ref usr, expression ref expr, bufsl ref tok) {
         //print_item();
         break;
     }
+    printf("\n");
 
     lex_state cref ls = usr;
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));

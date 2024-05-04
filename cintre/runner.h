@@ -66,6 +66,7 @@ void run(run_state ref rs, bytecode const code) {
         imm(b);
         imm(c);
         memmove(*at(a, char*), at(c, char), b);
+        continue;
     case 0x2f: // read
         imm(a);
         imm(b);

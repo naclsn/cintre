@@ -603,16 +603,13 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             else _materialize_slot(cs, &fun);
 
             struct slot args[15] = {0};
-            expression const* cons = expr->info.call.args;
+            struct expr_call_arg const* cons = expr->info.call.first;
             size_t count = fun.ty->info.fun.count;
-            for (size_t k = 0; k < count; k++) {
+            for (size_t k = 0; k < count; k++, cons = cons->next) {
                 args[k].ty = fun.ty->info.fun.params[count-1-k].type;
                 _alloc_slot(cs, args+k);
 
-                expression cref arg_expr = k < count-1 ? cons->info.binary.rhs : cons;
-                if (k < count-1) cons = cons->info.binary.lhs;
-
-                _fit_expr_to_slot(cs, arg_expr, args+k);
+                _fit_expr_to_slot(cs, cons->expr, args+k);
                 if (_slot_variable == args[k].usage) _cancel_slot(cs, args+k);
                 else _materialize_slot(cs, args+k);
             }

@@ -58,9 +58,11 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
             fprintf(strm, " {");
             for (struct decl_type_field const* it = ty->info.comp.first; it; it = it->next) {
                 print_decl(strm, it->decl);
-                // TODO: same as an array's length, this is incorrect but
+                // todo: same as an array's length, this is incorrect but
                 //       avoids unneeded complication
-                if (it->bitw) fprintf(strm, ":%.*s", bufmt(it->bitw->info.atom));
+                if (it->bitw) ATOM == it->bitw->kind
+                        ? fprintf(strm, ":%.*s", bufmt(it->bitw->info.atom))
+                        : fprintf(strm, "<expr>");
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -101,11 +103,13 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (!ty->info.arr.count) fprintf(strm, "*, ");
-        // TODO: this was temporary to generate the test tapes, but because
+        // todo: this was temporary to generate the test tapes, but because
         //       we're not going to just compile and run the expression here
         //       we'll need to print the expression which gets complicated and
         //       more importantly unneeded for now and before a long time
-        else fprintf(strm, "%.*s, ", bufmt(ty->info.arr.count->info.atom));
+        else ATOM == ty->info.arr.count->kind
+                ? fprintf(strm, "%.*s, ", bufmt(ty->info.arr.count->info.atom))
+                : fprintf(strm, "<expr>");
         _print_decl_type(strm, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;

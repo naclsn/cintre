@@ -184,24 +184,18 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case BINOP_CALL:
         failforward(base, expr->info.call.base);
         if (!isfun(base)) fail("Base of call expression is not of a function type");
-        expression* cons = expr->info.call.args;
         size_t k, count = base->info.fun.count;
         if (15 < count) fail("NIY: function call with more than 15 arguments");
-        for (k = 0; k < count && cons; k++) {
-            struct adpt_type const* param = base->info.fun.params[count-1-k].type;
+        struct expr_call_arg const* cons = expr->info.call.first;
+        for (k = 0; k < count && cons; k++, cons = cons->next) {
+            struct adpt_type cref param = base->info.fun.params[k].type;
             struct adpt_type const* arg;
-            if (k+1 == count) {
-                if (BINOP_COMMA == cons->kind) {
-                    while (k++, BINOP_COMMA == cons->kind) cons = cons->info.binary.lhs;
-                    fail("Too many arguments: %zu provided, expected %zu", k, count);
-                }
-                failforward(arg, cons);
-            } else {
-                if (BINOP_COMMA != cons->kind) break;
-                failforward(arg, cons->info.binary.rhs);
-                cons = cons->info.binary.lhs;
-            }
-            if (!_are_types_compatible(param, arg)) fail("Argument %zu's type cannot be assigned to corresponding parameter", k);
+            failforward(arg, cons->expr);
+            if (!_are_types_compatible(param, arg)) fail("Argument %zu's type cannot be assigned to corresponding parameter", k+1);
+        }
+        if (cons) {
+            while (cons) k++, cons = cons->next;
+            fail("Too many arguments: %zu provided, expected %zu", k, count);
         }
         if (k < count) fail("Not enough arguments: %zu provided, expected %zu", k+!!cons, base->info.fun.count);
         return expr->usr = (void*)base->info.fun.ret;

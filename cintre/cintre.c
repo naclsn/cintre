@@ -155,23 +155,20 @@ struct adpt_item const* lookup(void* usr, bufsl const name) {
 }
 
 bool is_decl_keyword(cintre_state cref gs, bufsl const tok) {
-#   define tokis(l) (strlen(l) == tok.len && !memcmp(l, tok.ptr, strlen(l)))
-    if (   tokis("char")
-        || tokis("short")
-        || tokis("int")
-        || tokis("long")
-        || tokis("signed")
-        || tokis("unsigned")
-        || tokis("float")
-        || tokis("double")
-        || tokis("void")
-        || tokis("struct")
-        || tokis("union")
-        || tokis("enum")
-        || tokis("typedef")
-        || tokis("const")
-       ) return true;
-#   undef tokis
+    if (bufis(tok, "char")     ||
+        bufis(tok, "short")    ||
+        bufis(tok, "int")      ||
+        bufis(tok, "long")     ||
+        bufis(tok, "signed")   ||
+        bufis(tok, "unsigned") ||
+        bufis(tok, "float")    ||
+        bufis(tok, "double")   ||
+        bufis(tok, "void")     ||
+        bufis(tok, "struct")   ||
+        bufis(tok, "union")    ||
+        bufis(tok, "enum")     ||
+        bufis(tok, "typedef")  ||
+        bufis(tok, "const")    ) return true;
 
     struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, tok);
     return it && ITEM_TYPEDEF == it->kind;
@@ -519,6 +516,7 @@ int main(void) {
                 tok = parse_declaration(&gs->decl, tok);
 
                 if (1 == tok.len && '=' == *tok.ptr) {
+                    // yyy: trust me bro, it's ok to do that here
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
                     char cref name = dyarr_top(&gs->locs)->name;
                     gs->expr.disallow_comma = true;

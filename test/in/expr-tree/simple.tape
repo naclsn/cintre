@@ -133,3 +133,21 @@
 |  [0ma[m
 |  [0mb[m
 [1m[test/in/expr-tree/simple:26][m a^= b ; [1m##[m  -- tok: ;
+[34mUNOP_CAST[m
+|  [32mint[m
+|  [33m'a'[m
+[1m[test/in/expr-tree/simple:28][m (int)'a'; [1m##[m  -- tok: ;
+[34mUNOP_CAST[m
+|  [34munsigned[m [34mlong[m [32mint[m
+|  [34mUNOP_ADDR[m
+|  |  [0mn[m
+[1m[test/in/expr-tree/simple:29][m (unsigned long)&n; [1m##[m  -- tok: ;
+[34mUNOP_CAST[m
+|  [34mptr[m[[32mvoid[m]
+|  [34mUNOP_DEREF[m
+|  |  [0mp[m
+[1m[test/in/expr-tree/simple:30][m (void*)*p; [1m##[m  -- tok: ;
+[34mUNOP_CAST[m
+|  [34mptr[m[[34mfun[m() -> [32mvoid[m]
+|  [0mon[m
+[1m[test/in/expr-tree/simple:31][m (void(*)())on; [1m##[m  -- tok: ;

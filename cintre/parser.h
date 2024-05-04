@@ -21,9 +21,22 @@
 /// }
 /// ```
 ///
-/// It makes use of the call stack, that is nothing is allocated on the heap
+/// It makes use of the call stack, meaning nothing is allocated on the heap
 /// and the result needs to be handled in the "accept" callback (or copied over
 /// to the heap at this point).
+///
+/// Parsing (especially of declarations and expressions) does not need to know
+/// the kind of an identifier (in `size_t len`, the kind of `len` is "object"
+/// while the kind of `size_t` is "type"); however, beacause of the syntax of
+/// the cast operator, the C syntax is ambiguous:
+/// ```c
+/// void size_t(int);
+/// (size_t)(1+2*3);
+/// ```
+/// This is the only case I could come up with, and it will be "sanely" handled
+/// as a cast operation, which means `(puts)("hi :3")` is also a cast to a type
+/// named `puts`.
+
 
 // TODO: once thoroughly tested, look for avoidable capture-copying (that could
 // be replaced with mutating an existing capture) and extraneous calls
@@ -154,7 +167,7 @@ typedef struct expression {
 
         //UNOP_SIZEOF, UNOP_ALIGNOF, //BINOP_OFFSETOF,
         UNOP_ADDR, UNOP_DEREF,
-        //UNOP_CAST,
+        UNOP_CAST,
         UNOP_BNOT, UNOP_LNOT,
         UNOP_MINUS, UNOP_PLUS,
         UNOP_PRE_DEC, UNOP_PRE_INC,
@@ -170,6 +183,7 @@ typedef struct expression {
         struct { struct expression* lhs, * rhs; } binary;
         struct { struct expression* base; struct expr_call_arg { struct expression* expr; struct expr_call_arg* next; }* first; } call;
         struct { struct expression* base, * off; } subscr;
+        struct { struct expression* opr; struct decl_type const* type; } cast;
         struct { struct expression* base; bufsl* name; } member;
     } info;
 
@@ -206,7 +220,7 @@ bufsl parse_expression(parse_expr_state ref ps, bufsl const tok);
             report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got \"%.*s\"", bufmt(*(_tok))), true)  \
             return
 #define _expectid(_tok)                                                                       \
-    if (((*(_tok)->ptr|32) < 'a' || 'z' < (*(_tok)->ptr|32)) && (                             \
+    if ((((*(_tok)->ptr|32) < 'a' || 'z' < (*(_tok)->ptr|32)) && '_' != *(_tok)->ptr) && (    \
         report_lex_locate(ps->ls, "Expected identifier, got \"%.*s\"", bufmt(*_tok)), true))  \
         return
 
@@ -716,7 +730,28 @@ struct _parse_expr_capture {
     struct _parse_expr_capture ref next;
     _parse_expr_closure_t ref then; // its `hold` is in `next->hold`
 };
-_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
+_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_finish_cast, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
+
+void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, bufsl ref tok) {
+    struct _parse_expr_capture ref capt = capt_ps[0]; parse_expr_state ref ps = capt_ps[1];
+    _expect1(tok);
+    _expect(tok, ")");
+
+    ps->tok = lext(ps->ls);
+    _expect1(&ps->tok);
+
+    if ('{' == *ps->tok.ptr) {
+        exitf("NIY: compound literal");
+        //expression comp = {.kind= UNOP_COMPLIT, .info.comp.type= &decl->type};
+    }
+
+    expression cast = {.kind= UNOP_CAST, .info.cast.type= &decl->type};
+    capt->hold = &cast;
+    _parse_expr_one(ps, &(struct _parse_expr_capture){
+            .next= capt,
+            .then= _parse_expr_finish_cast,
+        }, NULL);
+}
 
 enum expr_kind _parse_is_postfix(bufsl const tok) {
     if (2 == tok.len) switch (tok.ptr[0]<<8 | tok.ptr[1]) {
@@ -803,10 +838,36 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
 
     if ('(' == *ps->tok.ptr) {
+        ps->tok = lext(ps->ls);
+        _expect1(&ps->tok);
+
+        if ((('a' <= (*ps->tok.ptr|32) && (*ps->tok.ptr|32) <= 'z') || '_' == *ps->tok.ptr) && (
+                bufis(ps->tok, "char")     ||
+                bufis(ps->tok, "short")    ||
+                bufis(ps->tok, "int")      ||
+                bufis(ps->tok, "long")     ||
+                bufis(ps->tok, "signed")   ||
+                bufis(ps->tok, "unsigned") ||
+                bufis(ps->tok, "float")    ||
+                bufis(ps->tok, "double")   ||
+                bufis(ps->tok, "void")     ||
+                bufis(ps->tok, "struct")   ||
+                bufis(ps->tok, "union")    ||
+                bufis(ps->tok, "enum")     ||
+                bufis(ps->tok, "typedef")  ||
+                bufis(ps->tok, "const")    )) {
+            parse_declaration(&(parse_decl_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){capt, ps},
+                    .on= (void(*)())_parse_on_cast_type,
+                }, ps->tok);
+            return;
+        }
+
         // yyy: any non null if disallow comma was set
         capt->hold = ps->disallow_comma ? (void*)"" : NULL; // (yyy: avoids capture copy?)
         ps->disallow_comma = false;
-        ps->tok = lext(ps->ls);
+
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .next= capt,
@@ -817,16 +878,32 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         return;
     }
 
+    // TODO: join adjacent string literals
     expression atom = {.kind= ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
+    // WIP: (if we are comming from right above) could still be a cast here if one of:
+    // - atom is an id (2 idends in a row)
+    // - tok is ')' and either:
+    //   - next is a '{'
+    //   - next is a _expr_one (lit, '(') <- still not enough (fn call)
+    // - tok is '*' and either:
+    //   - next is a ')'
+    //   - next is a qual (eg `const`)
+    // - tok is '[' and _looking ahead untile matching ']'_ and then ')' and then either:
+    //   - next is a '{'
     _parse_expr_one_after(ps, capt, &atom);
+}
+
+/// exactly same as _parse_expr_one_post but for '('<type>')' <expr>
+void _parse_expr_finish_cast(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
+    capt->hold->info.cast.opr = expr;
+    capt->then(ps, capt->next, capt->hold);
 }
 
 /// sets the operand (expr) of the prefix op in: <prefix> <expr> [<postfix>]
 void _parse_expr_one_post(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr) {
     capt->hold->info.unary.opr = expr;
-    //capt->then(ps, capt->next, capt->hold); // yyy: extraneous call?
-    _parse_expr_one_after(ps, capt, capt->hold);
+    capt->then(ps, capt->next, capt->hold);
 }
 
 /// skip a closing parenthesis in: '('<expr>')' [<postfix>]

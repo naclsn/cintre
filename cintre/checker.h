@@ -138,6 +138,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case ATOM:;
         char const c = *expr->info.atom.ptr;
         if ('"' == c) {
+            // TODO: correct type (should be `char const[size]`)
             static struct adpt_type const string = {
                 .size= sizeof(char*),
                 .align= sizeof(char*),

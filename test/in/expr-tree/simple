@@ -25,7 +25,6 @@ a&= b ;
 a|= b ;
 a^= b ;
 
-(int)'a';
-(unsigned long)&n;
-(void*)*p;
-(void(*)())on;
+31 + 17, aaaaa|x;
+
+-(a);

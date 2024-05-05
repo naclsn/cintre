@@ -69,7 +69,7 @@ outer: [34mstruct[m {middle: [34mstruct[m {inner: [32mint[m}}
 a: [32mint[m
 [1m[test/in/decl-list/decls:33][m int a; [1m##[m  -- tok: ;
 [36mstatic[m b: [34mfun[m() -> [34mconst[m [34mrestrict[m [34mvolatile[m [34mptr[m[[34mconst[m [34mvolatile[m [34minline[m [34munsigned[m [34mlong[m [34mlong[m [32mint[m]
-[1m[test/in/decl-list/decls:34][m static const volatile inline unsigned long long int* const restrict volatile b(); [1m##[m  -- tok: ;
+[1m[test/in/decl-list/decls:34][m static const volatile inline unsigned long long int* const restrict volatile b(); // FIXME: crashes with: static const volatile inline unsigned long long int* const restrict volatile b(const unsigned long long int* const restrict volatile[static const restrict volatile 1]); [1m##[m  -- tok: ;
 c: [32mint[m
 [1m[test/in/decl-list/decls:35][m int c, d(void), e[1][2][3]; [1m##[m  -- tok: ,
 d: [34mfun[m([36mvoid[m) -> [32mint[m
@@ -82,8 +82,8 @@ g: [34mfun[m() -> [32mvoid[m
 [1m[test/in/decl-list/decls:37][m void (g()) {} [1m##[m  -- tok: {
 h: [34mfun[m(: [32mint[m) -> [34mptr[m[[34mfun[m([36mvoid[m) -> [32mint[m]
 [1m[test/in/decl-list/decls:38][m int (* h(int) )(void); [1m##[m  -- tok: ;
-: [34mstruct[m A {x: [32mint[m, y: [32mint[m, z: [32mint[m:3, t: [32mint[m}
-[1m[test/in/decl-list/decls:39][m struct A { int x, y; int z :3, t; }; [1m##[m  -- tok: ;
+: [34mstruct[m A {x: [32mint[m, y: [32mint[m:1, z: [32mint[m:3, t: [32mint[m}
+[1m[test/in/decl-list/decls:39][m struct A { int x, y :1; int z :3, t; }; [1m##[m  -- tok: ;
 [36mtypedef[m B: [34munion[m {}
 [1m[test/in/decl-list/decls:40][m typedef union {} B, *pB; [1m##[m  -- tok: ,
 [36mtypedef[m pB: [34mptr[m[[34munion[m {}]

@@ -934,10 +934,10 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         case '*':
             // (size_t* ...
             //          ^
-            if (strchr(")*[", *ahead.ptr) || firstcharid(ahead) && (
+            if (strchr(")*[", *ahead.ptr) || (firstcharid(ahead) && (
                     bufis(ahead, "const")    ||
                     bufis(ahead, "restrict") ||
-                    bufis(ahead, "volatile") )) {
+                    bufis(ahead, "volatile") )) ) {
                 parse_declaration(&(parse_decl_state){
                         .ls= ps->ls,
                         .usr= (void*[2]){capt->next->next, ps},

@@ -840,6 +840,9 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
+    case UNOP_CAST:
+        exitf("NIY: cast");
+
     case UNOP_PMEMBER:
         exitf("NIY: pmember");
     case UNOP_MEMBER: {

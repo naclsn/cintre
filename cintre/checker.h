@@ -351,6 +351,13 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (isindir(opr)) return expr->usr = (void*)atindir(opr);
         fail("Operand is not of a pointer type");
 
+    case UNOP_CAST:
+        fail("NIY: type check cast op");
+        failforward(opr, expr->info.cast.opr);
+        // TODO: uuuh :<
+        struct adpt_type ref cty = (expr->info.cast.type, NULL);
+        return expr->usr = cty;
+
     case UNOP_PMEMBER:
     case UNOP_MEMBER:
         failforward(opr, expr->info.member.base);

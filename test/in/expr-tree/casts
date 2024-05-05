@@ -1,0 +1,17 @@
+(unsigned)1;
+(float).1;
+(struct buf*)NULL;
+
+(size_t const)a;
+
+(size_t)-1;
+(size_t)(a+b*c);
+(bool)!p;
+
+(size_t*)a;
+(size_t** const*)a;
+//(size_t*[42]){1};
+//(size_t*[]){0};
+(size_t* volatile)a;
+
+//(size_t[1]){0};

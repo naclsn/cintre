@@ -30,10 +30,13 @@
 /// while the kind of `size_t` is "type"); however, beacause of the syntax of
 /// the cast operator, the C syntax is ambiguous:
 /// ```c
-/// void size_t(int);
+/// void size_t(int); // (say)
 /// (size_t)(1+2*3);
+///
+/// int size_t; // (say)
+/// (size_t)-1;
 /// ```
-/// This is the only case I could come up with, and it will be "sanely" handled
+/// This is the only cases I could come up with, and it will be "sanely" handled
 /// as a cast operation, which means `(puts)("hi :3")` is also a cast to a type
 /// named `puts`.
 
@@ -741,8 +744,10 @@ void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, bufsl ref t
     _expect1(&ps->tok);
 
     if ('{' == *ps->tok.ptr) {
-        exitf("NIY: compound literal");
+        notif("NIY: compound literal");
         //expression comp = {.kind= UNOP_COMPLIT, .info.comp.type= &decl->type};
+        *tok = ps->tok;
+        return;
     }
 
     expression cast = {.kind= UNOP_CAST, .info.cast.type= &decl->type};
@@ -818,8 +823,7 @@ enum expr_kind _parse_is_infix(bufsl const tok, bool const disallow_comma) {
 }
 
 /// parse one, including the prefix: [<prefix>] (<atom> | '('<expr>')') [<postfix>]
-void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref _) {
-    (void)_;
+void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref is_in_par) {
     _expect1(&ps->tok);
 
     enum expr_kind const prefix = _parse_is_prefix(ps->tok);
@@ -837,11 +841,14 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         return;
     }
 
+#   define firstcharid(_tok) (('a' <= (*(_tok).ptr|32) && (*(_tok).ptr|32) <= 'z') || '_' == *(_tok).ptr)
+#   define firstcharlit(_tok) (('0' <= *(_tok).ptr && *(_tok).ptr <= '9') || '.' == *(_tok).ptr || '"' == *(_tok).ptr || '\'' == *(_tok.ptr))
+
     if ('(' == *ps->tok.ptr) {
         ps->tok = lext(ps->ls);
         _expect1(&ps->tok);
 
-        if ((('a' <= (*ps->tok.ptr|32) && (*ps->tok.ptr|32) <= 'z') || '_' == *ps->tok.ptr) && (
+        if (firstcharid(ps->tok) && (
                 bufis(ps->tok, "char")     ||
                 bufis(ps->tok, "short")    ||
                 bufis(ps->tok, "int")      ||
@@ -874,23 +881,84 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
                     .then= _parse_expr_one_lext_parenth,
                 },
                 .then= _parse_expr_continue,
-            }, NULL);
+            }, (void*)"");
         return;
     }
 
     // TODO: join adjacent string literals
     expression atom = {.kind= ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
-    // WIP: (if we are comming from right above) could still be a cast here if one of:
-    // - atom is an id (2 idends in a row)
-    // - tok is ')' and either:
-    //   - next is a '{'
-    //   - next is a _expr_one (lit, '(') <- still not enough (fn call)
-    // - tok is '*' and either:
-    //   - next is a ')'
-    //   - next is a qual (eg `const`)
-    // - tok is '[' and _looking ahead untile matching ']'_ and then ')' and then either:
-    //   - next is a '{'
+
+    // yyy: any non null if comming from right above (ie is in a parenthesised thing)
+    if (is_in_par && ps->tok.len && firstcharid(atom.info.atom)) {
+        // could still be a cast here if one of:
+        // - tok is an id (2 idends in a row)
+        // - tok is ')' and either:
+        //   - next is a '{'
+        //   - next is a _expr_one (lit, ident, unop, '(')
+        // - tok is '*' and either:
+        //   - next is a ')'
+        //   - next is a '*'
+        //   - next is a '['
+        //   - next is a qual (in `const`, `restrict`, `volatile`)
+        // - tok is '[' and _looking ahead untile matching ']'_ and then ')' and then next is a '{'
+
+        if (firstcharid(ps->tok)) {
+            // (size_t const
+            //             ^
+            ps->ls->slice.ptr-= ps->tok.len, ps->ls->slice.len+= ps->tok.len;
+            parse_declaration(&(parse_decl_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){capt->next->next, ps},
+                    .on= (void(*)())_parse_on_cast_type,
+                }, atom.info.atom);
+            return;
+        }
+
+        bufsl const ahead = lext(ps->ls);
+        ps->ls->slice.ptr-= ahead.len, ps->ls->slice.len+= ahead.len;
+        if (ahead.len) switch (*ps->tok.ptr) {
+        case ')':
+            // (size_t) ...
+            //          ^
+            if (strchr("{(~!-+", *ahead.ptr) || firstcharlit(ahead) || firstcharid(ahead)) {
+                _parse_on_cast_type(
+                        (void*[2]){capt->next->next, ps},
+                        &(declaration){.type.name= atom.info.atom},
+                        &ps->tok
+                    );
+                return;
+            }
+            break;
+
+        case '*':
+            // (size_t* ...
+            //          ^
+            if (strchr(")*[", *ahead.ptr) || firstcharid(ahead) && (
+                    bufis(ahead, "const")    ||
+                    bufis(ahead, "restrict") ||
+                    bufis(ahead, "volatile") )) {
+                parse_declaration(&(parse_decl_state){
+                        .ls= ps->ls,
+                        .usr= (void*[2]){capt->next->next, ps},
+                        .on= (void(*)())_parse_on_cast_type,
+                        .base.type.name= atom.info.atom,
+                    }, ps->tok);
+                return;
+            }
+            break;
+
+        case '[':
+            // (size_t[ ...
+            //          ^
+            notif("NIY: (maybe) compound literal for array (for now parsed as expression)");
+            //return;
+        }
+    }
+
+#   undef firstcharlit
+#   undef firstcharid
+
     _parse_expr_one_after(ps, capt, &atom);
 }
 

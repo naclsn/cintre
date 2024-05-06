@@ -332,6 +332,7 @@ void emit_decl(declaration cref decl) {
 
 void emit_top(void* _, declaration cref decl, bufsl ref tok) {
     (void)_;
+    (void)tok;
     emit_decl(decl);
 }
 

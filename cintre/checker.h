@@ -355,7 +355,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         fail("NIY: type check cast op");
         failforward(opr, expr->info.cast.opr);
         // TODO: uuuh :<
-        struct adpt_type ref cty = (expr->info.cast.type, NULL);
+        struct adpt_type ref cty = (void*)expr->info.cast.type;
         return expr->usr = cty;
 
     case UNOP_PMEMBER:

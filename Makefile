@@ -1,5 +1,5 @@
-warnings := -Wall -Wextra -Wpedantic -Werror -Wno-unused-function -Wno-unused-variable -Wno-unused-value -Wno-unused-parameter
-override CFLAGS += -ggdb -O0 -std=c99 $(warnings)
+warnings := -Wall -Wextra -Wpedantic -Werror
+override CFLAGS := -ggdb -O0 -std=c99 $(warnings) $(CFLAGS)
 
 PR = build/preparer.exe
 
@@ -37,8 +37,8 @@ test: $(addprefix test-,$(tests))
 testup: $(addprefix testup-,$(tests))
 cover: $(addprefix cover-,$(tests))
 
-build/coverage.html: clean cover; gcovr -f cintre --html $@ #--html-css doc/gcovr-style.css
-build/coverage-details.html: clean cover; gcovr -f cintre --html-details $@ #--html-css doc/gcovr-style.css
+build/coverage.html: clean cover; gcovr -f cintre --html $@
+build/coverage-details.html: clean cover; gcovr -f cintre --html-details $@
 
 clean:; $(RM) build/a-*.h build/c-*.c $(foreach t,$(tests),build/$(t)*)
 .PHONY: test testup cover clean

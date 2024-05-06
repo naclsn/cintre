@@ -352,6 +352,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
 // accept parsed input {{{
 void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
     cintre_state ref gs = usr;
+    (void)tok;
 
     if (!decl->name.len) {
         notif("Declaration does not declare anything");

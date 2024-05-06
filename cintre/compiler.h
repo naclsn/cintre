@@ -321,7 +321,7 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
 
     struct adpt_type cref expr_ty = expr->usr;
     bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
-    bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
+    //bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
 
     // same size -> nothing to do
     if (slot->ty->size == expr_ty->size && is_from_int == is_to_int) {
@@ -329,9 +329,9 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
         return;
     }
 
-    bool const is_to_signed = TYPE_SCHAR == slot->ty->tyty || TYPE_SHORT == slot->ty->tyty || TYPE_INT == slot->ty->tyty || TYPE_LONG == slot->ty->tyty;
-    bool const is_to_unsigned = TYPE_UCHAR == slot->ty->tyty || TYPE_USHORT == slot->ty->tyty || TYPE_UINT == slot->ty->tyty || TYPE_ULONG == slot->ty->tyty;
-    bool const is_from_signed = TYPE_SCHAR == expr_ty->tyty || TYPE_SHORT == expr_ty->tyty || TYPE_INT == expr_ty->tyty || TYPE_LONG == expr_ty->tyty;
+    //bool const is_to_signed = TYPE_SCHAR == slot->ty->tyty || TYPE_SHORT == slot->ty->tyty || TYPE_INT == slot->ty->tyty || TYPE_LONG == slot->ty->tyty;
+    //bool const is_to_unsigned = TYPE_UCHAR == slot->ty->tyty || TYPE_USHORT == slot->ty->tyty || TYPE_UINT == slot->ty->tyty || TYPE_ULONG == slot->ty->tyty;
+    //bool const is_from_signed = TYPE_SCHAR == expr_ty->tyty || TYPE_SHORT == expr_ty->tyty || TYPE_INT == expr_ty->tyty || TYPE_LONG == expr_ty->tyty;
     bool const is_from_unsigned = TYPE_UCHAR == expr_ty->tyty || TYPE_USHORT == expr_ty->tyty || TYPE_UINT == expr_ty->tyty || TYPE_ULONG == expr_ty->tyty;
 
     struct slot tmp = {.ty= expr_ty};
@@ -450,9 +450,6 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
 // }}}
 
 void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot) {
-    size_t plen = cs->res.len;
-    size_t pvsp = cs->vsp;
-
     // work variables that are better function-scoped and initialized early
     struct slot tmp = {0};
     enum _arith_op op = 0;

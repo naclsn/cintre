@@ -395,14 +395,14 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     //       a way it could be called from accept_decl (and maybe even
     //       accept_sttm, idk that doesn't make sense but all this isn't
     //       devised yest)
-    char cref xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t\n") : "";
+    char cref xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t") : "";
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
         printf("   h[elp]                  -  print this help and no more\n");
         printf("   loc[ales]               -  list local names\n");
-        printf("   names[paces] or ns      -  list names in namespaces\n");
+        printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
@@ -425,9 +425,16 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
     }
 
     if (xcmdis("names") || xcmdis("ns")) {
-        printf("List of names:\n");
-        for (size_t ns = 0; ns < countof(namespaces); ns++) {
-            printf("%s::\n", namespaces[ns].name);
+        char cref end = xcmd+strcspn(xcmd, " \t");
+        char cref name = end+strspn(end, " \t");
+        if (end == name) {
+            printf("List of namespaces:\n");
+            for (size_t ns = 0; ns < countof(namespaces); ns++)
+                printf("   %s (%zu names)\n", namespaces[ns].name, namespaces[ns].count);
+            return;
+        }
+        for (size_t ns = 0; ns < countof(namespaces); ns++) if (!strcmp(namespaces[ns].name, name)) {
+            printf("List of names in %s:\n", namespaces[ns].name);
             for (size_t k = 0; k < namespaces[ns].count; k++) {
                 struct adpt_item cref it = namespaces[ns].items+k;
                 if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
@@ -435,7 +442,9 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
                 print_type(stdout, it->type);
                 printf("\n");
             }
+            return;
         }
+        printf("No such namespace '%s'\n", name);
         return;
     }
 

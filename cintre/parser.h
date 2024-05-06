@@ -64,13 +64,14 @@ typedef struct declaration {
         SPEC_REGISTER= kws('r','e','g','i','s','t','e','r'),
     } spec;
 
+    bool is_inline;
+
     struct decl_type {
         enum decl_type_qual {
             QUAL_END= 0,
             QUAL_CONST= kws('c','o','n','s','t'),
             QUAL_RESTRICT= kws('r','e','s','t','r','i','c','t'),
             QUAL_VOLATILE= kws('v','o','l','a','t','i','l','e'),
-            QUAL_INLINE= kws('i','n','l','i','n','e'),
             QUAL_SIGNED= kws('s','i','g','n','e','d'),
             QUAL_UNSIGNED= kws('u','n','s','i','g','n','e','d'),
             QUAL_SHORT= kws('s','h','o','r','t'),
@@ -122,7 +123,7 @@ typedef struct declaration {
             struct deck_type_arr {
                 struct declaration const* item;
                 struct expression* count; // NULL when [*] or [], n otherwise
-                bool statik;
+                bool is_static;
             } arr;
         } info;
 
@@ -314,6 +315,7 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         ps->tok = lext(ps->ls);
         declaration ptr = {
             .spec= decl->spec,
+            .is_inline= decl->is_inline, // yyy: y not
             .type= {.kind= KIND_PTR, .info.ptr= decl},
             .name= decl->name,
         };
@@ -335,8 +337,10 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         return;
     }
 
-    decl->name = ps->tok;
-    ps->tok = lext(ps->ls);
+    if (ps->tok.len && (('a' <= (*ps->tok.ptr|32) && (*ps->tok.ptr|32) <= 'z') || '_' == *ps->tok.ptr)) {
+        decl->name = ps->tok;
+        ps->tok = lext(ps->ls);
+    }
     _parse_decl_post(ps, capt, decl);
 }
 
@@ -391,6 +395,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         ps->tok = lext(ps->ls);
         declaration fun = {
             .spec= decl->spec,
+            .is_inline= decl->is_inline,
             .type= {.kind= KIND_FUN, .info.fun.ret= decl},
             .name= decl->name,
         };
@@ -405,11 +410,12 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         ps->tok = lext(ps->ls);
         declaration arr = {
             .spec= decl->spec,
+            .is_inline= decl->is_inline, // yyy: y not
             .type= {.kind= KIND_ARR, .info.arr.item= decl},
             .name= decl->name,
         };
         if (3 < ps->tok.len && iskwx(ps->tok, 's','t','a','t','i','c')) {
-            arr.type.info.arr.statik = true;
+            arr.type.info.arr.is_static = true;
             ps->tok = lext(ps->ls);
         }
         for (unsigned askw; (3 < ps->tok.len && (askw = kw(ps->tok.ptr),
@@ -618,12 +624,15 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
     case_iskw('s','i','g','n','e','d') case_iskw('u','n','s','i','g','n','e','d') case_iskw('s','h','o','r','t') case_iskw('l','o','n','g')
         if (!decl->type.name.len) decl->type.name = (bufsl){.ptr= "int", .len= 3};
-    case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e') case_iskw('i','n','l','i','n','e')
+    case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
         for (unsigned k = 0; k < countof(decl->type.quals); k++) if (QUAL_END == decl->type.quals[k]) {
             decl->type.quals[k] = askw;
             break;
         }
+        continue;
+    case_iskw('i','n','l','i','n','e')
+        decl->is_inline = true;
         continue;
 
     case_iskw('s','t','r','u','c','t') case_iskw('u','n','i','o','n') case_iskw('e','n','u','m')

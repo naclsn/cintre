@@ -248,7 +248,6 @@ void emit_type(struct decl_type cref type) {
     case QUAL_CONST:     fprintf(result, "const ");     break;
     case QUAL_RESTRICT:  fprintf(result, "restrict ");  break;
     case QUAL_VOLATILE:  fprintf(result, "volatile ");  break;
-    case QUAL_INLINE:    fprintf(result, "inline ");    break;
     case QUAL_SIGNED:    fprintf(result, "signed ");    break;
     case QUAL_UNSIGNED:  fprintf(result, "unsigned ");  break;
     case QUAL_SHORT:     fprintf(result, "short ");     break;
@@ -294,12 +293,12 @@ void emit_adpt_type(struct decl_type cref type) {
 
 void emit_decl(declaration cref decl) {
     switch (decl->spec) {
-    case SPEC_NONE: break;
     case SPEC_TYPEDEF:  fprintf(result, "typedef ");  break;
     case SPEC_EXTERN:   fprintf(result, "extern ");   break;
-    case SPEC_STATIC:   fprintf(result, "static ");   break;
-    case SPEC_AUTO:     fprintf(result, "auto ");     break;
-    case SPEC_REGISTER: fprintf(result, "register "); break;
+    case SPEC_STATIC:   return; //fprintf(result, "static ");   break;
+    //case SPEC_AUTO:     fprintf(result, "auto ");     break;
+    //case SPEC_REGISTER: fprintf(result, "register "); break;
+    default:;
     }
 
     switch (decl->type.kind) {

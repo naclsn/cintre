@@ -39,7 +39,6 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     case QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
     case QUAL_RESTRICT:  fprintf(strm, "\x1b[34mrestrict\x1b[m ");  break;
     case QUAL_VOLATILE:  fprintf(strm, "\x1b[34mvolatile\x1b[m ");  break;
-    case QUAL_INLINE:    fprintf(strm, "\x1b[34minline\x1b[m ");    break;
     case QUAL_SIGNED:    fprintf(strm, "\x1b[34msigned\x1b[m ");    break;
     case QUAL_UNSIGNED:  fprintf(strm, "\x1b[34munsigned\x1b[m ");  break;
     case QUAL_SHORT:     fprintf(strm, "\x1b[34mshort\x1b[m ");     break;
@@ -102,6 +101,7 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
 
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
+        if (ty->info.arr.is_static) fprintf(strm, "\x1b[36mstatic\x1b[m ");
         if (!ty->info.arr.count) fprintf(strm, "*, ");
         // todo: this was temporary to generate the test tapes, but because
         //       we're not going to just compile and run the expression here
@@ -125,6 +125,7 @@ void print_decl(FILE ref strm, declaration cref decl) {
     case SPEC_AUTO:     fprintf(strm, "\x1b[36mauto\x1b[m ");     break;
     case SPEC_REGISTER: fprintf(strm, "\x1b[36mregister\x1b[m "); break;
     }
+    if (decl->is_inline) fprintf(strm, "\x1b[34minline\x1b[m ");
     fprintf(strm, "%.*s: ", bufmt(decl->name));
     _print_decl_type(strm, &decl->type);
 }

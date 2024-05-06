@@ -68,8 +68,8 @@ outer: [34mstruct[m {middle: [34mstruct[m {inner: [32mint[m}}
 [1m[test/in/decl-list/decls:30][m struct { struct { int inner; } middle; } outer; [1m##[m  -- tok: ;
 a: [32mint[m
 [1m[test/in/decl-list/decls:33][m int a; [1m##[m  -- tok: ;
-[36mstatic[m b: [34mfun[m() -> [34mconst[m [34mrestrict[m [34mvolatile[m [34mptr[m[[34mconst[m [34mvolatile[m [34minline[m [34munsigned[m [34mlong[m [34mlong[m [32mint[m]
-[1m[test/in/decl-list/decls:34][m static const volatile inline unsigned long long int* const restrict volatile b(); // FIXME: crashes with: static const volatile inline unsigned long long int* const restrict volatile b(const unsigned long long int* const restrict volatile[static const restrict volatile 1]); [1m##[m  -- tok: ;
+[36mstatic[m [34minline[m b: [34mfun[m(: [34mconst[m [34mrestrict[m [34mvolatile[m [34marr[m[[36mstatic[m 1, [34mconst[m [34mrestrict[m [34mvolatile[m [34mptr[m[[34mconst[m [34munsigned[m [34mlong[m [34mlong[m [32mint[m]]) -> [34mconst[m [34mrestrict[m [34mvolatile[m [34mptr[m[[34mconst[m [34mvolatile[m [34munsigned[m [34mlong[m [34mlong[m [32mint[m]
+[1m[test/in/decl-list/decls:34][m static const volatile inline unsigned long long int* const restrict volatile b(const unsigned long long int* const restrict volatile[static const restrict volatile 1]); [1m##[m  -- tok: ;
 c: [32mint[m
 [1m[test/in/decl-list/decls:35][m int c, d(void), e[1][2][3]; [1m##[m  -- tok: ,
 d: [34mfun[m([36mvoid[m) -> [32mint[m

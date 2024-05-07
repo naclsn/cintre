@@ -257,18 +257,37 @@ void emit_type(struct decl_type cref type) {
     }
 }
 
-void emit_adpt_type(struct decl_type cref type) {
-    switch (type->kind) {
-    case KIND_NOTAG:
-        search_namespace (type->name, seen.tdfs) {
-            fprintf(result, "%.*s_adapt_type", bufmt(type->name));
-            return;
+void emit_adpt_type(struct decl_type cref ty) {
+    switch (ty->kind) {
+    case KIND_NOTAG:;
+        bool _signed = false, _unsigned = false, _short = false, _long = false;
+        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case QUAL_SIGNED:    _signed = true;          break;
+            case QUAL_UNSIGNED:  _unsigned = true;        break;
+            case QUAL_SHORT:     _short = true;           break;
+            case QUAL_LONG:      _long = true;            break;
+            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
+            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            default:;
         }
-        if (bufis(type->name, "size_t")) { // XXX: tmp, these should be done proper
-            fprintf(result, "adptb_ulong_type");
-            break;
-        }
-        fprintf(result, "adptb_%.*s_type", bufmt(type->name));
+
+        char const* adptb = NULL;
+#       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+        if (nameis("char"))
+            adptb = _signed ? "adptb_schar_type"
+                  : _unsigned ? "adptb_uchar_type"
+                  : "adptb_char_type";
+        if (nameis("int") || !ty->name.len)
+            adptb = _short ? (_unsigned ? "adptb_ushort_type" : "adptb_short_type")
+                  : _long ? (_unsigned ? "adptb_ulong_type" : "adptb_long_type")
+                  : _unsigned ? "adptb_uint_type" : "adptb_int_type";
+        if (nameis("float"))  adptb = "adptb_float_type";
+        if (nameis("double")) adptb = "adptb_double_type";
+        if (nameis("void"))   adptb = "adptb_void_type";
+#       undef nameis
+
+        if (adptb) fprintf(result, "%s", adptb);
+        else fprintf(result, "%.*s_adapt_type", bufmt(ty->name));
         break;
 
     case KIND_STRUCT:
@@ -281,7 +300,7 @@ void emit_adpt_type(struct decl_type cref type) {
                             ".size= sizeof(void*), "
                             ".align= sizeof(void*), "
                             ".tyty= TYPE_PTR, "
-                            ".info.ptr= &"); emit_adpt_type(&type->info.ptr->type);
+                            ".info.ptr= &"); emit_adpt_type(&ty->info.ptr->type);
         fprintf(result, "}");
         break;
 
@@ -300,9 +319,15 @@ void emit_decl(declaration cref decl) {
     //case SPEC_REGISTER: fprintf(result, "register "); break;
     default:;
     }
+    if (decl->is_inline) return;
 
     switch (decl->type.kind) {
     case KIND_NOTAG:
+        if (SPEC_TYPEDEF == decl->spec) {
+            emit_type(&decl->type); fprintf(result, "%.*s;\n", bufmt(decl->name));
+            fprintf(result, "#define %.*s_adapt_type ", bufmt(decl->name)); emit_adpt_type(&decl->type); fprintf(result, "\n");
+            break;
+        }
         errdie("NIY (static variable declaration)");
         break;
 
@@ -316,7 +341,12 @@ void emit_decl(declaration cref decl) {
         break;
 
     case KIND_PTR:
-        errdie("NIY (static pointer variable declaration)");
+        fprintf(result, "static struct adpt_type const %.*s_adapt_tdf_type = {\n", bufmt(decl->name));
+        fprintf(result, "    .size= sizeof(void*), .align= sizeof(void*),\n");
+        fprintf(result, "    .tyty= TYPE_PTR,\n");
+        fprintf(result, "    .info.ptr= &"); emit_adpt_type(&decl->type.info.ptr->type); fprintf(result, "\n");
+        fprintf(result, "}\n");
+        fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tdf_type\n", bufmt(decl->name), bufmt(decl->name));
         break;
 
     case KIND_FUN:
@@ -362,17 +392,19 @@ int do_merge(int argc, char** argv) {
     atexit(cleanup);
 
     char** last = NULL;
-    while (argc) {
+    while (0 < argc) {
         char* arg = (argc--, *argv++);
         char* val;
         if (!memcmp("-o", arg, 2)) {
             last = argv-1;
             val = arg[2] ? arg+2 : (argc--, *argv++);
-            if ('-' != val[0]) result = fopen(val, "wb");
+            if (!val) result = NULL;
+            else if ('-' != val[0]) result = fopen(val, "wb");
             break;
         }
     }
     if (!last) last = argv;
+    if (!result) exitf("Missing result operand or file not writable");
 
     for (char** it = first; it < last; it++)
         fprintf(result, "#include \"%s\"\n", *it);
@@ -405,7 +437,7 @@ int do_prepare(int argc, char** argv) {
     result = stdout;
     atexit(cleanup);
 
-    while (argc) {
+    while (0 < argc) {
         char* arg = (argc--, *argv++);
         char* val;
 
@@ -423,7 +455,8 @@ int do_prepare(int argc, char** argv) {
 
         case 'o':
             val = arg[2] ? arg+2 : (argc--, *argv++);
-            if ('-' != val[0]) result = fopen(val, "wb");
+            if (!val) result = NULL;
+            else if ('-' != val[0]) result = fopen(val, "wb");
             break;
         }
     }

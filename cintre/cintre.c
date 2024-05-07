@@ -195,12 +195,12 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
 #       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
         if (nameis("char"))
             return _signed ? &adptb_schar_type
-                    : _unsigned ? &adptb_uchar_type
-                    : &adptb_char_type;
+                 : _unsigned ? &adptb_uchar_type
+                 : &adptb_char_type;
         if (nameis("int") || !ty->name.len)
             return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
-                    : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
-                    : _unsigned ? &adptb_uint_type : &adptb_int_type;
+                 : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
+                 : _unsigned ? &adptb_uint_type : &adptb_int_type;
         if (nameis("float"))  return &adptb_float_type;
         if (nameis("double")) return &adptb_double_type;
         if (nameis("void"))   return &adptb_void_type;

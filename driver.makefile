@@ -1,8 +1,10 @@
 ## example:
 # prog     := simple
-# entries  := simple.c cintre/standard.h
+# entries  := simple.c
 # objs     := simple.o
 # include driver.makefile # rules: all, $(build)/simple, clean
+
+# TODO: options like -nostd and -norl; maybe: `opts := -nostd` and `$(findstring ..)`
 
 cintre := cintre
 build ?= build
@@ -13,9 +15,10 @@ CFLAGS := -O2
 #---
 
 $(build)/$(prog): $(build)/c-$(prog).c $(addprefix $(build)/,$(objs)); $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) -DUSE_READLINE $(shell pkg-config readline --cflags --libs)
-$(build)/c-$(prog).c: $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
+$(build)/c-$(prog).c: $(build)/a-standard.h $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
+$(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -o $@ $(CFLAGS-a-standard)
 
-# a-entry.h: some/entry.ch $(PR); $(PR) $< -o $(CFLAGS-a-entry)
+# build/a-entry.h: some/entry.ch $(PR); $(PR) $< -o $@ $(CFLAGS-a-entry)
 $(foreach e,$(entries),$(eval $(build)/a-$(basename $(notdir $(e))).h: $(e) $$(PR); $$(PR) $$< -o $$@ $(CFLAGS) $$(CFLAGS-$$(basename $$@))))
 
 $(PR): $(cintre)/preparer.c $(cintre)/*.h; $(CC) $< -o $@ $(CFLAGS)

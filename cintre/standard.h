@@ -328,7 +328,7 @@ extern long double fmaxl(long double x, long double y);
 extern long double fminl(long double x, long double y);
 extern long double fmal(long double x, long double y, long double z);
 extern long double scalbl(long double x, long double n);
-extern int signgam;
+//XXX(object): extern int signgam;
 // }}}
 
 // stdint.h {{{
@@ -353,9 +353,9 @@ typedef long int off_t;
 typedef long int ssize_t;
 typedef void fpos_t;
 
-extern FILE *stdin;
-extern FILE *stdout;
-extern FILE *stderr;
+//XXX(object): extern FILE *stdin;
+//XXX(object): extern FILE *stdout;
+//XXX(object): extern FILE *stderr;
 
 extern int remove(const char *filename);
 extern int rename(const char *old, const char *new);
@@ -477,10 +477,10 @@ extern char *asctime(const struct tm *tp);
 extern char *ctime(const time_t *timer);
 extern char *asctime_r(const struct tm *restrict tp, char *restrict buf);
 extern char *ctime_r(const time_t *restrict timer, char *restrict buf);
-extern char *tzname[2];
+//XXX(object): extern char *tzname[2];
 extern void tzset(void);
-extern int daylight;
-extern long int timezone;
+//XXX(object): extern int daylight;
+//XXX(object): extern long int timezone;
 extern time_t timegm(struct tm *tp);
 extern time_t timelocal(struct tm *tp);
 extern int dysize(int year);

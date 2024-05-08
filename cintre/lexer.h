@@ -83,7 +83,7 @@ buf _lex_read_all(FILE ref f) {
     } else do {
         size_t const a = r.len ? r.len*2 : 1024;
         if (!dyarr_resize(&r, a)) exitf("OOM");
-        r.len+= fread(r.ptr+r.len, 1, a, f);
+        r.len+= fread(r.ptr+r.len, 1, a-r.len, f);
     } while (!feof(f) && !ferror(f));
     return r;
 }

@@ -894,6 +894,19 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         return;
     }
 
+    // xxx: condition is pretty weak.. this syntax is only valid after an '='
+    if ('{' == *ps->tok.ptr) {
+        // TODO/XXX
+        //notif("NIY: declaration compound literal (skipping for now)");
+        for (unsigned depth = 0; (ps->tok = lext(ps->ls)).len; ) {
+            bool c = '}' == *ps->tok.ptr;
+            if (!ps->tok.len || (!depth && c)) break;
+            depth+= ('{' == *ps->tok.ptr)-c;
+        }
+        ps->tok = lext(ps->ls);
+        return;
+    }
+
     // TODO: join adjacent string literals
     expression atom = {.kind= ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);

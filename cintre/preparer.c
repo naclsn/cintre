@@ -22,6 +22,16 @@
 
 lex_state ls = {0};
 FILE* result = NULL;
+int indent = 0;
+
+/// last `emit` of an indented should not be an `emitln` (so a plain `emit`)
+#define indented(...)  for (bool _once = (++indent, emitln(__VA_ARGS__), true); _once; _once = (--indent, emitln(" "), false))
+#if 0//def LOC_NOTIF
+# define emit(...)  fprintf(result, " /*" HERE "*/ " __VA_ARGS__)
+#else
+# define emit(...)  fprintf(result, __VA_ARGS__)
+#endif
+#define emitln(...)  (emit(__VA_ARGS__), fprintf(result, "\n%*s", indent*4, ""))
 
 struct {
     dyarr(struct seen_fun { bufsl name; }) funs;
@@ -37,12 +47,12 @@ struct {
 #define _linked_it_type_fun struct decl_type_param
 #define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = (__info).__ty.first; curr; curr = curr->next)
 
-void emit_type(struct decl_type cref type);
-void emit_adpt_type(struct decl_type cref type);
+void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl);
 void emit_decl(declaration cref decl);
 
-// emit specifics {{{
-void _emit_comp(declaration cref decl) {
+/*/ emit specifics {{{
+void _emit_comp(declaration cref decl)
+{
     if (KIND_STRUCT != decl->type.kind)
         errdie("NIY (union declaration)");
 
@@ -118,7 +128,7 @@ void _emit_comp(declaration cref decl) {
     size_t count = 0;
     for_linked (decl->type.info,comp) {
         fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
-        fprintf(result, "            , .type= &"); emit_adpt_type(&curr->decl->type); fprintf(result, "\n");
+        fprintf(result, "            , .type= &"); emit_adpt_type_val(&curr->decl->type); fprintf(result, "\n");
         fprintf(result, "            , .offset= offsetof("); emit_type(&decl->type); fprintf(result, ", %.*s) },\n", bufmt(curr->decl->name));
         count++;
     }
@@ -152,7 +162,8 @@ void _emit_comp(declaration cref decl) {
     fprintf(result, "\n");
 }
 
-void _emit_fun(declaration cref decl) {
+void _emit_fun(declaration cref decl)
+{
     search_namespace (decl->name, seen.funs) return;
     struct seen_fun* p = dyarr_push(&seen.funs);
     if (!p) exitf("OOM");
@@ -196,12 +207,12 @@ void _emit_fun(declaration cref decl) {
     fprintf(result, "    .size= sizeof(void(*)()), .align= sizeof(void(*)()),\n");
     fprintf(result, "    .tyty= TYPE_FUN,\n");
     fprintf(result, "    .info.fun= {\n");
-    fprintf(result, "        .ret= &"); emit_adpt_type(&decl->type.info.fun.ret->type); fprintf(result, ",\n");
+    fprintf(result, "        .ret= &"); emit_adpt_type_val(&decl->type.info.fun.ret->type); fprintf(result, ",\n");
     fprintf(result, "        .params= (struct adpt_fun_param[]){\n");
     size_t count = 0;
     for_linked (decl->type.info,fun) {
         fprintf(result, "            { .name= \"%.*s\"\n", bufmt(curr->decl->name));
-        fprintf(result, "            , .type= &"); emit_adpt_type(&curr->decl->type); fprintf(result, " },\n");
+        fprintf(result, "            , .type= &"); emit_adpt_type_val(&curr->decl->type); fprintf(result, " },\n");
         count++;
     }
     fprintf(result, "        },\n");
@@ -211,10 +222,11 @@ void _emit_fun(declaration cref decl) {
 
     fprintf(result, "\n");
 }
-// }}}
+// }}} */
 
-// emit generics {{{
-void emit_type(struct decl_type cref type) {
+/*/ emit generics {{{
+void emit_type(struct decl_type cref type)
+{
     switch (type->kind) {
     case KIND_NOTAG: fprintf(result, "%.*s ", bufmt(type->name)); break;
 
@@ -257,7 +269,149 @@ void emit_type(struct decl_type cref type) {
     }
 }
 
-void emit_adpt_type(struct decl_type cref ty) {
+void emit_decl(declaration cref decl)
+{
+    switch (decl->spec) {
+    case SPEC_TYPEDEF:  fprintf(result, "typedef ");  break;
+    case SPEC_EXTERN:   fprintf(result, "extern ");   break;
+    case SPEC_STATIC:   return; //fprintf(result, "static ");   break;
+    //case SPEC_AUTO:     fprintf(result, "auto ");     break;
+    //case SPEC_REGISTER: fprintf(result, "register "); break;
+    default:;
+    }
+    if (decl->is_inline) return;
+
+    switch (decl->type.kind) {
+    case KIND_NOTAG:
+        if (SPEC_TYPEDEF == decl->spec) {
+            emit_type(&decl->type); fprintf(result, "%.*s;\n", bufmt(decl->name));
+            fprintf(result, "#define %.*s_adapt_type ", bufmt(decl->name)); emit_adpt_type_val(&decl->type); fprintf(result, "\n");
+            break;
+        }
+        errdie("NIY (static variable declaration)");
+        break;
+
+    case KIND_STRUCT:
+    case KIND_UNION:
+        _emit_comp(decl);
+        break;
+
+    case KIND_ENUM:
+        errdie("NIY (enum declaration)");
+        break;
+
+    case KIND_PTR:
+        fprintf(result, "static struct adpt_type const %.*s_adapt_tdf_type = {\n", bufmt(decl->name));
+        fprintf(result, "    .size= sizeof(void*), .align= sizeof(void*),\n");
+        fprintf(result, "    .tyty= TYPE_PTR,\n");
+        fprintf(result, "    .info.ptr= &"); emit_adpt_type_val(&decl->type.info.ptr->type); fprintf(result, "\n");
+        fprintf(result, "}\n");
+        fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tdf_type\n", bufmt(decl->name), bufmt(decl->name));
+        break;
+
+    case KIND_FUN:
+        _emit_fun(decl);
+        break;
+
+    case KIND_ARR:
+        errdie("NIY (array declaration)");
+        break;
+    }
+}
+// }}} */
+
+// same (rewrite) {{{
+/// forwards as-is
+void emit_forward(struct decl_type cref ty, bufsl cref name)
+{
+    for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
+    case QUAL_END: break;
+    case QUAL_CONST:     emit("const ");     break;
+    case QUAL_RESTRICT:  emit("restrict ");  break;
+    case QUAL_VOLATILE:  emit("volatile ");  break;
+    case QUAL_SIGNED:    emit("signed ");    break;
+    case QUAL_UNSIGNED:  emit("unsigned ");  break;
+    case QUAL_SHORT:     emit("short ");     break;
+    case QUAL_LONG:      emit("long ");      break;
+    case QUAL_COMPLEX:   emit("complex ");   break;
+    case QUAL_IMAGINARY: emit("imaginary "); break;
+    }
+
+    switch (ty->kind) {
+    case KIND_NOTAG: emit("%.*s", bufmt(ty->name)); break;
+
+    case KIND_STRUCT: emit("struct "); if (0)
+    case KIND_UNION:  emit("union ");
+        if (ty->name.len) emit("%.*s", bufmt(ty->name));
+        else {
+            errdie("NIY (annon struct/union ty, will make a internal name like `struct@1` or something..)");
+        }
+
+        //if (-1 == ty->info.obj.count) break;
+        //emit("{");
+        //for (struct decl_type_field* curr = ty->info.obj.first; curr; curr = curr->next) {
+        //    emit_decl(curr->decl, depth+1);
+        //    printf("\n");
+        //}
+        //emit("}");
+        break;
+
+    case KIND_ENUM:
+        emit("enum ");
+        if (ty->name.len) emit("%.*s", bufmt(ty->name));
+        errdie("NIY");
+        break;
+
+    case KIND_PTR:
+        emit_forward(&ty->info.ptr->type, NULL);
+        if (name) emit("* %.*s", bufmt(*name));
+        else emit("*");
+        break;
+
+    case KIND_FUN:
+        emit_forward(&ty->info.fun.ret->type, NULL);
+        if (name) emit(" %.*s(", bufmt(*name));
+        else emit(" (*)");
+        if (-1ul != ty->info.fun.count) {
+            if (0 == ty->info.fun.count) emit("void");
+            else for_linked (ty->info,fun) {
+                emit_forward(&curr->decl->type, &curr->decl->name);
+                if (curr->next) emit(", ");
+            }
+        }
+        emit(")");
+        break;
+
+    case KIND_ARR:
+        emit_forward(&ty->info.ptr->type, NULL);
+        if (name) emit("%.*s", bufmt(*name));
+        emit("[?]");
+        errdie("NIY");
+        break;
+    }
+
+}
+
+/// if the type is a named struct/union, it defines its decl_type (name_adapt_tag_type)
+void emit_named_comp_adpt_type_def(struct decl_type cref ty)
+{
+    switch (ty->kind) {
+    case KIND_STRUCT:
+    case KIND_UNION:
+        if (!ty->name.len)
+    default:
+            return;
+    }
+
+    emit("static struct adpt_type const %.*s_adapt_tag_type = ", bufmt(ty->name));
+    emit_adpt_type_val(ty, true);
+    emitln(";");
+}
+
+/// emit a compile-time &-able value that is the decl_type for this type
+/// if `in_decl` is true, will not do `(struct adpt_type){..}` but just `{..}`
+void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
+{
     switch (ty->kind) {
     case KIND_NOTAG:;
         bool _signed = false, _unsigned = false, _short = false, _long = false;
@@ -286,93 +440,154 @@ void emit_adpt_type(struct decl_type cref ty) {
         if (nameis("void"))   adptb = "adptb_void_type";
 #       undef nameis
 
-        if (adptb) fprintf(result, "%s", adptb);
-        else fprintf(result, "%.*s_adapt_type", bufmt(ty->name));
+        if (adptb) emit("%s", adptb);
+        else emit("%.*s_adapt_type", bufmt(ty->name));
         break;
 
     case KIND_STRUCT:
     case KIND_UNION:
     case KIND_ENUM:
+        if (ty->name.len) {
+            emit("%.*s_adapt_tag_type", bufmt(ty->name));
+            break;
+        }
+        exitf("NIY: KIND_STRUCT/UNION/ENUM");
         break;
 
     case KIND_PTR:
-        fprintf(result, "(struct adpt_type){"
-                            ".size= sizeof(void*), "
-                            ".align= sizeof(void*), "
-                            ".tyty= TYPE_PTR, "
-                            ".info.ptr= &"); emit_adpt_type(&ty->info.ptr->type);
-        fprintf(result, "}");
+        indented ("%s{", in_decl ? "" : "(struct adpt_type)") {
+            emitln(".size= sizeof(void*),");
+            emitln(".align= sizeof(void*),");
+            emitln(".tyty= TYPE_PTR,");
+            emit(".info.ptr= &");
+            emit_adpt_type_val(&ty->info.ptr->type, false);
+            emit(",");
+        }
+        emit("}");
         break;
 
     case KIND_FUN:
+        indented ("%s{", in_decl ? "" : "(struct adpt_type)") {
+            emitln(".size= sizeof(void(*)()),");
+            emitln(".align= sizeof(void(*)()),");
+            emitln(".tyty= TYPE_FUN,");
+            indented (".info.fun= {") {
+                emit(".ret= &");
+                emit_adpt_type_val(&ty->info.fun.ret->type, false);
+                emitln(",");
+                emit(".params= ");
+                size_t count = 0;
+                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("NULL,");
+                else {
+                    indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
+                        emitln("{ .name= \"%.*s\"", bufmt(curr->decl->name));
+                        emit(", .type= &");
+                        emit_adpt_type_val(&curr->decl->type, false);
+                        emitln(" },");
+                        count++;
+                    }
+                    emitln("},");
+                }
+                emit(".count= %zu,", count);
+            }
+            emit("},");
+        }
+        emit("}");
+        break;
+
     case KIND_ARR:
+        exitf("NIY: KIND_ARR");
         break;
     }
 }
 
-void emit_decl(declaration cref decl) {
-    switch (decl->spec) {
-    case SPEC_TYPEDEF:  fprintf(result, "typedef ");  break;
-    case SPEC_EXTERN:   fprintf(result, "extern ");   break;
-    case SPEC_STATIC:   return; //fprintf(result, "static ");   break;
-    //case SPEC_AUTO:     fprintf(result, "auto ");     break;
-    //case SPEC_REGISTER: fprintf(result, "register "); break;
-    default:;
-    }
-    if (decl->is_inline) return;
+void emit_extern(declaration cref decl)
+{
+    emit("extern ");
+    emit_forward(&decl->type, &decl->name);
+    emitln(";");
 
-    switch (decl->type.kind) {
-    case KIND_NOTAG:
-        if (SPEC_TYPEDEF == decl->spec) {
-            emit_type(&decl->type); fprintf(result, "%.*s;\n", bufmt(decl->name));
-            fprintf(result, "#define %.*s_adapt_type ", bufmt(decl->name)); emit_adpt_type(&decl->type); fprintf(result, "\n");
-            break;
+    if (KIND_FUN == decl->type.kind) {
+        emit("void %.*s_adapt_call(char* ret, char** args)", bufmt(decl->name));
+        indented ("{") {
+            if (0 == decl->type.info.fun.count) emitln("(void)args;");
+            if (bufis(decl->type.info.fun.ret->type.name, "void")) emitln("(void)ret;");
+            else {
+                emit("*(");
+                emit_forward(&decl->type.info.fun.ret->type, NULL);
+                emit("*)ret = ");
+            }
+            emit("%.*s(", bufmt(decl->name));
+            size_t k = 0;
+            for_linked (decl->type.info,fun) {
+                emit("*(");
+                emit_forward(&curr->decl->type, NULL);
+                emit("*)args[%zu]", k++);
+                if (curr->next) emit(", ");
+            }
+            emit(");");
         }
-        errdie("NIY (static variable declaration)");
-        break;
-
-    case KIND_STRUCT:
-    case KIND_UNION:
-        _emit_comp(decl);
-        break;
-
-    case KIND_ENUM:
-        errdie("NIY (enum declaration)");
-        break;
-
-    case KIND_PTR:
-        fprintf(result, "static struct adpt_type const %.*s_adapt_tdf_type = {\n", bufmt(decl->name));
-        fprintf(result, "    .size= sizeof(void*), .align= sizeof(void*),\n");
-        fprintf(result, "    .tyty= TYPE_PTR,\n");
-        fprintf(result, "    .info.ptr= &"); emit_adpt_type(&decl->type.info.ptr->type); fprintf(result, "\n");
-        fprintf(result, "}\n");
-        fprintf(result, "#define %.*s_adapt_type %.*s_adapt_tdf_type\n", bufmt(decl->name), bufmt(decl->name));
-        break;
-
-    case KIND_FUN:
-        _emit_fun(decl);
-        break;
-
-    case KIND_ARR:
-        errdie("NIY (array declaration)");
-        break;
+        emitln("}");
     }
+
+    emit("static struct adpt_type const %.*s_adapt_type = ", bufmt(decl->name));
+    emit_adpt_type_val(&decl->type, true);
+    emitln(";");
+}
+
+void emit_typedef(declaration cref decl)
+{
+    emit("typedef ");
+    emit_forward(&decl->type, &decl->name);
+    emitln(";");
+
+    emit_named_comp_adpt_type_def(&decl->type);
+    emit("static struct adpt_type const %.*s_adapt_tdf_type = ", bufmt(decl->name));
+    emit_adpt_type_val(&decl->type, true);
+    emitln(";");
+
+    emitln("#define %.*s_adapt_type %.*s_adapt_tdf_type", bufmt(decl->name), bufmt(decl->name));
 }
 // }}}
 
-void emit_top(void* _, declaration cref decl, bufsl ref tok) {
-    (void)_;
+void emit_top(void* _, declaration cref decl, bufsl ref tok)
+{   (void)_;
     (void)tok;
-    emit_decl(decl);
+
+    if (decl->is_inline) return;
+
+    switch (decl->spec) {
+    case SPEC_STATIC: // internal linkage (not visible)
+    default: // others are unreachable
+        return;
+
+    case SPEC_EXTERN: // external linkage
+    case SPEC_NONE: // default at file scope is external linkage
+        emit_extern(decl);
+        fputc('\n', result);
+        return;
+
+    case SPEC_TYPEDEF:
+        emit_typedef(decl);
+        fputc('\n', result);
+        return;
+    }
 }
 
 // random things {{{
-void cleanup(void) {
+void cleanup(void)
+{
     ldel(&ls);
-    if (result && stdout != result) fclose(result); // yyy
+    if (result && stdout != result) fclose(result);
+
+    free(seen.funs.ptr);
+    free(seen.tags.ptr);
+    free(seen.tdfs.ptr);
+    free(seen.objs.ptr);
 }
 
-bufsl name_space(char ref name) {
+bufsl name_space(char ref name)
+{
     bufsl itns = {.ptr= name, .len= strlen(name)};
     char* basename = strrchr(itns.ptr, '/');
     if (basename) itns.ptr = basename+1;
@@ -386,7 +601,8 @@ bufsl name_space(char ref name) {
 // }}}
 
 // do-s {{{
-int do_merge(int argc, char** argv) {
+int do_merge(int argc, char** argv)
+{
     char** const first = (--argc, ++argv);
     result = stdout;
     atexit(cleanup);
@@ -432,7 +648,8 @@ int do_merge(int argc, char** argv) {
     return EXIT_SUCCESS;
 }
 
-int do_prepare(int argc, char** argv) {
+int do_prepare(int argc, char** argv)
+{
     char* file = (argc--, *argv++);
     result = stdout;
     atexit(cleanup);
@@ -469,25 +686,31 @@ int do_prepare(int argc, char** argv) {
     bufsl tok = lext(&ls);
     parse_decl_state ps = {.ls= &ls, .on= emit_top};
     while (tok.len) if ((tok = parse_declaration(&ps, tok)).len) switch (*tok.ptr) {
-    case '{':
-        for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
-            bool c = '}' == *tok.ptr;
-            if (!tok.len || (!depth && c)) break;
-            depth+= ('{' == *tok.ptr)-c;
-        }
-        tok = lext(&ls);
-        ps.base = (declaration){0}; // reset
-        continue;
-
     case '=':
-        tok = parse_expression(&(parse_expr_state){.ls= &ls}, lext(&ls));
+        tok = lext(&ls);
+        if (tok.len && '{' == *tok.ptr) {
+
+    case '{':
+            for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
+                bool c = '}' == *tok.ptr;
+                if (!tok.len || (!depth && c)) break;
+                depth+= ('{' == *tok.ptr)-c;
+            }
+            tok = lext(&ls);
+
+            if (!tok.len || !strchr(",;", *tok.ptr)) {
+                ps.base = (declaration){0}; // reset
+                continue;
+            }
+
+        } else tok = parse_expression(&(parse_expr_state){.ls= &ls, .disallow_comma= true}, tok);
+
         if (tok.len && ';' == *tok.ptr)
     case ';':
             ps.base = (declaration){0}; // reset
         // fall through
     case ',':
         tok = lext(&ls);
-        continue;
     }
 
     bufsl thisns = name_space(file);
@@ -508,14 +731,21 @@ int do_prepare(int argc, char** argv) {
         fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.tdfs.ptr[k].name));
         fprintf(result, "    , .kind= ITEM_TYPEDEF },\n");
     }
-    if (seen.objs.len) errdie("NIY (other kinds of static variable declaration)");
+    for (size_t k = 0; k < seen.objs.len; k++) {
+        errdie("NIY (other kinds of static variable declaration)");
+        fprintf(result, "    { .name= \"%.*s\"\n", bufmt(seen.objs.ptr[k].name));
+        fprintf(result, "    , .type= &%.*s_adapt_type\n", bufmt(seen.objs.ptr[k].name));
+        fprintf(result, "    , .as.object= &%.*s\n", bufmt(seen.objs.ptr[k].name));
+        fprintf(result, "    , .kind= ITEM_VARIABLE },\n");
+    }
     fprintf(result, "};\n");
 
     return EXIT_SUCCESS;
 }
 // }}}
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     char* prog = (argc--, *argv++);
     if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) {
         fprintf(stderr,

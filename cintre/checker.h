@@ -37,7 +37,8 @@ typedef struct compile_state {
 struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
 
 // check utils {{{
-bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src) {
+bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src)
+{
     // yeah no idea either that'll do for now until it actually shows too much
 #   define _are_types_same(_d, _s) (  \
         (_d)->tyty == (_s)->tyty &&   \
@@ -99,7 +100,8 @@ bool _are_types_compatible(struct adpt_type cref dst, struct adpt_type cref src)
 #   undef _are_types_same
 }
 
-bool _is_expr_lvalue(expression cref expr) {
+bool _is_expr_lvalue(expression cref expr)
+{
     // yeah no idea either that'll do for now until it actually shows too much
     switch (expr->kind) {
     case ATOM:;
@@ -119,7 +121,8 @@ bool _is_expr_lvalue(expression cref expr) {
 struct slot;
 void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot);
 
-struct adpt_type const* check_expression(compile_state ref cs, expression ref expr) {
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr)
+{
 #   define fail(...)  return notif(__VA_ARGS__), NULL
 #   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) fail("here")
 #   define isint(__ty)  (TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= TYPE_ULONG)

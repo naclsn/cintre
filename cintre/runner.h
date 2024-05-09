@@ -30,7 +30,8 @@ void run(run_state ref rs, bytecode const code);
 
 // ---
 
-void run(run_state ref rs, bytecode const code) {
+void run(run_state ref rs, bytecode const code)
+{
     size_t a, b, c;
 #   define imm(nm) for (                        \
         unsigned xx = (nm = code.ptr[++k], 0);  \

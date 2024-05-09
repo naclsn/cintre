@@ -23,6 +23,11 @@
 /// #define on_lsys(pth) printf("%.*s\n", (unsigned)pth.len, pth.ptr);
 /// ```
 
+// TODO: rewrite
+// - use C streams rather than buffers
+// - allocate tokens in a single pool
+// - proper way to recycle a single token
+
 #ifndef CINTRE_LEXER_H
 #define CINTRE_LEXER_H
 
@@ -73,7 +78,8 @@ bufsl lext(lex_state ref ls);
 
 // ---
 
-buf _lex_read_all(FILE ref f) {
+buf _lex_read_all(FILE ref f)
+{
     buf r = {0};
     if (!fseek(f, 0, SEEK_END)) {
         r.ptr = malloc(r.len = r.cap = ftell(f));
@@ -88,7 +94,8 @@ buf _lex_read_all(FILE ref f) {
     return r;
 }
 
-void ldef(lex_state ref ls, char cref name, char cref value) {
+void ldef(lex_state ref ls, char cref name, char cref value)
+{
     struct _lex_state_macro* it = dyarr_push(&ls->macros);
     if (!it) exitf("OOM");
     *it = (struct _lex_state_macro){0};
@@ -96,14 +103,16 @@ void ldef(lex_state ref ls, char cref name, char cref value) {
     it->repl.len = strlen(it->repl.ptr = value);
 }
 
-void linc(lex_state ref ls, char cref path) {
+void linc(lex_state ref ls, char cref path)
+{
     bufsl* it = dyarr_push(&ls->include_paths);
     if (!it) exitf("OOM");
     it->ptr = path;
     it->len = strlen(path);
 }
 
-void lini(lex_state ref ls, char cref entry) {
+void lini(lex_state ref ls, char cref entry)
+{
     FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
     if (!f) exitf("Could not open entry file %s", entry);
     struct _lex_state_source* src = dyarr_push(&ls->sources);
@@ -124,7 +133,8 @@ void lini(lex_state ref ls, char cref entry) {
     ls->sidx = 0;
 }
 
-void ldel(lex_state ref ls) {
+void ldel(lex_state ref ls)
+{
     for (size_t k = 0; k < ls->sources.len; k++) {
         free((void*)ls->sources.ptr[k].file);
         dyarr_clear(&ls->sources.ptr[k].text);
@@ -138,7 +148,8 @@ void ldel(lex_state ref ls) {
     dyarr_clear(&ls->workbufs);
 }
 
-bufsl llne(lex_state cref ls) {
+bufsl llne(lex_state cref ls)
+{
     bufsl r = {.ptr= ls->slice.ptr};
     if (!ls->slice.len) return r;
     buf cref ins = &ls->sources.ptr[ls->sidx].text;
@@ -149,7 +160,8 @@ bufsl llne(lex_state cref ls) {
 }
 
 // preproc expression helpers {{{
-static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr) {
+static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
+{
 #   define nx() (++xpr->ptr, --xpr->len)
 #   define at() (*xpr->ptr)
     long r = 0;
@@ -235,7 +247,8 @@ enum _lex_operator {
     _lex_opadd, _lex_opsub,
     _lex_opmul, _lex_opdiv, _lex_oprem,
 };
-static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long const rhs) {
+static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long const rhs)
+{
     switch (op) {
     case _lex_oplor:  return lhs || rhs;
     case _lex_opland: return lhs && rhs;
@@ -258,7 +271,8 @@ static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long
     default: return 0;
     }
 }
-static long _lex_oprxpr(lex_state cref ls, bufsl ref xpr, long lhs, enum _lex_operator lop) {
+static long _lex_oprxpr(lex_state cref ls, bufsl ref xpr, long lhs, enum _lex_operator lop)
+{
     long rhs = 0;
     enum _lex_operator nop;
 again:
@@ -302,7 +316,8 @@ again:
     return nop ? _lex_exexpr(lhs, nop, rhs) : lhs;
 }
 // }}}
-long lxpr(lex_state cref ls, bufsl ref xpr) {
+long lxpr(lex_state cref ls, bufsl ref xpr)
+{
     long first = _lex_atmxpr(ls, xpr);
     if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
     if ('?' == at() && nx()) {
@@ -316,7 +331,8 @@ long lxpr(lex_state cref ls, bufsl ref xpr) {
 #   undef nx
 }
 
-bufsl lext(lex_state ref ls) {
+bufsl lext(lex_state ref ls)
+{
 #   define nx() (ls->line+= --ls->slice.len && '\n' == *ls->slice.ptr && !ls->macro_depth, ++ls->slice.ptr)
 #   define at() (*ls->slice.ptr)
 #   define has(n) ((n) <= ls->slice.len)

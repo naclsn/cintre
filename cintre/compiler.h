@@ -82,7 +82,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 #define at(__slt)  ((__slt)->loc - cs->vsp)
 #define atv(__slt) ((__slt)->as.variable - cs->vsp)
 
-unsigned _l2(size_t n) {
+unsigned _l2(size_t n)
+{
     for (unsigned k = 0; k < 8*sizeof n; k++) {
         if (n&1) return k;
         n>>= 1;
@@ -112,7 +113,8 @@ unsigned _l2(size_t n) {
     }                                                                \
 } while (0)
 
-void _alloc_slot(compile_state ref cs, struct slot ref slot) {
+void _alloc_slot(compile_state ref cs, struct slot ref slot)
+{
     slot->codeat = cs->res.len;
     slot->end = cs->vsp;
     if (slot->ty->size) {
@@ -122,33 +124,39 @@ void _alloc_slot(compile_state ref cs, struct slot ref slot) {
     slot->loc = cs->vsp;
 }
 
-void _cancel_slot(compile_state ref cs, struct slot cref slot) {
+void _cancel_slot(compile_state ref cs, struct slot cref slot)
+{
     cs->res.len = slot->codeat;
     cs->vsp = slot->end;
 }
 
-void _rewind_slot(compile_state ref cs, struct slot cref slot) {
+void _rewind_slot(compile_state ref cs, struct slot cref slot)
+{
     if (slot->end != cs->vsp)
         _emit_instr_w_opr(0x0d, slot->end - cs->vsp);
     cs->vsp = slot->end;
 }
 
-void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data) {
+void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data)
+{
     _emit_instr_w_opr(0x1d, dst, width);
     unsigned char* dt = dyarr_insert(&cs->res, cs->res.len, width);
     if (!dt) exitf("OOM");
     memcpy(dt, data, width);
 }
 
-void _emit_move(compile_state ref cs, size_t dst, size_t width, size_t src) {
+void _emit_move(compile_state ref cs, size_t dst, size_t width, size_t src)
+{
     _emit_instr_w_opr(0x1f, dst, width, src);
 }
 
-void _emit_write(compile_state ref cs, size_t ptr_dst_slt, struct slot cref slot_src) {
+void _emit_write(compile_state ref cs, size_t ptr_dst_slt, struct slot cref slot_src)
+{
     _emit_instr_w_opr(0x2f, ptr_dst_slt, slot_src->ty->size, at(slot_src));
 }
 
-void _emit_read(compile_state ref cs, size_t ptr_src_slt, struct slot cref slot_dst) {
+void _emit_read(compile_state ref cs, size_t ptr_src_slt, struct slot cref slot_dst)
+{
     _emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, at(slot_dst));
 }
 
@@ -156,11 +164,13 @@ void _emit_read(compile_state ref cs, size_t ptr_src_slt, struct slot cref slot_
 //    _emit_data(cs, at(slot), slot->ty->size, (unsigned char*)&slot->as.value.ul);
 //}
 
-void _emit_call_base(compile_state ref cs, unsigned argc, size_t ret, size_t fun) {
+void _emit_call_base(compile_state ref cs, unsigned argc, size_t ret, size_t fun)
+{
     _emit_instr_w_opr(argc<<4 | 0xc, ret, fun);
 }
 
-void _emit_call_arg(compile_state ref cs, size_t argv) {
+void _emit_call_arg(compile_state ref cs, size_t argv)
+{
     unsigned count = 0;
     if (argv) for (size_t it = argv; it; count++) it>>= 7;
     else count = 1;
@@ -199,11 +209,13 @@ enum _arith_w {
     _oprw_d= 0xd
 };
 
-void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size_t dst, size_t a, size_t b) {
+void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size_t dst, size_t a, size_t b)
+{
     _emit_instr_w_opr(aop+w, dst, a, b);
 }
 
-enum _arith_w _slot_arith_w(struct slot cref slot) {
+enum _arith_w _slot_arith_w(struct slot cref slot)
+{
     switch (slot->ty->tyty) {
     case TYPE_CHAR:   return _oprw_8;
     case TYPE_UCHAR:  return _oprw_8;
@@ -220,7 +232,8 @@ enum _arith_w _slot_arith_w(struct slot cref slot) {
     }
 }
 
-size_t _slot_arith_v(struct slot cref slot) {
+size_t _slot_arith_v(struct slot cref slot)
+{
     switch (slot->ty->tyty) {
     case TYPE_CHAR:   return slot->as.value.c;
     case TYPE_UCHAR:  return slot->as.value.uc;
@@ -237,7 +250,8 @@ size_t _slot_arith_v(struct slot cref slot) {
     }
 }
 
-void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cref small_src) {
+void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cref small_src)
+{
     // unsigned -> unsigned: zero extend
     // signed   -> signed:   sign extend
     // unsigned -> signed:   zero extend
@@ -284,7 +298,8 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
 
 /// makes a slot "pysical", ie if it was a value, it will be inserted as data
 /// and marked as used (but if it was a variable, it will stay as is)
-void _materialize_slot(compile_state ref cs, struct slot ref slot) {
+void _materialize_slot(compile_state ref cs, struct slot ref slot)
+{
     if (_slot_value == slot->usage) {
         _emit_data(cs, at(slot), slot->ty->size, slot->as.value.bytes); // (yyy: endianness)
         slot->usage = _slot_used;
@@ -293,7 +308,8 @@ void _materialize_slot(compile_state ref cs, struct slot ref slot) {
 
 /// fits an expression to a slot by compiling into it with any necessary
 /// conversion step (allocates and de-allocates a slot if needed)
-void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot ref slot) {
+void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot ref slot)
+{
     // so we have `slot` and `expr` of two types
     // compatibility should already be ensured by `check_expression`
 
@@ -449,7 +465,8 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
 }
 // }}}
 
-void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot) {
+void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot)
+{
     // work variables that are better function-scoped and initialized early
     struct slot tmp = {0};
     enum _arith_op op = 0;

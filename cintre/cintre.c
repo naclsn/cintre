@@ -40,7 +40,8 @@ typedef struct cintre_state {
     dyarr(struct adpt_type) ty_work;
 } cintre_state;
 
-void free_cintre_state(cintre_state ref gs) {
+void free_cintre_state(cintre_state ref gs)
+{
     ldel(&gs->lexr);
 
     for (size_t k = 0; k < gs->locs.len; k++)
@@ -66,7 +67,8 @@ void free_cintre_state(cintre_state ref gs) {
     free(gs->comp.chk_work.ptr); // xxx: annoying
 }
 
-bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
+bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
+{
     cs->chk_work.len = 0; // xxx: annoying
     struct slot slot = {.ty= check_expression(cs, expr)};
     if (!slot.ty) return false;
@@ -97,7 +99,8 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr) {
 #include <readline/history.h>
 #include <signal.h>
 #define hist_file ".ignore/history"
-void _prompt_cc(int sigint) {
+void _prompt_cc(int sigint)
+{
     rl_crlf();
     rl_end_of_history(0, 0);
     rl_beg_of_line(0, 0);
@@ -105,7 +108,8 @@ void _prompt_cc(int sigint) {
     rl_forced_update_display();
     signal(sigint, _prompt_cc);
 }
-bool prompt(char const* prompt, char** res) {
+bool prompt(char const* prompt, char** res)
+{
     if (!*res) {
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);
@@ -124,7 +128,8 @@ bool prompt(char const* prompt, char** res) {
 }
 #undef hist_file
 #else
-bool prompt(char const* prompt, char** res) {
+bool prompt(char const* prompt, char** res)
+{
     static char r[1024];
     *res = r;
     printf("%s", prompt);
@@ -140,7 +145,8 @@ bool prompt(char const* prompt, char** res) {
 static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
 #endif
 
-struct adpt_item const* lookup(void* usr, bufsl const name) {
+struct adpt_item const* lookup(void* usr, bufsl const name)
+{
     cintre_state cref gs = usr;
     for (size_t k = 0; k < gs->locs.len; k++) {
         struct adpt_item const* const it = gs->locs.ptr+k;
@@ -154,7 +160,8 @@ struct adpt_item const* lookup(void* usr, bufsl const name) {
     return NULL;
 }
 
-bool is_decl_keyword(cintre_state cref gs, bufsl const tok) {
+bool is_decl_keyword(cintre_state cref gs, bufsl const tok)
+{
     if (bufis(tok, "char")     ||
         bufis(tok, "short")    ||
         bufis(tok, "int")      ||
@@ -176,7 +183,8 @@ bool is_decl_keyword(cintre_state cref gs, bufsl const tok) {
 
 /// allocates using `gs->ty_work`; on failure, it is safe to set the length of
 /// it back to what it was to free wip temporaries, it should not cause a leak
-struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type cref ty) {
+struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type cref ty)
+{
     switch (ty->kind) {
         struct adpt_type* r;
 
@@ -350,7 +358,8 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
 // }}}
 
 // accept parsed input {{{
-void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
+void accept_decl(void ref usr, declaration cref decl, bufsl ref tok)
+{
     cintre_state ref gs = usr;
     (void)tok;
 
@@ -388,7 +397,8 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok) {
         }, sizeof *it);
 }
 
-void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
+void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
+{
     cintre_state ref gs = usr;
 
     // NOTE: thinking about moving this xcmd stuff in its own function, in
@@ -499,7 +509,8 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok) {
 } // accept_expr
 // }}}
 
-int main(void) {
+int main(void)
+{
     printf("Type `;help` for a list of command\n");
 
     static cintre_state _gs = {
@@ -527,6 +538,7 @@ int main(void) {
 
                 if (1 == tok.len && '=' == *tok.ptr) {
                     // yyy: trust me bro, it's ok to do that here
+                    // XXX: lexer_recycle
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
                     char cref name = dyarr_top(&gs->locs)->name;
                     gs->expr.disallow_comma = true;

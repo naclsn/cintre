@@ -33,7 +33,8 @@ void print_slot(FILE ref strm, struct slot cref slt);
 
 // ---
 
-void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
+void _print_decl_type(FILE ref strm, struct decl_type cref ty)
+{
     for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
     case QUAL_END:                                                  break;
     case QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
@@ -116,7 +117,8 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty) {
     }
 }
 
-void print_decl(FILE ref strm, declaration cref decl) {
+void print_decl(FILE ref strm, declaration cref decl)
+{
     switch (decl->spec) {
     case SPEC_NONE:                                               break;
     case SPEC_TYPEDEF:  fprintf(strm, "\x1b[36mtypedef\x1b[m ");  break;
@@ -130,7 +132,8 @@ void print_decl(FILE ref strm, declaration cref decl) {
     _print_decl_type(strm, &decl->type);
 }
 
-void print_expr(FILE ref strm, expression cref expr, unsigned const depth) {
+void print_expr(FILE ref strm, expression cref expr, unsigned const depth)
+{
     static char cref op_kind_names[] = {"ATOM", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_CAST", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
     for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
 
@@ -193,7 +196,8 @@ void print_expr(FILE ref strm, expression cref expr, unsigned const depth) {
     }
 }
 
-void print_type(FILE ref strm, struct adpt_type cref ty) {
+void print_type(FILE ref strm, struct adpt_type cref ty)
+{
     if (!ty) {
         fprintf(strm, "\x1b[31m(nil)\x1b[m");
         return;
@@ -248,7 +252,8 @@ void print_type(FILE ref strm, struct adpt_type cref ty) {
     }
 }
 
-void print_code(FILE ref strm, bytecode const code) {
+void print_code(FILE ref strm, bytecode const code)
+{
     for (size_t k = 0; k < code.len; k++) {
         size_t pk = k;
         fprintf(strm, "%5zu   ", k);
@@ -374,7 +379,8 @@ void print_code(FILE ref strm, bytecode const code) {
     }
 }
 
-void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth) {
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth)
+{
     if (!depth) {
         fprintf(strm, "%s: ", it->name);
         print_type(strm, it->type);
@@ -457,7 +463,8 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     fprintf(strm, "\n");
 }
 
-void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count) {
+void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, size_t const count)
+{
     size_t const sz = sizeof rs->stack; // (xxx: sizeof stack)
 
     size_t in_var_size = 0;
@@ -500,7 +507,8 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
 #   undef col_n
 }
 
-void print_slot(FILE ref strm, struct slot cref slot) {
+void print_slot(FILE ref strm, struct slot cref slot)
+{
     fprintf(strm, "slot ");
     print_type(strm, slot->ty);
     switch (slot->usage) {

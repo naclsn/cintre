@@ -14,7 +14,7 @@ CFLAGS := -O2
 
 #---
 
-$(build)/$(prog): $(build)/c-$(prog).c $(addprefix $(build)/,$(objs)); $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) -DUSE_READLINE $(shell pkg-config readline --cflags --libs)
+$(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c; $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) -DUSE_READLINE $(shell pkg-config readline --cflags --libs)
 $(build)/c-$(prog).c: $(build)/a-standard.h $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
 $(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -o $@ $(CFLAGS-a-standard)
 

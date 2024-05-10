@@ -232,6 +232,11 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
         // XXX: for now only support via looking up the tag
         //      (because otherwise will have to do the layout for size/align)
         return notif("NIY: struct/union from annon"), NULL;
+        // NOTE: the layout of the structure can be devised arbitrarly (as in,
+        // sane, but doesn't have to follow the rules of platform's cc) because
+        // runtime-defined structures would not (should not) be eg. passed to
+        // functions and such; they only live in the REPL and forcing them
+        // outside is just "UB, idc, you did this"
 
         if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
         return memcpy(r, &(struct adpt_type){

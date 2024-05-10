@@ -1,12 +1,14 @@
 #include "run"
 
-void show(void ref usr, expression ref expr, bufsl ref tok) {
+void show(void ref usr, expression ref expr, bufsl ref tok)
+{
     lex_state cref ls = usr;
     print_expr(stdout, expr, 0);
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
-void run_test(char* file) {
+void run_test(char* file)
+{
     lex_state ls = {0};
     lini(&ls, file);
 

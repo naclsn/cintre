@@ -1,14 +1,16 @@
 #include "run"
 #include "../cintre/parser.h"
 
-void show(void ref usr, declaration cref decl, bufsl ref tok) {
+void show(void ref usr, declaration cref decl, bufsl ref tok)
+{
     print_decl(stdout, decl);
     printf("\n");
     lex_state cref ls = usr;
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
-void run_test(char* file) {
+void run_test(char* file)
+{
     lex_state ls = {0};
     lini(&ls, file);
 

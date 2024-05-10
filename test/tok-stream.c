@@ -1,6 +1,7 @@
 #include "run"
 
-void run_test(char* file) {
+void run_test(char* file)
+{
     lex_state ls = {0};
     lini(&ls, file);
 

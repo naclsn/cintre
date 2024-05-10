@@ -1,7 +1,8 @@
 #include "run"
 
 // fake lookup {{{
-struct adpt_item const* test_lookup(void* _, bufsl const name) {
+struct adpt_item const* test_lookup(void* _, bufsl const name)
+{
     static int si = -1;
     static unsigned ui = 1;
     static bufsl ab = {.ptr= "coucou", .len= 6};
@@ -83,7 +84,8 @@ struct adpt_item const* test_lookup(void* _, bufsl const name) {
 }
 // }}}
 
-void check(void ref usr, expression ref expr, bufsl ref tok) {
+void check(void ref usr, expression ref expr, bufsl ref tok)
+{
     struct adpt_type cref ty = check_expression(&(compile_state){.lookup= test_lookup}, expr);
     print_type(stdout, ty);
     printf("\n");
@@ -91,7 +93,8 @@ void check(void ref usr, expression ref expr, bufsl ref tok) {
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
-void run_test(char* file) {
+void run_test(char* file)
+{
     lex_state ls = {0};
     lini(&ls, file);
 

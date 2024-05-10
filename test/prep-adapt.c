@@ -1,41 +1,50 @@
+#ifndef _PREP_ADAPT_DOTHETHING
 #include "run"
 
 #define main(c, v) _preparer_main(c, v)
-# include "../cintre/preparer.c"
-#undef main
+#include "../cintre/preparer.c"
 
-#define main(c, v) _decl_list_main(c, v)
-#define run_test(f) decl_list(f)
-# include "decl-list.c"
-#undef run_test
-#undef main
+#define stacat(__name, ...)                                                   \
+    size_t __name##_len = 0;                                                  \
+    for (char const** _it = (char const*[]){__VA_ARGS__, NULL}; *_it; ++_it)  \
+        __name##_len+= strlen(*_it);                                          \
+    char __name[__name##_len+1]; __name[0] = '\0';                            \
+    for (char const** _it = (char const*[]){__VA_ARGS__, NULL}; *_it; ++_it)  \
+        strcat(__name, *_it);
 
-#include <sys/wait.h>
-#include <unistd.h>
+void run_test(char* file)
+{
+    char cref name = strrchr(file, '/') ? strrchr(file, '/')+1 : file;
 
-void run_test(char* file) {
-    // bacially: `$ pr file -o- | decl-list -`
-    int r_w[2], c;
-    if (pipe(r_w) < 0) exitf("Could not pipe");
-    if ((c = fork()) < 0) exitf("Could not fork");
+    stacat(src, "/tmp/cintre-test-", name, ".c");
+    stacat(bin, "/tmp/cintre-test-", name, ".exe");
 
-    if (!c) {
-        dup2(r_w[1], STDOUT_FILENO); // stdout to write end
-        close(r_w[0]); // unused read end
-        close(r_w[1]);
+    char ab[strlen(src)-strlen("/tmp/")+1];
+    strcpy(ab, src+strlen("/tmp/"));
+    bufsl const _ns = name_space(ab);
+    char ns[_ns.len+1];
+    memcpy(ns, _ns.ptr, _ns.len);
+    ns[_ns.len] = '\0';
 
-        do_prepare(1, (char*[]){file, NULL});
+    stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DOTHETHING=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
 
-        exit(0);
-    }
+    do_prepare(3, (char*[]){file, "-o", src, NULL});
+    extern int execv(char const* path, char* const argv[]);
+    printf("+++ %s\n", com);
+    if (!system(com)) execv(bin, (char*[]){NULL});
+}
 
-    else {
-        dup2(r_w[0], STDIN_FILENO); // read end to stdin
-        close(r_w[0]);
-        close(r_w[1]); // unused write end
+#else // _PREP_ADAPT_DOTHETHING
 
-        decl_list("-");
+#include "prints.h"
 
-        wait(NULL);
+int main(void)
+{
+    for (size_t k = 0; k < countof(_PREP_ADAPT_DOTHETHING); k++) {
+        struct adpt_item cref it = _PREP_ADAPT_DOTHETHING+k;
+        //printf("%s: ", );
+        print_item(stdout, it);
     }
 }
+
+#endif // _PREP_ADAPT_DOTHETHING

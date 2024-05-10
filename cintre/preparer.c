@@ -19,7 +19,8 @@ FILE* result = NULL;
 int indent = 0;
 
 #ifdef LOC_NOTIF
-# define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
+//# define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
+# define EMIT_HERE fprintf(result, " /*%s(" _HERE_XSTR(__LINE__) ")*/ ", __func__)
 #else
 # define EMIT_HERE (void)0
 #endif
@@ -239,7 +240,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
     case KIND_FUN:
         indented ("%s{", in_decl ? "" : "(struct adpt_type)") {
             emitln(".size= sizeof(void(*)()),");
-            emitln(".align= alignof(void(*)()),");
+            emitln(".align= sizeof(void(*)()),"); // xxx: can't `alignof` here with my janky version of `alignof`
             emitln(".tyty= TYPE_FUN,");
             indented (".info.fun= {") {
                 emit(".ret= &");
@@ -469,7 +470,8 @@ int do_merge(int argc, char** argv)
 
 int do_prepare(int argc, char** argv)
 {
-    char* file = (argc--, *argv++);
+    char* infile = (argc--, *argv++);
+    char* outfile = NULL;
     result = stdout;
     atexit(cleanup);
 
@@ -492,7 +494,7 @@ int do_prepare(int argc, char** argv)
         case 'o':
             val = arg[2] ? arg+2 : (argc--, *argv++);
             if (!val) result = NULL;
-            else if ('-' != val[0]) result = fopen(val, "wb");
+            else if ('-' != val[0]) result = fopen(outfile = val, "wb");
             break;
         }
     }
@@ -501,7 +503,7 @@ int do_prepare(int argc, char** argv)
     emitln("#include \"adapter.h\"");
     emit_empty();
 
-    lini(&ls, file);
+    lini(&ls, infile);
 
     bufsl tok = lext(&ls);
     parse_decl_state ps = {.ls= &ls, .on= emit_top};
@@ -533,7 +535,7 @@ int do_prepare(int argc, char** argv)
         tok = lext(&ls);
     }
 
-    bufsl thisns = name_space(file);
+    bufsl const thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%.*s[] = {", bufmt(thisns)) {
         for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_VALUE, .as.function= %.*s_adapt_call}", bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name));
         for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%.*s\", .type= &%.*s_adapt_tag_type, .kind= ITEM_TYPEDEF},", bufmt(seen.tags.ptr[k].name), bufmt(seen.tags.ptr[k].name));

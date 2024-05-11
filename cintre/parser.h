@@ -711,9 +711,12 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             declaration cpy = *decl;
             _parse_decl_ator(ps, capt, &cpy);
             return;
+        case '[':
+            _parse_decl_post(ps, capt, decl);
+            return;
         }
 
-        _parse_decl_post(ps, capt, decl);
+        report_lex_locate(ps->ls, "Expected declarator, got \"%.*s\"", bufmt(ps->tok));
         return;
     } // for-switch tok
 

@@ -557,6 +557,10 @@ int do_prepare(int argc, char** argv)
         // fall through
     case ',':
         tok = lext(&ls);
+        continue;
+
+    default:
+        return EXIT_FAILURE;
     }
 
     bufsl const thisns = name_space(outfile ? outfile : infile);

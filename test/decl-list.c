@@ -18,18 +18,25 @@ void run_test(char* file)
     parse_decl_state ps = {.ls= &ls, .usr= &ls, .on= show};
     while (tok.len) if ((tok = parse_declaration(&ps, tok)).len)
         switch (*tok.ptr) {
-        case '{':
-            for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
-                bool c = '}' == *tok.ptr;
-                if (!tok.len || (!depth && c)) break;
-                depth+= ('{' == *tok.ptr)-c;
-            }
-            tok = lext(&ls);
-            ps.base = (declaration){0}; // reset
-            continue;
-
         case '=':
-            tok = parse_expression(&(parse_expr_state){.ls= &ls, .disallow_comma= true}, lext(&ls));
+            tok = lext(&ls);
+            if (tok.len && '{' == *tok.ptr) {
+
+        case '{':
+                for (unsigned depth = 0; (tok = lext(&ls)).len; ) {
+                    bool c = '}' == *tok.ptr;
+                    if (!tok.len || (!depth && c)) break;
+                    depth+= ('{' == *tok.ptr)-c;
+                }
+                tok = lext(&ls);
+
+                if (!tok.len || !strchr(",;", *tok.ptr)) {
+                    ps.base = (declaration){0}; // reset
+                    continue;
+                }
+
+            } else tok = parse_expression(&(parse_expr_state){.ls= &ls, .disallow_comma= true}, tok);
+
             if (tok.len && ';' == *tok.ptr)
         case ';':
                 ps.base = (declaration){0}; // reset

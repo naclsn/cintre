@@ -1,4 +1,4 @@
-#ifndef _PREP_ADAPT_DOTHETHING
+#ifndef _PREP_ADAPT_DUMP_NS
 #include "run"
 
 #define main(c, v) _preparer_main(c, v)
@@ -26,25 +26,28 @@ void run_test(char* file)
     memcpy(ns, _ns.ptr, _ns.len);
     ns[_ns.len] = '\0';
 
-    stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DOTHETHING=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
+    stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
+    printf("com: ");
+    puts(com);
 
     do_prepare(3, (char*[]){file, "-o", src, NULL});
+    fflush(result);
     extern int execv(char const* path, char* const argv[]);
-    printf("+++ %s\n", com);
     if (!system(com)) execv(bin, (char*[]){NULL});
 }
 
-#else // _PREP_ADAPT_DOTHETHING
+#else // _PREP_ADAPT_DUMP_NS
 
 #include "prints.h"
 
 int main(void)
 {
-    for (size_t k = 0; k < countof(_PREP_ADAPT_DOTHETHING); k++) {
-        struct adpt_item cref it = _PREP_ADAPT_DOTHETHING+k;
-        //printf("%s: ", );
-        print_item(stdout, it);
+    for (size_t k = 0; k < countof(_PREP_ADAPT_DUMP_NS); k++) {
+        struct adpt_item cref it = _PREP_ADAPT_DUMP_NS+k;
+        printf("%s: ", it->name);
+        print_type(stdout, it->type);
+        printf(";\n");
     }
 }
 
-#endif // _PREP_ADAPT_DOTHETHING
+#endif // _PREP_ADAPT_DUMP_NS

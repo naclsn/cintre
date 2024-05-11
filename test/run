@@ -15,7 +15,7 @@ case $2 in
   *)      cflags="$cflags -DLOC_NOTIF"; shift; doexec=1;;
 esac
 
-does cc $cflags $srce.c -o $prog || exit $?
+does ${CC:-cc} $cflags $srce.c -o $prog || exit $?
 test -n "$doexec" && does exec $prog "$@"
 
 set -o pipefail

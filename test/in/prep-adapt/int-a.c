@@ -1,1 +1,1 @@
-int a(void);
+extern int a(void), aa, *aaa;

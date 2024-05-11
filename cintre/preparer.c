@@ -19,17 +19,17 @@ FILE* result = NULL;
 int indent = 0;
 
 #ifdef LOC_NOTIF
-//# define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
-# define EMIT_HERE fprintf(result, " /*%s(" _HERE_XSTR(__LINE__) ")*/ ", __func__)
+# define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
+//# define EMIT_HERE fprintf(result, " /*%s(" _HERE_XSTR(__LINE__) ")*/ ", __func__)
 #else
 # define EMIT_HERE (void)0
 #endif
 
 /// last `emit` of an indented should not be an `emitln` (so a plain `emit`)
-#define indented(...)  for (bool _once = (++indent, emitln(__VA_ARGS__), true); _once; _once = (--indent, fprintf(result, "\n%*s", indent*4, ""), false))
-#define emit(...)  (EMIT_HERE, fprintf(result, __VA_ARGS__))
+#define indented(...)  for (bool _once = (++indent, emitln(__VA_ARGS__), true); _once; _once = (--indent, emit_empty(), false))
+#define emit(...)  (fprintf(result, __VA_ARGS__), EMIT_HERE)
 #define emitln(...)  (emit(__VA_ARGS__), fprintf(result, "\n%*s", indent*4, ""))
-#define emit_empty()  fputc('\n', result)
+#define emit_empty()  fprintf(result, "\n%*s", indent*4, "")
 
 struct {
     dyarr(struct seen_fun { bufsl name; }) funs;
@@ -179,6 +179,23 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
     emitln(";");
 }
 
+/// true if the expression from `emit_adpt_type_val` cannot be used to
+/// initialize a static constant, eg this would not be standard:
+/// ```c
+/// static struct adpt_type const aa_adapt_type = adptb_int_type;
+/// ```
+bool adpt_type_val_needs_pp_define(struct decl_type cref ty) {
+    switch (ty->kind) {
+    case KIND_NOTAG:
+    case KIND_STRUCT:
+    case KIND_UNION:
+    case KIND_ENUM:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /// emit a compile-time &-able value that is the adpt_type for this type
 /// if `in_decl` is true, will not do `(struct adpt_type){..}` but just `{..}`
 void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
@@ -215,14 +232,17 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         else emit("%.*s_adapt_type", bufmt(ty->name));
         break;
 
+    case KIND_ENUM:
+        emit("adptb_int_type");
+        break;
+
     case KIND_STRUCT:
     case KIND_UNION:
-    case KIND_ENUM:
         if (ty->name.len) {
             emit("%.*s_adapt_tag_type", bufmt(ty->name));
             break;
         }
-        exitf("NIY: KIND_STRUCT/UNION/ENUM");
+        exitf("NIY: KIND_STRUCT/UNION");
         break;
 
     case KIND_PTR:
@@ -319,6 +339,8 @@ void emit_extern(declaration cref decl)
         }
         emitln("}");
 
+        emit_named_comps_adpt_type_def(&decl->type.info.fun.ret->type);
+
         struct seen_fun ref fun = dyarr_push(&seen.funs);
         if (!fun) errdie("OOM");
         fun->name = decl->name;
@@ -339,11 +361,13 @@ void emit_extern(declaration cref decl)
         obj->name = decl->name;
     }
 
-    emit_named_comps_adpt_type_def(&decl->type.info.fun.ret->type);
     if (decl->name.len) {
-        emit("static struct adpt_type const %.*s_adapt_type = ", bufmt(decl->name));
+        bool const use_def = adpt_type_val_needs_pp_define(&decl->type);
+        if (use_def) emit("#define %.*s_adapt_type ", bufmt(decl->name));
+        else emit("static struct adpt_type const %.*s_adapt_type = ", bufmt(decl->name));
         emit_adpt_type_val(&decl->type, true);
-        emitln(";");
+        if (use_def) emit_empty();
+        else emitln(";");
     }
 }
 
@@ -355,11 +379,11 @@ void emit_typedef(declaration cref decl)
 
     emit_named_comps_adpt_type_def(&decl->type);
 
-    bool use_def = KIND_STRUCT == decl->type.kind || KIND_UNION == decl->type.kind;
+    bool const use_def = adpt_type_val_needs_pp_define(&decl->type);
     if (use_def) emit("#define %.*s_adapt_tdf_type ", bufmt(decl->name));
     else emit("static struct adpt_type const %.*s_adapt_tdf_type = ", bufmt(decl->name));
     emit_adpt_type_val(&decl->type, true);
-    if (use_def) emitln(" ");
+    if (use_def) emit_empty();
     else emitln(";");
 
     emitln("#define %.*s_adapt_type %.*s_adapt_tdf_type", bufmt(decl->name), bufmt(decl->name));
@@ -537,10 +561,10 @@ int do_prepare(int argc, char** argv)
 
     bufsl const thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%.*s[] = {", bufmt(thisns)) {
-        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_VALUE, .as.function= %.*s_adapt_call}", bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name));
+        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_VALUE, .as.function= %.*s_adapt_call},", bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name));
         for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%.*s\", .type= &%.*s_adapt_tag_type, .kind= ITEM_TYPEDEF},", bufmt(seen.tags.ptr[k].name), bufmt(seen.tags.ptr[k].name));
         for (size_t k = 0; k < seen.tdfs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_TYPEDEF},", bufmt(seen.tdfs.ptr[k].name), bufmt(seen.tdfs.ptr[k].name));
-        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_VARIABLE, .as.object= &%.*s},", bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name));
+        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= ITEM_VALUE, .as.object= &%.*s},", bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name));
         size_t const count = seen.funs.len+seen.tags.len+seen.tdfs.len+seen.objs.len;
         emit("// exporting %zu name%s", count, 1 == count ? "" : "s");
     }

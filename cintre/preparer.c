@@ -346,7 +346,7 @@ void emit_extern(declaration cref decl)
         fun->name = decl->name;
     }
 
-    else {
+    else if (decl->name.len) {
         bool found = false;
         search_namespace (decl->name, seen.objs) {
             found = true;
@@ -360,6 +360,9 @@ void emit_extern(declaration cref decl)
         if (!obj) errdie("OOM");
         obj->name = decl->name;
     }
+
+    // compound definitions with not associated declarator (eg. `struct a { int b; };`)
+    else emit_named_comps_adpt_type_def(&decl->type);
 
     if (decl->name.len) {
         bool const use_def = adpt_type_val_needs_pp_define(&decl->type);

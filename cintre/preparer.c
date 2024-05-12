@@ -45,10 +45,143 @@ struct {
 #define _linked_it_type_fun struct decl_type_param
 #define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = (__info).__ty.first; curr; curr = curr->next)
 
-void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl);
-void emit_decl(declaration cref decl);
+/// ty->name if not empty, otherwise a unique stable temporary name
+/// (allocated on the stack)
+#define have_tag_name_bufsl(__ident, __ty)  \
+    char __ident_##loc_tmp[35];  \
+    if (!(__ty)->name.len) sprintf(__ident_##loc_tmp, "_%016zx_%016zx", (size_t)(__ty), (size_t)ls.slice.ptr);  \
+    bufsl const __ident = !(__ty)->__ident.len ? (bufsl){.ptr= __ident_##loc_tmp, .len= sizeof __ident_##loc_tmp-1} : (__ty)->__ident;
 
-// same (rewrite) {{{
+/// forwards as-is
+void emit_cexpr(expression cref expr)
+{
+    if (ATOM == expr->kind)
+        emit("%.*s", bufmt(expr->info.atom));
+    else errdie("NIY: more complex expression than single literal");
+}
+
+/// emit a compile-time &-able value that is the adpt_type for this type
+/// if `in_decl` is true, will not do `(struct adpt_type){..}` but just `{..}`
+void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
+{
+    switch (ty->kind) {
+    case KIND_NOTAG:;
+        bool _signed = false, _unsigned = false, _short = false, _long = false;
+        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case QUAL_SIGNED:    _signed = true;          break;
+            case QUAL_UNSIGNED:  _unsigned = true;        break;
+            case QUAL_SHORT:     _short = true;           break;
+            case QUAL_LONG:      _long = true;            break;
+            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
+            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            default:;
+        }
+
+        char const* adptb = NULL;
+#       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+        if (nameis("char"))
+            adptb = _signed ? "adptb_schar_type"
+                  : _unsigned ? "adptb_uchar_type"
+                  : "adptb_char_type";
+        if (nameis("int") || !ty->name.len)
+            adptb = _short ? (_unsigned ? "adptb_ushort_type" : "adptb_short_type")
+                  : _long ? (_unsigned ? "adptb_ulong_type" : "adptb_long_type")
+                  : _unsigned ? "adptb_uint_type" : "adptb_int_type";
+        if (nameis("float"))  adptb = "adptb_float_type";
+        if (nameis("double")) adptb = "adptb_double_type";
+        if (nameis("void"))   adptb = "adptb_void_type";
+#       undef nameis
+
+        if (adptb) emit("%s", adptb);
+        else emit("%.*s_adapt_type", bufmt(ty->name));
+        break;
+
+        {
+    case KIND_STRUCT:
+    case KIND_UNION:;
+            have_tag_name_bufsl(name, ty);
+            emit("%.*s_adapt_tag_type", bufmt(name));
+        }
+        break;
+
+    case KIND_ENUM:
+        emit("adptb_int_type");
+        break;
+
+    case KIND_PTR:
+        indented (in_decl ? "{" : "(struct adpt_type){") {
+            emitln(".size= sizeof(void*),");
+            emitln(".align= alignof(void*),");
+            emitln(".tyty= TYPE_PTR,");
+            emit(".info.ptr= &");
+            emit_adpt_type_val(&ty->info.ptr->type, false);
+            emit(",");
+        }
+        emit("}");
+        break;
+
+    case KIND_FUN:
+        indented (in_decl ? "{" : "(struct adpt_type){") {
+            emitln(".size= sizeof(void(*)()),");
+            emitln(".align= sizeof(void(*)()),"); // xxx: can't `alignof` here with my janky version of `alignof`
+            emitln(".tyty= TYPE_FUN,");
+            indented (".info.fun= {") {
+                emit(".ret= &");
+                emit_adpt_type_val(&ty->info.fun.ret->type, false);
+                emitln(",");
+                emit(".params= ");
+                size_t count = 0;
+                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("NULL,");
+                else {
+                    indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
+                        indented ("[%zu]= {", count++) {
+                            emitln(".name= \"%.*s\",", bufmt(curr->decl->name));
+                            emit(".type= &");
+                            emit_adpt_type_val(&curr->decl->type, false);
+                            emit(",");
+                        }
+                        if (curr->next) emitln("},");
+                        else emit("},");
+                    }
+                    emitln("},");
+                }
+                emit(".count= %zu,", count);
+            }
+            emit("},");
+        }
+        emit("}");
+        break;
+
+    case KIND_ARR:
+        indented (in_decl ? "{" : "(struct adpt_type){") {
+            emit(".size= ");
+            emit_adpt_type_val(&ty->info.arr.item->type, false);
+            emit(".size * (");
+            if (!ty->info.arr.count) emit("1"); // yyy: idk
+            else emit_cexpr(ty->info.arr.count);
+            emitln("),");
+
+            emit(".align= ");
+            emit_adpt_type_val(&ty->info.arr.item->type, false);
+            emitln(".align,");
+
+            emitln(".tyty= TYPE_ARR,");
+            indented (".info.arr= {") {
+                emit(".item= &");
+                emit_adpt_type_val(&ty->info.arr.item->type, false);
+                emitln(",");
+                emit(".count= ");
+                if (!ty->info.arr.count) emit("1"); // yyy: idk
+                else emit_cexpr(ty->info.arr.count);
+                emit(",");
+            }
+            emit("},");
+        }
+        emit("}");
+        break;
+    }
+}
+
 /// forwards as-is
 void emit_forward(struct decl_type cref ty, bufsl cref name)
 {
@@ -68,34 +201,71 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
     switch (ty->kind) {
     case KIND_NOTAG: emit("%.*s", bufmt(ty->name)); break;
 
+        {
     case KIND_STRUCT: emit("struct "); if (0)
     case KIND_UNION:  emit("union ");
-        if (ty->name.len) emit("%.*s", bufmt(ty->name));
-        if (-1ul == ty->info.comp.count) break;
+            if (ty->name.len) {
+                emit("%.*s", bufmt(ty->name));
+                if (-1ul == ty->info.comp.count) break;
 
-        bool found = false;
-        search_namespace (ty->name, seen.tags) {
-            found = true;
-            break;
+                bool found = false;
+                search_namespace (ty->name, seen.tags) { found = true; break; }
+                if (found) break;
+            } else {
+                have_tag_name_bufsl(name, ty);
+                emit("%.*s", bufmt(name));
+            }
+
+            indented (" {") for_linked (ty->info,comp) {
+                emit_forward(&curr->decl->type, &curr->decl->name);
+                if (curr->bitw) {
+                    emit(" :");
+                    emit_cexpr(curr->bitw);
+                }
+                if (curr->next) emitln(";");
+                else emit(";");
+            }
+            emit("}");
+
+            if (ty->name.len) {
+                struct seen_tag ref tag = dyarr_push(&seen.tags);
+                if (!tag) errdie("OOM");
+                tag->name = ty->name;
+            }
         }
-        if (found) break;
-
-        indented (" {") for_linked (ty->info,comp) {
-            emit_forward(&curr->decl->type, &curr->decl->name);
-            if (curr->next) emitln(";");
-            else emit(";");
-        }
-        emit("}");
-
-        struct seen_tag ref tag = dyarr_push(&seen.tags);
-        if (!tag) errdie("OOM");
-        tag->name = ty->name;
         break;
 
+        {
     case KIND_ENUM:
-        emit("enum ");
-        if (ty->name.len) emit("%.*s", bufmt(ty->name));
-        errdie("NIY");
+            emit("enum ");
+            if (ty->name.len) {
+                emit("%.*s", bufmt(ty->name));
+
+                bool found = false;
+                search_namespace (ty->name, seen.tags) { found = true; break; }
+                if (found) break;
+            } else {
+                have_tag_name_bufsl(name, ty);
+                emit("%.*s", bufmt(name));
+            }
+
+            indented (" {") for_linked (ty->info,enu) {
+                emit("%.*s", bufmt(curr->name));
+                if (curr->expr) {
+                    emit("= ");
+                    emit_cexpr(curr->expr);
+                }
+                if (curr->next) emitln(",");
+                else emit(",");
+            }
+            emit("}");
+
+            if (ty->name.len) {
+                struct seen_tag ref tag = dyarr_push(&seen.tags);
+                if (!tag) errdie("OOM");
+                tag->name = ty->name;
+            }
+        }
         break;
 
     case KIND_PTR:
@@ -119,10 +289,11 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
         return; // name already done
 
     case KIND_ARR:
-        emit_forward(&ty->info.ptr->type, NULL);
-        if (name) emit("%.*s", bufmt(*name));
-        emit("[?]");
-        errdie("NIY");
+        emit_forward(&ty->info.arr.item->type, NULL);
+        if (name) emit(" %.*s", bufmt(*name));
+        emit("[");
+        if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
+        emit("]");
         return; // name already done
     }
 
@@ -141,8 +312,7 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
             return;
     }
 
-    if (!ty->name.len) errdie("NIY give internal temporary unique name to unnamed struct/union types");
-    bufsl const name = ty->name;
+    have_tag_name_bufsl(name, ty);
 
     for_linked (ty->info,comp) emit_named_comps_adpt_type_def(&curr->decl->type);
 
@@ -150,7 +320,6 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
     char const* const hi_kind = KIND_UNION == ty->kind ? "UNION" : "STRUCT";
 
     emit("static struct adpt_type const %.*s_adapt_tag_type = ", bufmt(name));
-    //emit_adpt_type_val(ty, in_decl: true, def_comp: true);
 
     indented ("{") {
         emitln(".size= sizeof(%s %.*s),", lo_kind, bufmt(name));
@@ -196,105 +365,6 @@ bool adpt_type_val_needs_pp_define(struct decl_type cref ty) {
     }
 }
 
-/// emit a compile-time &-able value that is the adpt_type for this type
-/// if `in_decl` is true, will not do `(struct adpt_type){..}` but just `{..}`
-void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
-{
-    switch (ty->kind) {
-    case KIND_NOTAG:;
-        bool _signed = false, _unsigned = false, _short = false, _long = false;
-        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
-            case QUAL_SIGNED:    _signed = true;          break;
-            case QUAL_UNSIGNED:  _unsigned = true;        break;
-            case QUAL_SHORT:     _short = true;           break;
-            case QUAL_LONG:      _long = true;            break;
-            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
-            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
-            default:;
-        }
-
-        char const* adptb = NULL;
-#       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
-        if (nameis("char"))
-            adptb = _signed ? "adptb_schar_type"
-                  : _unsigned ? "adptb_uchar_type"
-                  : "adptb_char_type";
-        if (nameis("int") || !ty->name.len)
-            adptb = _short ? (_unsigned ? "adptb_ushort_type" : "adptb_short_type")
-                  : _long ? (_unsigned ? "adptb_ulong_type" : "adptb_long_type")
-                  : _unsigned ? "adptb_uint_type" : "adptb_int_type";
-        if (nameis("float"))  adptb = "adptb_float_type";
-        if (nameis("double")) adptb = "adptb_double_type";
-        if (nameis("void"))   adptb = "adptb_void_type";
-#       undef nameis
-
-        if (adptb) emit("%s", adptb);
-        else emit("%.*s_adapt_type", bufmt(ty->name));
-        break;
-
-    case KIND_ENUM:
-        emit("adptb_int_type");
-        break;
-
-    case KIND_STRUCT:
-    case KIND_UNION:
-        if (ty->name.len) {
-            emit("%.*s_adapt_tag_type", bufmt(ty->name));
-            break;
-        }
-        exitf("NIY: KIND_STRUCT/UNION");
-        break;
-
-    case KIND_PTR:
-        indented ("%s{", in_decl ? "" : "(struct adpt_type)") {
-            emitln(".size= sizeof(void*),");
-            emitln(".align= alignof(void*),");
-            emitln(".tyty= TYPE_PTR,");
-            emit(".info.ptr= &");
-            emit_adpt_type_val(&ty->info.ptr->type, false);
-            emit(",");
-        }
-        emit("}");
-        break;
-
-    case KIND_FUN:
-        indented ("%s{", in_decl ? "" : "(struct adpt_type)") {
-            emitln(".size= sizeof(void(*)()),");
-            emitln(".align= sizeof(void(*)()),"); // xxx: can't `alignof` here with my janky version of `alignof`
-            emitln(".tyty= TYPE_FUN,");
-            indented (".info.fun= {") {
-                emit(".ret= &");
-                emit_adpt_type_val(&ty->info.fun.ret->type, false);
-                emitln(",");
-                emit(".params= ");
-                size_t count = 0;
-                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("NULL,");
-                else {
-                    indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
-                        indented ("[%zu]= {", count++) {
-                            emitln(".name= \"%.*s\",", bufmt(curr->decl->name));
-                            emit(".type= &");
-                            emit_adpt_type_val(&curr->decl->type, false);
-                            emit(",");
-                        }
-                        if (curr->next) emitln("},");
-                        else emit("},");
-                    }
-                    emitln("},");
-                }
-                emit(".count= %zu,", count);
-            }
-            emit("},");
-        }
-        emit("}");
-        break;
-
-    case KIND_ARR:
-        exitf("NIY: KIND_ARR");
-        break;
-    }
-}
-
 void emit_extern(declaration cref decl)
 {
     if (decl->name.len) {
@@ -312,14 +382,10 @@ void emit_extern(declaration cref decl)
 
     if (KIND_FUN == decl->type.kind) {
         bool found = false;
-        search_namespace (decl->name, seen.funs) {
-            found = true;
-            break;
-        }
+        search_namespace (decl->name, seen.funs) { found = true; break; }
         if (found) return;
 
-        emit("void %.*s_adapt_call(char* ret, char** args)", bufmt(decl->name));
-        indented ("{") {
+        indented ("void %.*s_adapt_call(char* ret, char** args) {", bufmt(decl->name)) {
             if (0 == decl->type.info.fun.count) emitln("(void)args;");
             if (bufis(decl->type.info.fun.ret->type.name, "void")) emitln("(void)ret;");
             else {
@@ -331,7 +397,11 @@ void emit_extern(declaration cref decl)
             size_t k = 0;
             for_linked (decl->type.info,fun) {
                 emit("*(");
-                emit_forward(&curr->decl->type, NULL);
+                // yyy: array decay
+                emit_forward(KIND_ARR == curr->decl->type.kind
+                        ? &(struct decl_type){.kind= KIND_PTR, .info.ptr= curr->decl->type.info.arr.item}
+                        : &curr->decl->type,
+                    NULL);
                 emit("*)args[%zu]", k++);
                 if (curr->next) emit(", ");
             }
@@ -348,10 +418,7 @@ void emit_extern(declaration cref decl)
 
     else if (decl->name.len) {
         bool found = false;
-        search_namespace (decl->name, seen.objs) {
-            found = true;
-            break;
-        }
+        search_namespace (decl->name, seen.objs) { found = true; break; }
         if (found) return;
 
         emitln("// object not quite handled anywhere yet");
@@ -395,7 +462,6 @@ void emit_typedef(declaration cref decl)
     if (!tdf) errdie("OOM");
     tdf->name = decl->name;
 }
-// }}}
 
 void emit_top(void* _, declaration cref decl, bufsl ref tok)
 {
@@ -596,43 +662,42 @@ int main(int argc, char** argv)
                 "information for a cintre REPL runtime to figure out how\n"
                 "to refer to the objects and functions declared in the\n"
                 "<entry> point (and the files it includes via the\n"
-                "\"quoted\" form). \"-D\" and \"-I\" have the same meaning as\n"
-                "for the C compiler (define macro and include path), and\n"
-                "other unrecognized arguments are simply ignored.\n"
+                "`#include \"quoted\"` form). \"-D\" and \"-I\" have the\n"
+                "same meaning as for the C compiler (define macro and\n"
+                "include path), and unrecognized arguments are ignored.\n"
                 "\n"
                 "  The second form (when the first argument is \"-m\")\n"
                 "takes a series of previously generated \"adapter\" files\n"
                 "and produces a single <c-main.c> entry point file. This\n"
-                "file will contain a valid `main` function (included in\n"
+                "file will contain a valid `main` function (included from\n"
                 "\"cintre.c\"). Note that the \"adapter\" files are not\n"
                 "read; only the names are needed.\n"
                 "\n"
-                "  A typical processing pipeline is thus as follow,\n"
-                "described with makefile syntax:\n"
+                "  A typical processing pipeline would be (in make syntax):\n"
                 "\n"
-                "    PR := preparer\n"
-                "    CFLAGS := -O1 -std=c99 -Wall\n"
+                "PR := %s\n"
+                "CFLAGS := -O1 -std=c99 -Wall\n"
                 "\n"
-                "    # compile mylib to object\n"
-                "    mylib.o: mylib.c mylib.h\n"
-                "    	$(CC) -c $< -o $@ $(CFLAGS)\n"
+                "# compile mylib to object\n"
+                "mylib.o: mylib.c mylib.h\n"
+                "	$(CC) -c $< -o $@ $(CFLAGS) $(CFLAGS-mylib)\n"
                 "\n"
-                "    # prepare adapter file for mylib\n"
-                "    a-mylib.h: mylib.h $(PR)\n"
-                "    	$(PR) $< -o $@ $(CFLAGS)\n"
+                "# prepare adapter file for mylib\n"
+                "a-mylib.h: mylib.h $(PR)\n"
+                "	$(PR) $< -o $@ $(CFLAGS) $(CFLAGS-mylib)\n"
                 "\n"
-                "    # prepare adapter file for some standard function\n"
-                "    a-standard.h: cintre/standard.h $(PR)\n"
-                "    	$(PR) $< -o $@ $(CFLAGS)\n"
+                "# prepare adapter file for a bunch of standard things\n"
+                "a-standard.h: cintre/standard.h $(PR)\n"
+                "	$(PR) $< -o $@ $(CFLAGS)\n"
                 "\n"
-                "    # \"merge\" the adapter by preparing the entry point\n"
-                "    c-main.c: a-mylib.h a-standard.h\n"
-                "    	$(PR) -m $^ -o $@\n"
+                "# \"merge\" the adapter by preparing the entry point\n"
+                "c-main.c: a-mylib.h a-standard.h\n"
+                "	$(PR) -m $^ -o $@\n"
                 "\n"
-                "    # finally compile the REPL with the object for mylib\n"
-                "    c-main: mylib.o c-main.c\n"
-                "    	$(CC) $^ -o $@ $(CFLAGS) -Icintre -DUSE_READLINE -lreadline\n"
-                , prog, prog);
+                "# finally compile the REPL with the object for mylib\n"
+                "c-main: mylib.o c-main.c\n"
+                "	$(CC) $^ -o $@ $(CFLAGS) -Icintre -DUSE_READLINE -lreadline\n"
+                , prog, prog, prog);
         return EXIT_FAILURE;
     }
 

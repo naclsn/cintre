@@ -89,8 +89,6 @@ extern int toupper(int c);
 extern int isblank(int);
 extern int isascii(int c);
 extern int toascii(int c);
-extern int _toupper(int);
-extern int _tolower(int);
 typedef void* locale_t;
 extern int isalnum_l(int, locale_t);
 extern int isalpha_l(int, locale_t);
@@ -353,9 +351,9 @@ typedef long int off_t;
 typedef long int ssize_t;
 typedef void fpos_t;
 
-//XXX(object): extern FILE *stdin;
-//XXX(object): extern FILE *stdout;
-//XXX(object): extern FILE *stderr;
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
 
 extern int remove(const char *filename);
 extern int rename(const char *old, const char *new);

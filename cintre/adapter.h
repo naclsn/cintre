@@ -5,19 +5,17 @@
 /// object or a function with its type. Everything is considered static and
 /// immutable, because that's how it would be in an adapter file.
 ///
-/// Once again LP64 is assumed, this matters for `sizeof(long) == 8`.
+/// Once again LP64 is assumed, this matters for `sizeof(size_t) == sizeof(long) == 8`.
 
 #ifndef CINTRE_ADAPT_H
 #define CINTRE_ADAPT_H
 
-#include <stddef.h>
-#include <stdlib.h>
-
-#define countof(__a) (sizeof(__a)/sizeof*(__a))
+#ifndef alignof
 #define alignof(...) (offsetof(struct { char _; __VA_ARGS__ it; }, it))
+#endif
 
 static struct adpt_type {
-    size_t const size, align;
+    unsigned long const size, align;
 
     enum adpt_type_tag {
         TYPE_VOID,
@@ -36,10 +34,10 @@ static struct adpt_type {
             struct adpt_comp_field {
                 char const* const name;
                 struct adpt_type const* const type;
-                size_t const offset;
+                unsigned long const offset;
                 // TODO: does not handle bitfields
             } const* const fields;
-            size_t const count;
+            unsigned long const count;
         } const comp; // struct and union
 
         struct adpt_fun_desc {
@@ -48,14 +46,14 @@ static struct adpt_type {
                 char const* const name;
                 struct adpt_type const* const type;
             } const* const params;
-            size_t const count;
+            unsigned long const count;
         } const fun; // fun
 
         struct adpt_type const* const ptr; // ptr
 
         struct adpt_arr_desc {
             struct adpt_type const* const item;
-            size_t const count;
+            unsigned long const count;
         } const arr; // arr
     } const info;
 }
@@ -84,13 +82,13 @@ struct adpt_item {
     union {
         void* const object;
         void (* const function)(char*, char**);
-        size_t const variable;
+        unsigned long const variable;
     } as;
 };
 
 struct adpt_namespace {
     char const* const name;
-    size_t const count;
+    unsigned long const count;
     struct adpt_item const* const items;
 };
 

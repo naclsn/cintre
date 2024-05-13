@@ -574,13 +574,25 @@ void cleanup(void)
 bufsl name_space(char ref name)
 {
     bufsl itns = {.ptr= name, .len= strlen(name)};
-    char* basename = strrchr(itns.ptr, '/');
+
+    char const* basename = strrchr(itns.ptr, '/');
     if (basename) itns.ptr = basename+1;
+
     char const* fileext = strchr(itns.ptr, '.');
     if (fileext) itns.len = fileext - itns.ptr;
+
     for (size_t k = 0; k < itns.len; k++)
         if ((itns.ptr[k]|32) < 'a' || 'z' < (itns.ptr[k]|32))
             ((char*)itns.ptr)[k] = '_';
+
+    // adapter files are expected to start with "a-",
+    // tho this is not strictly mandatory I suppose...
+    // this will also catch false positives :/
+    if ('a' == itns.ptr[0] && '_' == itns.ptr[1]) {
+        itns.ptr+= 2;
+        itns.len-= 2;
+    }
+
     return itns;
 }
 // }}}
@@ -611,15 +623,8 @@ int do_merge(int argc, char** argv)
     emit_empty();
 
     indented ("static struct adpt_namespace const namespaces[] = {") for (char** it = first; it < past_end; it++) {
-        bufsl itns = name_space(*it);
-        // adapter files are expected to start with "a-",
-        // tho this is not strictly mandatory I suppose...
-        // this will also catch false positives :/
-        if ('a' == itns.ptr[0] && '_' == itns.ptr[1]) {
-            itns.ptr+= 2;
-            itns.len-= 2;
-        }
-        emit("{.name= \"%.*s\", .count= countof(adptns_%.*s), .items= adptns_%.*s}", bufmt(itns), bufmt(itns), bufmt(itns));
+        bufsl const itns = name_space(*it);
+        emit("{.name= \"%.*s\", .count= sizeof adptns_%.*s/sizeof*adptns_%.*s, .items= adptns_%.*s}", bufmt(itns), bufmt(itns), bufmt(itns), bufmt(itns));
         if (past_end == it+1) emit(",");
         else emitln(",");
     }

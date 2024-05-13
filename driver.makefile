@@ -2,9 +2,8 @@
 # prog     := simple
 # entries  := simple.c
 # objs     := simple.o
-# include driver.makefile # rules: all, $(build)/simple, clean
-
-# TODO: options like -nostd and -norl; maybe: `opts := -nostd` and `$(findstring ..)`
+# obps     := # supported: -nostd (disables standard.h), -norl (disables readline)
+# include driver.makefile # rules: $(build)/simple, clean-simple
 
 cintre := cintre
 build ?= build
@@ -14,9 +13,12 @@ CFLAGS := -O2
 
 #---
 
-$(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c; $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) -DUSE_READLINE $(shell pkg-config readline --cflags --libs)
-$(build)/c-$(prog).c: $(build)/a-standard.h $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
-$(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -o $@ $(CFLAGS-a-standard)
+_nostd = $(findstring -nostd,$(opts))
+_norl = $(findstring -norl,$(opts))
+
+$(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c; $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) $(if $(_nostd),,-lc -lm) $(if $(_norl),,-DUSE_READLINE $(shell pkg-config readline --cflags --libs))
+$(build)/c-$(prog).c: $(if $(_nostd),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
+$(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -Pno-emit-decl -Pno-emit-incl -o $@ $(CFLAGS-a-standard)
 
 # build/a-entry.h: some/entry.ch $(PR); $(PR) $< -o $@ $(CFLAGS-a-entry)
 $(foreach e,$(entries),$(eval $(build)/a-$(basename $(notdir $(e))).h: $(e) $$(PR); $$(PR) $$< -o $$@ $(CFLAGS) $$(CFLAGS-$$(basename $$@))))
@@ -24,5 +26,5 @@ $(foreach e,$(entries),$(eval $(build)/a-$(basename $(notdir $(e))).h: $(e) $$(P
 $(PR): $(cintre)/preparer.c $(cintre)/*.h; $(CC) $< -o $@ $(CFLAGS)
 .PRECIOUS: $(build)/a-%.h $(build)/%.o $(PR)
 
-clean:; $(RM) $(build)/a-*.h $(build)/c-$(prog).c $(build)/*.o
-.PHONY: all clean
+clean-$(prog):; $(RM) $(build)/a-*.h $(build)/c-$(prog).c $(build)/*.o
+.PHONY: clean-$(prog)

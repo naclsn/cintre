@@ -1,21 +1,13 @@
-// TODO: cleanup; a lot of these items are not standard, they just were defined
-// by my compiler when I first generated this file
-
-#include <complex.h>
+//#include <complex.h>
 #include <ctype.h>
-#include <errno.h>
+//#include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-
-// stddef.h (needs to be at the top-) {{{
-typedef long int ptrdiff_t;
-typedef long unsigned int size_t;
-// }}}
+//#include <time.h>
 
 // complex.h (xxx: not yet if ever) {{{
 // XXX(complex): extern double complex cacos(double complex z);
@@ -87,40 +79,23 @@ typedef long unsigned int size_t;
 // }}}
 
 // ctype.h {{{
-extern int isalnum(int);
-extern int isalpha(int);
-extern int iscntrl(int);
-extern int isdigit(int);
-extern int islower(int);
-extern int isgraph(int);
-extern int isprint(int);
-extern int ispunct(int);
-extern int isspace(int);
-extern int isupper(int);
-extern int isxdigit(int);
+extern int isalnum(int c);
+extern int isalpha(int c);
+extern int iscntrl(int c);
+extern int isdigit(int c);
+extern int islower(int c);
+extern int isgraph(int c);
+extern int isprint(int c);
+extern int ispunct(int c);
+extern int isspace(int c);
+extern int isupper(int c);
+extern int isxdigit(int c);
 extern int tolower(int c);
 extern int toupper(int c);
-extern int isblank(int);
-//extern int isascii(int c);
-//extern int toascii(int c);
-typedef void* locale_t;
-//extern int isalnum_l(int, locale_t);
-//extern int isalpha_l(int, locale_t);
-//extern int iscntrl_l(int, locale_t);
-//extern int isdigit_l(int, locale_t);
-//extern int islower_l(int, locale_t);
-//extern int isgraph_l(int, locale_t);
-//extern int isprint_l(int, locale_t);
-//extern int ispunct_l(int, locale_t);
-//extern int isspace_l(int, locale_t);
-//extern int isupper_l(int, locale_t);
-//extern int isxdigit_l(int, locale_t);
-//extern int isblank_l(int, locale_t);
-//extern int tolower_l(int c, locale_t l);
-//extern int toupper_l(int c, locale_t l);
+extern int isblank(int c);
 // }}}
 
-// errno.h {{{
+// errno.h (xxx: not handled either) {{{
 // todo: handle, there might not be any easy way because of the definition of
 // `errno`, but it could be interesting to have it and the various E<..> on the
 // platform
@@ -160,24 +135,13 @@ extern double fabs(double x);
 extern double floor(double x);
 extern double fmod(double x, double y);
 extern int isinf(double value);
-//extern int finite(double value);
-//extern double drem(double x, double y);
-//extern double significand(double x);
 extern double copysign(double x, double y);
 extern double nan(const char *tagb);
 extern int isnan(double value);
-//extern double j0(double);
-//extern double j1(double);
-//extern double jn(int, double);
-//extern double y0(double);
-//extern double y1(double);
-//extern double yn(int, double);
 extern double erf(double);
 extern double erfc(double);
 extern double lgamma(double);
 extern double tgamma(double);
-//extern double gamma(double);
-//extern double lgamma_r(double, int *signgamp);
 extern double rint(double x);
 extern double nextafter(double x, double y);
 // XXX(long double): extern double nexttoward(double x, long double y);
@@ -197,7 +161,6 @@ extern double fdim(double x, double y);
 extern double fmax(double x, double y);
 extern double fmin(double x, double y);
 extern double fma(double x, double y, double z);
-//extern double scalb(double x, double n);
 extern float acosf(float x);
 extern float asinf(float x);
 extern float atanf(float x);
@@ -230,25 +193,12 @@ extern float ceilf(float x);
 extern float fabsf(float x);
 extern float floorf(float x);
 extern float fmodf(float x, float y);
-//extern int isinff(float value);
-//extern int finitef(float value);
-//extern float dremf(float x, float y);
-//extern float significandf(float x);
 extern float copysignf(float x, float y);
 extern float nanf(const char *tagb);
-//extern int isnanf(float value);
-//extern float j0f(float);
-//extern float j1f(float);
-//extern float jnf(int, float);
-//extern float y0f(float);
-//extern float y1f(float);
-//extern float ynf(int, float);
 extern float erff(float);
 extern float erfcf(float);
 extern float lgammaf(float);
 extern float tgammaf(float);
-//extern float gammaf(float);
-//extern float lgammaf_r(float, int *signgamp);
 extern float rintf(float x);
 extern float nextafterf(float x, float y);
 // XXX(long double): extern float nexttowardf(float x, long double y);
@@ -268,7 +218,6 @@ extern float fdimf(float x, float y);
 extern float fmaxf(float x, float y);
 extern float fminf(float x, float y);
 extern float fmaf(float x, float y, float z);
-//extern float scalbf(float x, float n);
 // XXX(long double): extern long double acosl(long double x);
 // XXX(long double): extern long double asinl(long double x);
 // XXX(long double): extern long double atanl(long double x);
@@ -340,7 +289,11 @@ extern float fmaf(float x, float y, float z);
 // XXX(long double): extern long double fminl(long double x, long double y);
 // XXX(long double): extern long double fmal(long double x, long double y, long double z);
 // XXX(long double): extern long double scalbl(long double x, long double n);
-//XXX(object): extern int signgam;
+// }}}
+
+// stddef.h {{{
+typedef long int ptrdiff_t;
+typedef long unsigned int size_t;
 // }}}
 
 // stdint.h {{{
@@ -360,9 +313,6 @@ typedef unsigned long int  uintmax_t;
 
 // stdio.h {{{
 typedef void FILE;
-
-//typedef long int off_t;
-//typedef long int ssize_t;
 typedef void fpos_t;
 
 extern FILE *stdin;
@@ -371,84 +321,102 @@ extern FILE *stderr;
 
 extern int remove(const char *filename);
 extern int rename(const char *old, const char *new);
-//extern int renameat(int oldfd, const char *old, int newfd, const char *new);
 extern int fclose(FILE *stream);
 extern FILE *tmpfile(void);
-//extern char *tmpnam(char[20]); // std but obsolete
-//extern char *tmpnam_r(char s[20]);
-//extern char *tempnam(const char *dir, const char *pfx);
 extern int fflush(FILE *stream);
-//extern int fflush_unlocked(FILE *stream);
 extern FILE *fopen(const char *restrict filename, const char *restrict modes);
 extern FILE *freopen(const char *restrict filename, const char *restrict modes, FILE *restrict stream);
-//extern FILE *fdopen(int fd, const char *modes);
-//extern FILE *fmemopen(void *s, size_t len, const char *modes);
-//extern FILE *open_memstream(char **bufloc, size_t *sizeloc);
 extern void setbuf(FILE *restrict stream, char *restrict buf);
 extern int setvbuf(FILE *restrict stream, char *restrict buf, int modes, size_t n);
-//extern void setbuffer(FILE *restrict stream, char *restrict buf, size_t size);
-//extern void setlinebuf(FILE *stream);
-//extern int fprintf(FILE *restrict stream, const char *restrict format, ...);
-//extern int printf(const char *restrict format, ...);
-//extern int sprintf(char *restrict s, const char *restrict format, ...);
-//extern int snprintf(char *restrict s, size_t maxlen, const char *restrict format, ...);
-//extern int dprintf(int fd, const char *restrict fmt, ...);
-//extern int fscanf(FILE *restrict stream, const char *restrict format, ...);
-//extern int scanf(const char *restrict format, ...);
-//extern int sscanf(const char *restrict s, const char *restrict format, ...);
-//extern int fscanf(FILE *restrict stream, const char *restrict format, ...);
-//extern int scanf(const char *restrict format, ...);
-//extern int sscanf(const char *restrict s, const char *restrict format, ...);
 extern int fgetc(FILE *stream);
 extern int getc(FILE *stream);
 extern int getchar(void);
-//extern int getc_unlocked(FILE *stream);
-//extern int getchar_unlocked(void);
-//extern int fgetc_unlocked(FILE *stream);
 extern int fputc(int c, FILE *stream);
 extern int putc(int c, FILE *stream);
 extern int putchar(int c);
-//extern int fputc_unlocked(int c, FILE *stream);
-//extern int putc_unlocked(int c, FILE *stream);
-//extern int putchar_unlocked(int c);
-//extern int getw(FILE *stream);
-//extern int putw(int w, FILE *stream);
 extern char *fgets(char *restrict s, int n, FILE *restrict stream);
-//extern ssize_t getdelim(char **restrict lineptr, size_t *restrict n, int delimiter, FILE *restrict stream);
-//extern ssize_t getline(char **restrict lineptr, size_t *restrict n, FILE *restrict stream);
 extern int fputs(const char *restrict s, FILE *restrict stream);
 extern int puts(const char *s);
 extern int ungetc(int c, FILE *stream);
 extern size_t fread(void *restrict ptr, size_t size, size_t n, FILE *restrict stream);
 extern size_t fwrite(const void *restrict ptr, size_t size, size_t n, FILE *restrict s);
-//extern size_t fread_unlocked(void *restrict ptr, size_t size, size_t n, FILE *restrict stream);
-//extern size_t fwrite_unlocked(const void *restrict ptr, size_t size, size_t n, FILE *restrict stream);
 extern int fseek(FILE *stream, long int off, int whence);
 extern long int ftell(FILE *stream);
 extern void rewind(FILE *stream);
-//extern int fseeko(FILE *stream, off_t off, int whence);
-//extern off_t ftello(FILE *stream);
 extern int fgetpos(FILE *restrict stream, fpos_t *restrict pos);
 extern int fsetpos(FILE *stream, const fpos_t *pos);
 extern void clearerr(FILE *stream);
 extern int feof(FILE *stream);
 extern int ferror(FILE *stream);
-//extern void clearerr_unlocked(FILE *stream);
-//extern int feof_unlocked(FILE *stream);
-//extern int ferror_unlocked(FILE *stream);
 extern void perror(const char *s);
-//extern int fileno(FILE *stream);
-//extern int fileno_unlocked(FILE *stream);
-//extern int pclose(FILE *stream);
-//extern FILE *popen(const char *command, const char *modes);
-//extern char *ctermid(char *s);
-//extern void flockfile(FILE *stream);
-//extern int ftrylockfile(FILE *stream);
-//extern void funlockfile(FILE *stream);
+// }}}
+
+// stdlib.h {{{
+typedef struct { int quot; int rem; } div_t;
+typedef struct { long int quot; long int rem; } ldiv_t;
+typedef struct { long long int quot; long long int rem; } lldiv_t;
+
+extern double atof(const char *nptr);
+extern int atoi(const char *nptr);
+extern long int atol(const char *nptr);
+extern long long int atoll(const char *nptr);
+extern double strtod(const char *restrict nptr, char **restrict endptr);
+extern float strtof(const char *restrict nptr, char **restrict endptr);
+// XXX(long double): extern long double strtold(const char *restrict nptr, char **restrict endptr);
+extern long int strtol(const char *restrict nptr, char **restrict endptr, int base);
+extern unsigned long int strtoul(const char *restrict nptr, char **restrict endptr, int base);
+extern long long int strtoll(const char *restrict nptr, char **restrict endptr, int base);
+extern unsigned long long int strtoull(const char *restrict nptr, char **restrict endptr, int base);
+extern int rand(void);
+extern void srand(unsigned int seed);
+extern void *malloc(size_t size);
+extern void *calloc(size_t nmemb, size_t size);
+extern void *realloc(void *ptr, size_t size);
+extern void free(void *ptr);
+extern void abort(void);
+extern int atexit(void (*func)(void));
+extern void exit(int status);
+extern void _Exit(int status);
+extern char *getenv(const char *name);
+extern int system(const char *command);
+extern void *bsearch(const void *key, const void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
+extern void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
+extern int abs(int x);
+extern long int labs(long int x);
+extern long long int llabs(long long int x);
+extern div_t div(int numer, int denom);
+extern ldiv_t ldiv(long int numer, long int denom);
+extern lldiv_t lldiv(long long int numer, long long int denom);
+extern int mblen(const char *s, size_t n);
+// }}}
+
+// string.h {{{
+extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
+extern void *memmove(void *dest, const void *src, size_t n);
+extern void *memset(void *s, int c, size_t n);
+extern int memcmp(const void *s1, const void *s2, size_t n);
+extern void *memchr(const void *s, int c, size_t n);
+extern char *strcpy(char *restrict dest, const char *restrict src);
+extern char *strncpy(char *restrict dest, const char *restrict src, size_t n);
+extern char *strcat(char *restrict dest, const char *restrict src);
+extern char *strncat(char *restrict dest, const char *restrict src, size_t n);
+extern int strcmp(const char *s1, const char *s2);
+extern int strncmp(const char *s1, const char *s2, size_t n);
+extern int strcoll(const char *s1, const char *s2);
+extern size_t strxfrm(char *restrict dest, const char *restrict src, size_t n);
+extern char *strchr(const char *s, int c);
+extern char *strrchr(const char *s, int c);
+extern size_t strcspn(const char *s, const char *reject);
+extern size_t strspn(const char *s, const char *accept);
+extern char *strpbrk(const char *s, const char *accept);
+extern char *strstr(const char *haystack, const char *needle);
+extern char *strtok(char *restrict s, const char *restrict delim);
+extern size_t strlen(const char *s);
+extern char *strerror(int errnum);
 // }}}
 
 /*
-// time.h (needs before stdlib-) {{{
+// time.h (xxx: too lazy to figure this one out yet) {{{
 typedef long int clock_t;
 typedef long int time_t;
 typedef int clockid_t;
@@ -481,184 +449,12 @@ extern time_t time(time_t *timer); // std?
 extern double difftime(time_t time1, time_t time0); // std?
 extern time_t mktime(struct tm *tp);
 extern size_t strftime(char *restrict s, size_t maxsize, const char *restrict format, const struct tm *restrict tp);
-//extern size_t strftime_l(char *restrict s, size_t maxsize, const char *restrict format, const struct tm *restrict tp, locale_t loc);
 extern struct tm *gmtime(const time_t *timer);
 extern struct tm *localtime(const time_t *timer);
-//extern struct tm *gmtime_r(const time_t *restrict timer, struct tm *restrict tp);
-//extern struct tm *localtime_r(const time_t *restrict timer, struct tm *restrict tp);
 extern char *asctime(const struct tm *tp);
 extern char *ctime(const time_t *timer);
-//extern char *asctime_r(const struct tm *restrict tp, char *restrict buf);
-//extern char *ctime_r(const time_t *restrict timer, char *restrict buf);
 //XXX(object): extern char *tzname[2];
-//extern void tzset(void);
 //XXX(object): extern int daylight;
 //XXX(object): extern long int timezone;
-//extern time_t timegm(struct tm *tp);
-//extern time_t timelocal(struct tm *tp);
-//extern int dysize(int year);
-//extern int nanosleep(const struct timespec *requested_time, struct timespec *remaining);
-//extern int clock_getres(clockid_t clock_id, struct timespec *res);
-//extern int clock_gettime(clockid_t clock_id, struct timespec *tp);
-//extern int clock_settime(clockid_t clock_id, const struct timespec *tp);
-//extern int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *req, struct timespec *rem);
-//extern int clock_getcpuclockid(pid_t pid, clockid_t *clock_id);
-//extern int timer_create(clockid_t clock_id, struct sigevent *restrict evp, timer_t *restrict timerid);
-//extern int timer_delete(timer_t timerid);
-//extern int timer_settime(timer_t timerid, int flags, const struct itimerspec *restrict value, struct itimerspec *restrict ovalue);
-//extern int timer_gettime(timer_t timerid, struct itimerspec *value);
-//extern int timer_getoverrun(timer_t timerid);
-//extern int timespec_get(struct timespec *ts, int base);
 // }}}
 */
-
-// stdlib.h {{{
-typedef struct { int quot; int rem; } div_t;
-typedef struct { long int quot; long int rem; } ldiv_t;
-typedef struct { long long int quot; long long int rem; } lldiv_t;
-
-extern double atof(const char *nptr);
-extern int atoi(const char *nptr);
-extern long int atol(const char *nptr);
-extern long long int atoll(const char *nptr);
-extern double strtod(const char *restrict nptr, char **restrict endptr);
-extern float strtof(const char *restrict nptr, char **restrict endptr);
-// XXX(long double): extern long double strtold(const char *restrict nptr, char **restrict endptr);
-extern long int strtol(const char *restrict nptr, char **restrict endptr, int base);
-extern unsigned long int strtoul(const char *restrict nptr, char **restrict endptr, int base);
-extern long long int strtoll(const char *restrict nptr, char **restrict endptr, int base);
-extern unsigned long long int strtoull(const char *restrict nptr, char **restrict endptr, int base);
-//extern char *l64a(long int n);
-//extern long int a64l(const char *s);
-
-//typedef void fd_set;
-//typedef long int fd_mask;
-//typedef void sigset_t;
-//extern int select(int nfds, fd_set *restrict readfds, fd_set *restrict writefds, fd_set *restrict exceptfds, struct timeval *restrict timeout);
-//extern int pselect(int nfds, fd_set *restrict readfds, fd_set *restrict writefds, fd_set *restrict exceptfds, const struct timespec *restrict timeout, const sigset_t *restrict sigmask);
-//typedef unsigned long int pthread_t;
-//typedef void pthread_mutexattr_t;
-//typedef void pthread_condattr_t;
-//typedef unsigned int pthread_key_t;
-//typedef int pthread_once_t;
-//typedef union pthread_attr_t {} pthread_attr_t;
-//typedef void pthread_mutex_t;
-//typedef void pthread_cond_t;
-//typedef void pthread_rwlock_t;
-//typedef void pthread_rwlockattr_t;
-//typedef volatile int pthread_spinlock_t;
-//typedef void pthread_barrier_t;
-//typedef void pthread_barrierattr_t;
-
-//extern long int random(void);
-//extern void srandom(unsigned int seed);
-//extern char *initstate(unsigned int seed, char *statebuf, size_t statelen);
-//extern char *setstate(char *statebuf);
-extern int rand(void);
-extern void srand(unsigned int seed);
-//extern double drand48(void);
-//extern double erand48(unsigned short int xsubi[3]);
-//extern long int lrand48(void);
-//extern long int nrand48(unsigned short int xsubi[3]);
-//extern long int mrand48(void);
-//extern long int jrand48(unsigned short int xsubi[3]);
-//extern void srand48(long int seedval);
-//extern unsigned short int *seed48(unsigned short int seed16v[3]);
-//extern void lcong48(unsigned short int param[7]);
-extern void *malloc(size_t size);
-extern void *calloc(size_t nmemb, size_t size);
-extern void *realloc(void *ptr, size_t size);
-extern void free(void *ptr);
-//extern void *reallocarray(void *ptr, size_t nmemb, size_t size);
-//extern void *alloca(size_t size);
-//extern void *valloc(size_t size);
-//extern int posix_memalign(void **memptr, size_t alignment, size_t size);
-//extern void *aligned_alloc(size_t alignment, size_t size);
-extern void abort(void);
-extern int atexit(void (*func)(void));
-//extern int at_quick_exit(void (*func)(void));
-//extern int on_exit(void (*func)(int status, void *arg), void *arg);
-extern void exit(int status);
-//extern void quick_exit(int status);
-extern void _Exit(int status);
-extern char *getenv(const char *name);
-//extern int putenv(char *string);
-//extern int setenv(const char *name, const char *value, int replace);
-//extern int unsetenv(const char *name);
-//extern int clearenv(void);
-//extern char *mktemp(char *template);
-//extern int mkstemp(char *template);
-//extern int mkstemps(char *template, int suffixlen);
-//extern char *mkdtemp(char *template);
-extern int system(const char *command);
-//extern char *realpath(const char *restrict name, char *restrict resolved);
-extern void *bsearch(const void *key, const void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
-extern void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
-extern int abs(int x);
-extern long int labs(long int x);
-extern long long int llabs(long long int x);
-extern div_t div(int numer, int denom);
-extern ldiv_t ldiv(long int numer, long int denom);
-extern lldiv_t lldiv(long long int numer, long long int denom);
-//extern char *ecvt(double value, int ndigit, int *restrict decpt, int *restrict sign);
-//extern char *fcvt(double value, int ndigit, int *restrict decpt, int *restrict sign);
-//extern char *gcvt(double value, int ndigit, char *buf);
-// XXX(long double): extern char *qecvt(long double value, int ndigit, int *restrict decpt, int *restrict sign);
-// XXX(long double): extern char *qfcvt(long double value, int ndigit, int *restrict decpt, int *restrict sign);
-// XXX(long double): extern char *qgcvt(long double value, int ndigit, char *buf);
-extern int mblen(const char *s, size_t n);
-//extern int rpmatch(const char *response);
-//extern int getsubopt(char **restrict optionp, char *const *restrict tokens, char **restrict valuep);
-//extern int getloadavg(double loadavg[], int nelem);
-// }}}
-
-// string.h {{{
-extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
-extern void *memmove(void *dest, const void *src, size_t n);
-//extern void *memccpy(void *restrict dest, const void *restrict src, int c, size_t n);
-extern void *memset(void *s, int c, size_t n);
-extern int memcmp(const void *s1, const void *s2, size_t n);
-extern void *memchr(const void *s, int c, size_t n);
-extern char *strcpy(char *restrict dest, const char *restrict src);
-extern char *strncpy(char *restrict dest, const char *restrict src, size_t n);
-extern char *strcat(char *restrict dest, const char *restrict src);
-extern char *strncat(char *restrict dest, const char *restrict src, size_t n);
-extern int strcmp(const char *s1, const char *s2);
-extern int strncmp(const char *s1, const char *s2, size_t n);
-extern int strcoll(const char *s1, const char *s2);
-extern size_t strxfrm(char *restrict dest, const char *restrict src, size_t n);
-//extern int strcoll_l(const char *s1, const char *s2, locale_t l);
-//extern size_t strxfrm_l(char *dest, const char *src, size_t n, locale_t l);
-//extern char *strdup(const char *s);
-//extern char *strndup(const char *string, size_t n);
-extern char *strchr(const char *s, int c);
-extern char *strrchr(const char *s, int c);
-extern size_t strcspn(const char *s, const char *reject);
-extern size_t strspn(const char *s, const char *accept);
-extern char *strpbrk(const char *s, const char *accept);
-extern char *strstr(const char *haystack, const char *needle);
-extern char *strtok(char *restrict s, const char *restrict delim);
-//extern char *strtok_r(char *restrict s, const char *restrict delim, char **restrict save_ptr);
-extern size_t strlen(const char *s);
-//extern size_t strnlen(const char *string, size_t maxlen);
-extern char *strerror(int errnum);
-//extern int strerror_r(int errnum, char *buf, size_t buflen);
-//extern char *strerror_l(int errnum, locale_t l);
-//extern int bcmp(const void *s1, const void *s2, size_t n);
-//extern void bcopy(const void *src, void *dest, size_t n);
-//extern void bzero(void *s, size_t n);
-//extern char *index(const char *s, int c);
-//extern char *rindex(const char *s, int c);
-//extern int ffs(int i);
-//extern int ffsl(long int l);
-//extern int ffsll(long long int ll);
-//extern int strcasecmp(const char *s1, const char *s2);
-//extern int strncasecmp(const char *s1, const char *s2, size_t n);
-//extern int strcasecmp_l(const char *s1, const char *s2, locale_t loc);
-//extern int strncasecmp_l(const char *s1, const char *s2, size_t n, locale_t loc);
-//extern void explicit_bzero(void *s, size_t n);
-//extern char *strsep(char **restrict stringp, const char *restrict delim);
-//extern char *strsignal(int sig);
-//extern char *stpcpy(char *restrict dest, const char *restrict src);
-//extern char *stpncpy(char *restrict dest, const char *restrict src, size_t n);
-// }}}

@@ -1,8 +1,10 @@
 #ifndef _PREP_ADAPT_DUMP_NS
-#include "run"
-
+#undef LOC_NOTIF
 #define main(c, v) _preparer_main(c, v)
 #include "../cintre/preparer.c"
+#undef main
+
+#include "run"
 
 #define stacat(__name, ...)                                                   \
     size_t __name##_len = 0;                                                  \
@@ -27,10 +29,11 @@ void run_test(char* file)
     ns[_ns.len] = '\0';
 
     stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
-    printf("com: ");
-    puts(com);
 
-    do_prepare(3, (char*[]){file, "-o", src, NULL});
+    if (!strcmp("cintre_test_std", ns))
+        do_prepare(5, (char*[]){file, "-Pno-emit-decl", "-Pno-emit-incl", "-o", src, NULL});
+    else
+        do_prepare(3, (char*[]){file, "-o", src, NULL});
     fflush(result);
     extern int execv(char const* path, char* const argv[]);
     if (!system(com)) execv(bin, (char*[]){NULL});

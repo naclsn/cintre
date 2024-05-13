@@ -12,15 +12,18 @@
 /// needed (eg. `typedef struct {} name`) it makes a `name_adapt_tdf_type`
 
 #include "common.h"
+#define on_lsys on_lsys
+void on_lsys(bufsl const path);
 #include "parser.h"
 
 lex_state ls = {0};
 FILE* result = NULL;
 int indent = 0;
 
+bool emit_decl = true, emit_incl = false, emit_sysi = true;
+
 #ifdef LOC_NOTIF
 # define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
-//# define EMIT_HERE fprintf(result, " /*%s(" _HERE_XSTR(__LINE__) ")*/ ", __func__)
 #else
 # define EMIT_HERE (void)0
 #endif
@@ -30,6 +33,11 @@ int indent = 0;
 #define emit(...)  (fprintf(result, __VA_ARGS__), EMIT_HERE)
 #define emitln(...)  (emit(__VA_ARGS__), fprintf(result, "\n%*s", indent*4, ""))
 #define emit_empty()  fprintf(result, "\n%*s", indent*4, "")
+
+void on_lsys(bufsl const path)
+{
+    if (emit_sysi) emitln("#include <%.*s>", bufmt(path));
+}
 
 struct {
     dyarr(struct seen_fun { bufsl name; }) funs;
@@ -104,6 +112,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         }
         break;
 
+        // xxx: association with the enumerators gets lost here
     case KIND_ENUM:
         emit("adptb_int_type");
         break;
@@ -123,7 +132,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
     case KIND_FUN:
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emitln(".size= sizeof(void(*)()),");
-            emitln(".align= sizeof(void(*)()),"); // xxx: can't `alignof` here with my janky version of `alignof`
+            emitln(".align= sizeof(void(*)()),"); // yyy: can't `alignof` here with my janky version of `alignof`
             emitln(".tyty= TYPE_FUN,");
             indented (".info.fun= {") {
                 emit(".ret= &");
@@ -131,7 +140,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
                 emitln(",");
                 emit(".params= ");
                 size_t count = 0;
-                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("NULL,");
+                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("(void*)0,");
                 else {
                     indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
                         indented ("[%zu]= {", count++) {
@@ -155,16 +164,16 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
     case KIND_ARR:
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emit(".size= ");
-            emit_adpt_type_val(&ty->info.arr.item->type, false);
-            emit(".size * (");
-            if (!ty->info.arr.count) emit("1"); // yyy: idk
-            else emit_cexpr(ty->info.arr.count);
-            emitln("),");
-
+            emitln("0,"); // FIXME:
+            //emit_adpt_type_val(&ty->info.arr.item->type, false);
+            //emit(".size * (");
+            //if (!ty->info.arr.count) emit("1"); // yyy: idk
+            //else emit_cexpr(ty->info.arr.count);
+            //emitln("),");
             emit(".align= ");
-            emit_adpt_type_val(&ty->info.arr.item->type, false);
-            emitln(".align,");
-
+            emitln("0,"); // FIXME:
+            //emit_adpt_type_val(&ty->info.arr.item->type, false);
+            //emitln(".align,");
             emitln(".tyty= TYPE_ARR,");
             indented (".info.arr= {") {
                 emit(".item= &");
@@ -183,19 +192,19 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
 }
 
 /// forwards as-is
-void emit_forward(struct decl_type cref ty, bufsl cref name)
+void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
 {
     for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
     case QUAL_END: break;
-    case QUAL_CONST:     emit("const ");     break;
-    case QUAL_RESTRICT:  emit("restrict ");  break;
-    case QUAL_VOLATILE:  emit("volatile ");  break;
-    case QUAL_SIGNED:    emit("signed ");    break;
-    case QUAL_UNSIGNED:  emit("unsigned ");  break;
-    case QUAL_SHORT:     emit("short ");     break;
-    case QUAL_LONG:      emit("long ");      break;
-    case QUAL_COMPLEX:   emit("complex ");   break;
-    case QUAL_IMAGINARY: emit("imaginary "); break;
+    case QUAL_CONST:                   emit("const ");     break;
+    case QUAL_RESTRICT:  if (!in_cast) emit("restrict ");  break;
+    case QUAL_VOLATILE:                emit("volatile ");  break;
+    case QUAL_SIGNED:                  emit("signed ");    break;
+    case QUAL_UNSIGNED:                emit("unsigned ");  break;
+    case QUAL_SHORT:                   emit("short ");     break;
+    case QUAL_LONG:                    emit("long ");      break;
+    case QUAL_COMPLEX:                 emit("complex ");   break;
+    case QUAL_IMAGINARY:               emit("imaginary "); break;
     }
 
     switch (ty->kind) {
@@ -216,16 +225,20 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
                 emit("%.*s", bufmt(name));
             }
 
-            indented (" {") for_linked (ty->info,comp) {
-                emit_forward(&curr->decl->type, &curr->decl->name);
-                if (curr->bitw) {
-                    emit(" :");
-                    emit_cexpr(curr->bitw);
+            if (in_cast) return;
+
+            if (emit_decl || !ty->name.len) {
+                indented (" {") for_linked (ty->info,comp) {
+                    emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
+                    if (curr->bitw) {
+                        emit(" :");
+                        emit_cexpr(curr->bitw);
+                    }
+                    if (curr->next) emitln(";");
+                    else emit(";");
                 }
-                if (curr->next) emitln(";");
-                else emit(";");
+                emit("}");
             }
-            emit("}");
 
             if (ty->name.len) {
                 struct seen_tag ref tag = dyarr_push(&seen.tags);
@@ -237,6 +250,15 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
 
         {
     case KIND_ENUM:
+            if (!emit_decl && !ty->name.len) {
+                // here: - we can't emit the enumerators (name collision)
+                //       - we can't refere to the enum by it's tag name
+                // so just say it's an int and the association with the
+                // enumerators gets lost here (as in for the C compiler)
+                emit("int");
+                break;
+            }
+
             emit("enum ");
             if (ty->name.len) {
                 emit("%.*s", bufmt(ty->name));
@@ -249,16 +271,23 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
                 emit("%.*s", bufmt(name));
             }
 
-            indented (" {") for_linked (ty->info,enu) {
-                emit("%.*s", bufmt(curr->name));
-                if (curr->expr) {
-                    emit("= ");
-                    emit_cexpr(curr->expr);
+            if (in_cast) return;
+
+            if (emit_decl) {
+                indented (" {") for_linked (ty->info,enu) {
+                    emit("%.*s", bufmt(curr->name));
+                    if (curr->expr) {
+                        emit("= ");
+                        emit_cexpr(curr->expr);
+                    }
+                    if (curr->next) emitln(",");
+                    else emit(",");
                 }
-                if (curr->next) emitln(",");
-                else emit(",");
+                emit("}");
             }
-            emit("}");
+
+            // TODO: also need to emit the enumerators and add them to
+            // seen.objs as if they were declared `static const int`
 
             if (ty->name.len) {
                 struct seen_tag ref tag = dyarr_push(&seen.tags);
@@ -269,19 +298,49 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
         break;
 
     case KIND_PTR:
-        emit_forward(&ty->info.ptr->type, NULL);
-        if (name) emit("* %.*s", bufmt(*name));
-        else emit("*");
+        // FIXME: hate it but idc
+        if (KIND_FUN == ty->info.ptr->type.kind || (KIND_PTR == ty->info.ptr->type.kind && KIND_FUN == ty->info.ptr->type.info.ptr->type.kind)) {
+            bool const twice = KIND_PTR == ty->info.ptr->type.kind;
+            struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
+            emit_forward(&ty2->info.fun.ret->type, NULL, in_cast);
+            if (name) emit(" (*%s%.*s)", twice ? "*" : "", bufmt(*name));
+            else emit(" (*%s)", twice ? "*" : "");
+            emit("(");
+            if (-1ul != ty2->info.fun.count) {
+                if (0 == ty2->info.fun.count) emit("void");
+                else for_linked (ty2->info,fun) {
+                    emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
+                    if (curr->next) emit(", ");
+                }
+            }
+            emit(")");
+        }
+        else if (KIND_ARR == ty->info.ptr->type.kind || (KIND_PTR == ty->info.ptr->type.kind && KIND_ARR == ty->info.ptr->type.info.ptr->type.kind)) {
+            bool const twice = KIND_PTR == ty->info.ptr->type.kind;
+            struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
+            emit_forward(&ty2->info.arr.item->type, NULL, in_cast);
+            if (name) emit(" (*%.*s)", bufmt(*name));
+            else emit(" (*%s)", twice ? "*" : "");
+            emit("[");
+            if (ty2->info.arr.count) emit_cexpr(ty2->info.arr.count);
+            emit("]");
+        }
+
+        else {
+            emit_forward(&ty->info.ptr->type, NULL, in_cast);
+            if (name) emit("* %.*s", bufmt(*name));
+            else emit("*");
+        }
         return; // name already done
 
     case KIND_FUN:
-        emit_forward(&ty->info.fun.ret->type, NULL);
-        if (name) emit(" %.*s(", bufmt(*name));
-        else emit(" (*)");
+        emit_forward(&ty->info.fun.ret->type, NULL, in_cast);
+        if (name) emit(" %.*s", bufmt(*name));
+        emit("(");
         if (-1ul != ty->info.fun.count) {
             if (0 == ty->info.fun.count) emit("void");
             else for_linked (ty->info,fun) {
-                emit_forward(&curr->decl->type, &curr->decl->name);
+                emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
                 if (curr->next) emit(", ");
             }
         }
@@ -289,7 +348,7 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
         return; // name already done
 
     case KIND_ARR:
-        emit_forward(&ty->info.arr.item->type, NULL);
+        emit_forward(&ty->info.arr.item->type, NULL, in_cast);
         if (name) emit(" %.*s", bufmt(*name));
         emit("[");
         if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
@@ -301,15 +360,26 @@ void emit_forward(struct decl_type cref ty, bufsl cref name)
 }
 
 /// emit nested named struct/union that are defined, depth first, ie define the
-/// decl_type <name>_adapt_tag_type
+/// decl_type <name>_adapt_tag_type; and also makes the _%p_%p unnamed tag ones
+/// when -Pno-emit-decl because we still need these and because why not be
+/// hacky all the way
 void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 {
     switch (ty->kind) {
+    case KIND_PTR: emit_named_comps_adpt_type_def(&ty->info.ptr->type);      return;
+    case KIND_FUN: emit_named_comps_adpt_type_def(&ty->info.fun.ret->type);  return;
+    case KIND_ARR: emit_named_comps_adpt_type_def(&ty->info.arr.item->type); return;
+
     case KIND_STRUCT:
     case KIND_UNION:
         if (-1ul == ty->info.comp.count)
     default:
             return;
+    }
+
+    if (!emit_decl && !ty->name.len) {
+        emit_forward(ty, NULL, false);
+        emitln(";");
     }
 
     have_tag_name_bufsl(name, ty);
@@ -353,7 +423,7 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 /// ```c
 /// static struct adpt_type const aa_adapt_type = adptb_int_type;
 /// ```
-bool adpt_type_val_needs_pp_define(struct decl_type cref ty) {
+bool adpt_type_val_needs_define(struct decl_type cref ty) {
     switch (ty->kind) {
     case KIND_NOTAG:
     case KIND_STRUCT:
@@ -367,18 +437,21 @@ bool adpt_type_val_needs_pp_define(struct decl_type cref ty) {
 
 void emit_extern(declaration cref decl)
 {
-    if (decl->name.len) {
-        emit("extern ");
-        emit_forward(&decl->type, &decl->name);
-        emitln(";");
-    } else switch (decl->type.kind) {
-    case KIND_STRUCT:
-    case KIND_UNION:
-    case KIND_ENUM:
-        emit_forward(&decl->type, NULL);
-        emitln(";");
-    default:;
+    if (emit_decl) {
+        if (decl->name.len) {
+            emit("extern ");
+            emit_forward(&decl->type, &decl->name, false);
+            emitln(";");
+        } else switch (decl->type.kind) {
+        case KIND_STRUCT:
+        case KIND_UNION:
+        case KIND_ENUM:
+            emit_forward(&decl->type, NULL, false);
+            emitln(";");
+        default:;
+        }
     }
+    emit_named_comps_adpt_type_def(&decl->type);
 
     if (KIND_FUN == decl->type.kind) {
         bool found = false;
@@ -390,26 +463,26 @@ void emit_extern(declaration cref decl)
             if (bufis(decl->type.info.fun.ret->type.name, "void")) emitln("(void)ret;");
             else {
                 emit("*(");
-                emit_forward(&decl->type.info.fun.ret->type, NULL);
-                emit("*)ret = ");
+                emit_forward(&(struct decl_type){
+                        .kind= KIND_PTR,
+                        .info.ptr= decl->type.info.fun.ret,
+                    }, NULL, true);
+                emit(")ret = ");
             }
             emit("%.*s(", bufmt(decl->name));
             size_t k = 0;
             for_linked (decl->type.info,fun) {
                 emit("*(");
-                // yyy: array decay
-                emit_forward(KIND_ARR == curr->decl->type.kind
-                        ? &(struct decl_type){.kind= KIND_PTR, .info.ptr= curr->decl->type.info.arr.item}
-                        : &curr->decl->type,
-                    NULL);
-                emit("*)args[%zu]", k++);
+                emit_forward(&(struct decl_type){
+                        .kind= KIND_PTR,
+                        .info.ptr= curr->decl,
+                    }, NULL, true);
+                emit(")args[%zu]", k++);
                 if (curr->next) emit(", ");
             }
             emit(");");
         }
         emitln("}");
-
-        emit_named_comps_adpt_type_def(&decl->type.info.fun.ret->type);
 
         struct seen_fun ref fun = dyarr_push(&seen.funs);
         if (!fun) errdie("OOM");
@@ -428,11 +501,8 @@ void emit_extern(declaration cref decl)
         obj->name = decl->name;
     }
 
-    // compound definitions with not associated declarator (eg. `struct a { int b; };`)
-    else emit_named_comps_adpt_type_def(&decl->type);
-
     if (decl->name.len) {
-        bool const use_def = adpt_type_val_needs_pp_define(&decl->type);
+        bool const use_def = adpt_type_val_needs_define(&decl->type);
         if (use_def) emit("#define %.*s_adapt_type ", bufmt(decl->name));
         else emit("static struct adpt_type const %.*s_adapt_type = ", bufmt(decl->name));
         emit_adpt_type_val(&decl->type, true);
@@ -443,13 +513,14 @@ void emit_extern(declaration cref decl)
 
 void emit_typedef(declaration cref decl)
 {
-    emit("typedef ");
-    emit_forward(&decl->type, &decl->name);
-    emitln(";");
-
+    if (emit_decl) {
+        emit("typedef ");
+        emit_forward(&decl->type, &decl->name, false);
+        emitln(";");
+    }
     emit_named_comps_adpt_type_def(&decl->type);
 
-    bool const use_def = adpt_type_val_needs_pp_define(&decl->type);
+    bool const use_def = adpt_type_val_needs_define(&decl->type);
     if (use_def) emit("#define %.*s_adapt_tdf_type ", bufmt(decl->name));
     else emit("static struct adpt_type const %.*s_adapt_tdf_type = ", bufmt(decl->name));
     emit_adpt_type_val(&decl->type, true);
@@ -567,6 +638,7 @@ int do_prepare(int argc, char** argv)
     char* outfile = NULL;
     result = stdout;
     atexit(cleanup);
+    emit_decl = true, emit_incl = false;
 
     while (0 < argc) {
         char* arg = (argc--, *argv++);
@@ -584,6 +656,16 @@ int do_prepare(int argc, char** argv)
             linc(&ls, arg+2);
             break;
 
+        case 'P':
+            val = arg+2;
+            if (!*val) break;
+#           define flagis(l) (!memcmp((l), val, strlen(l)))
+            else if (flagis("no-emit-decl")) emit_decl = false, emit_incl = true;
+            else if (flagis("no-emit-incl")) emit_incl = false;
+            else if (flagis("no-emit-sysi")) emit_sysi = false;
+#           undef flagis
+            break;
+
         case 'o':
             val = arg[2] ? arg+2 : (argc--, *argv++);
             if (!val) result = NULL;
@@ -593,7 +675,9 @@ int do_prepare(int argc, char** argv)
     }
 
     if (!result) exitf("Missing result operand or file not writable");
+
     emitln("#include \"adapter.h\"");
+    if (emit_incl) emitln("#include \"%s\"", infile);
     emit_empty();
 
     lini(&ls, infile);
@@ -652,7 +736,7 @@ int main(int argc, char** argv)
     char* prog = (argc--, *argv++);
     if (!argc || !strcmp("-h", *argv) || !strcmp("--help", *argv)) {
         fprintf(stderr,
-                "Usage: %s <entry> [-D...,-I...] -o <a-file.h>\n"
+                "Usage: %s <entry> [-D...,-I...] [-P...] -o <a-file.h>\n"
                 "       %s -m <a-file.h...> -o <c-main.c>\n"
                 "  Without \"-o\", uses standard output.\n"
                 "\n"
@@ -664,7 +748,13 @@ int main(int argc, char** argv)
                 "<entry> point (and the files it includes via the\n"
                 "`#include \"quoted\"` form). \"-D\" and \"-I\" have the\n"
                 "same meaning as for the C compiler (define macro and\n"
-                "include path), and unrecognized arguments are ignored.\n"
+                "include path), unrecognized arguments are ignored. \"-P\"\n"
+                "is use as leader for preparer flags:\n"
+                "  -Pno-emit-decl  do not declare the C object/functions\n"
+                "                  instead emit a `#include \"\"` to the\n"
+                "                  entry file\n"
+                "  -Pno-emit-incl  do not even emit the `#include \"\"`\n"
+                "  -Pno-emit-sysi  do not forward the `#include <>`\n"
                 "\n"
                 "  The second form (when the first argument is \"-m\")\n"
                 "takes a series of previously generated \"adapter\" files\n"

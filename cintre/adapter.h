@@ -11,7 +11,10 @@
 #define CINTRE_ADAPT_H
 
 #ifndef alignof
-#define alignof(...) (offsetof(struct { char _; __VA_ARGS__ it; }, it))
+# ifndef offsetof
+#  include <stddef.h>
+# endif
+# define alignof(...) (offsetof(struct { char _; __VA_ARGS__ it; }, it))
 #endif
 
 static struct adpt_type {

@@ -93,7 +93,8 @@ void _print_decl_type(FILE ref strm, struct decl_type cref ty)
         if ((size_t)-1 == ty->info.fun.count) ;
         else if (!ty->info.fun.count) fprintf(strm, "\x1b[36mvoid\x1b[m");
         else for (struct decl_type_param const* it = ty->info.fun.first; it; it = it->next) {
-            print_decl(strm, it->decl);
+            if (!it->decl) fprintf(strm, "...");
+            else print_decl(strm, it->decl);
             if (it->next) fprintf(strm, ", ");
         }
         fprintf(strm, ") -> ");

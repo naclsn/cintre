@@ -590,7 +590,7 @@ bufsl lext(lex_state ref ls)
             return lext(ls);
         }
 
-        if (isin('0', '9') || (is('.') && has(1) && '0' <= ls->slice.ptr[1] && ls->slice.ptr[1] <= '9')) {
+        if (isin('0', '9') || (is('.') && has(1) && '0' <= (&at())[1] && (&at())[1] <= '9')) {
             bool const fp = is('.');
             bool inte = false;
             char const* dgts = "'0123456789";
@@ -801,6 +801,10 @@ bufsl lext(lex_state ref ls)
             // fall through
         case '*': case '/': case '%': case '^': case '=': case '!':
             if ('=' == (&at())[1]) nx();
+            else
+            // fall through
+        case '.':
+            if (has(3) && '.' == (&at())[1] && '.' == (&at())[2]) nx(), nx();
             // fall through
         default: nx();
         }

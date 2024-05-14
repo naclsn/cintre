@@ -33,4 +33,20 @@
 [test/in/tok-stream/numbers: 14]	+
 [test/in/tok-stream/numbers: 14]	2
 [test/in/tok-stream/numbers: 14]	;
-[test/in/tok-stream/numbers: 14]	
+[test/in/tok-stream/numbers: 15]	a
+[test/in/tok-stream/numbers: 15]	.
+[test/in/tok-stream/numbers: 15]	.
+[test/in/tok-stream/numbers: 15]	b
+[test/in/tok-stream/numbers: 15]	;
+[test/in/tok-stream/numbers: 16]	1.
+[test/in/tok-stream/numbers: 16]	.2
+[test/in/tok-stream/numbers: 16]	;
+[test/in/tok-stream/numbers: 17]	a
+[test/in/tok-stream/numbers: 17]	...
+[test/in/tok-stream/numbers: 17]	b
+[test/in/tok-stream/numbers: 17]	;
+[test/in/tok-stream/numbers: 18]	1.
+[test/in/tok-stream/numbers: 18]	.
+[test/in/tok-stream/numbers: 18]	.2
+[test/in/tok-stream/numbers: 18]	;
+[test/in/tok-stream/numbers: 18]	

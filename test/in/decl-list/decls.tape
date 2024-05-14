@@ -108,5 +108,13 @@ flags: [34mstruct[m {me: [32mint[m, is: [34munsigned[m [32mint[m:1, hi: 
 [1m[test/in/decl-list/decls:60][m } flags; [1m##[m  -- tok: ;
 main: [34mfun[m(: [32mint[m, : [34mconst[m [34mvolatile[m [34mrestrict[m [34marr[m[*, [34marr[m[*, [32mchar[m]]) -> [32mint[m
 [1m[test/in/decl-list/decls:62][m int main(int, char[][const volatile restrict*]); [1m##[m  -- tok: ;
+a: [32mchar[m
+[1m[test/in/decl-list/decls:64][m char a = 'b'; [1m##[m  -- tok: =
+z: [34mstruct[m S
+[1m[test/in/decl-list/decls:65][m struct S z = {0}; [1m##[m  -- tok: =
+p: [34mfun[m(: [32mint[m, ...) -> [32mint[m
+[1m[test/in/decl-list/decls:67][m int p(int, ...); [1m##[m  -- tok: ;
+p: [34mfun[m(...) -> [32mint[m
+[1m[test/in/decl-list/decls:68][m int p(...); [1m##[m  -- tok: ;
 : [34mconst[m [32mvoid[m
-[1m[test/in/decl-list/decls:66][m  [1m##[m  -- tok: 
+[1m[test/in/decl-list/decls:72][m  [1m##[m  -- tok: 

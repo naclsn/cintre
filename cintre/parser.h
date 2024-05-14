@@ -115,7 +115,7 @@ typedef struct declaration {
                 struct declaration const* ret;
                 size_t count; // -1 when (), 0 when (void), n otherwise
                 struct decl_type_param {
-                    struct declaration const* decl;
+                    struct declaration const* decl; // last one NULL if variadic
                     struct decl_type_param* next;
                 }* first;
             } fun;
@@ -408,6 +408,20 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             .name= decl->name,
         };
         decl->name.len = 0;
+
+        if (bufis(ps->tok, "...")) {
+            ps->tok = lext(ps->ls);
+            _expect1(&ps->tok);
+            _expect(&ps->tok, ")");
+            ps->tok = lext(ps->ls);
+
+            fun.type.info.fun.count = 1;
+            fun.type.info.fun.first = &(struct decl_type_param){0};
+
+            _parse_decl_post(ps, capt, &fun);
+            return;
+        }
+
         _parse_decl_params(ps, &(struct _parse_decl_capture){
                 .hold= &fun,
                 .next= capt->next,
@@ -469,10 +483,30 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
     declaration ref fun = capt->hold;
 
     _expect1(&ps->tok);
-    bool last = ')' == *ps->tok.ptr;
+    bool const last = ')' == *ps->tok.ptr;
     if (last || ',' == *ps->tok.ptr) {
         union decl_type_info ref info = &fun->type.info;
         ps->tok = lext(ps->ls);
+
+        if (bufis(ps->tok, "...")) {
+            ps->tok = lext(ps->ls);
+            _expect1(&ps->tok);
+            _expect(&ps->tok, ")");
+            ps->tok = lext(ps->ls);
+
+            info->fun.count++;
+            if (!info->fun.first) info->fun.first = &node;
+            else for_linked (*info,fun) if (!curr->next) {
+                curr->next = &node;
+                break;
+            }
+
+            info->fun.count++;
+            node.next = &(struct decl_type_param){0};
+
+            _parse_decl_post(ps, capt, fun);
+            return;
+        }
 
         if (!decl) {
             if (last) {
@@ -559,8 +593,8 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
     declaration* ref base = ((declaration**)capt->hold)+1;
 
     _expect1(&ps->tok);
-    bool bitw = ':' == *ps->tok.ptr;
-    bool reset = ';' == *ps->tok.ptr;
+    bool const bitw = ':' == *ps->tok.ptr;
+    bool const reset = ';' == *ps->tok.ptr;
     if (bitw || reset || ',' == *ps->tok.ptr) {
         union decl_type_info ref info = &comp->type.info;
         ps->tok = lext(ps->ls);

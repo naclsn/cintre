@@ -12,3 +12,16 @@
 6l*7;
 1 ? 2l : 3u;
 (0, 0u, "zero");
+
+// test is quite weak (only tests the lenght)
+"cou\?cou";
+"cou\x1cou";
+"cou\x1 cou";
+"cou\1cou";
+"cou\100cou";
+"cou\1111cou";
+"cou\xffcou";
+"cou\xff cou";
+"cou\x100 cou";
+"cou\\cou";
+"cou\/cou";

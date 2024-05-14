@@ -141,15 +141,79 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case ATOM:;
         char const c = *expr->info.atom.ptr;
         if ('"' == c) {
-            // TODO: correct type (should be `char const[size]`)
-            static struct adpt_type const string = {
-                .size= sizeof(char*),
-                .align= sizeof(char*),
-                .tyty= TYPE_PTR,
-                .info.ptr= &adptb_char_type,
-            };
-            return expr->usr = (void*)&string;
+            struct adpt_type ref pty = dyarr_push(&cs->chk_work);
+            if (!pty) exitf("OOM");
+            size_t const len = expr->info.atom.len;
+            char cref ptr = expr->info.atom.ptr;
+            buf data = {0};
+            if (!(data.ptr = malloc(data.cap = len))) exitf("OOM");
+            for (size_t k = 1; k < len-1;) {
+                char c = 0;
+                if ('\\' == ptr[k]) switch (ptr[++k]) {
+                case'\'': c = '\''; k++; break;
+                case '"': c = '\"'; k++; break;
+                case '?': c = '\?'; k++; break;
+                case'\\': c = '\\'; k++; break;
+                case 'a': c = '\a'; k++; break;
+                case 'b': c = '\b'; k++; break;
+                case 'f': c = '\f'; k++; break;
+                case 'n': c = '\n'; k++; break;
+                case 'r': c = '\r'; k++; break;
+                case 't': c = '\t'; k++; break;
+                case 'v': c = '\v'; k++; break;
+                case 'x':;
+                    static char const dgts[] = "0123456789abcdef";
+                    char const* v = strchr(dgts, ptr[++k]|32);
+                    do c = (c<<4) + (v-dgts);
+                    while (++k < len && (v = strchr(dgts, ptr[k]|32)));
+                    break;
+                case 'u':
+                case 'U':
+                    fail("NIY: 'Universal character names' (Unicode)");
+                default:
+                    if ('0' <= ptr[k] && ptr[k] <= '7')
+                        do c = (c<<3) + (ptr[k]-'0');
+                        while ('0' <= ptr[++k] && ptr[k] <= '7');
+                    else k++;
+                } else c = ptr[k++];
+                data.ptr[data.len++] = c;
+            }
+            data.ptr[data.len++] = '\0';
+
+            // xxx: not pretty; cut down version of _alloc_slot with just the
+            // _emit_instr_w_opr for the push then call to _emit_data based on
+            // the assumption that compiler.h is included anyways
+            {
+                cs->vsp-= data.len;
+
+                unsigned count = 1;
+                for (size_t it = data.len; it; count++) it>>= 7;
+
+                unsigned char* op = dyarr_insert(&cs->res, cs->res.len, count);
+                if (!op) exitf("OOM");
+                *op = 0x0f;
+                size_t it = data.len;
+                do {
+                    unsigned char l = it&127;
+                    *++op = !!(it>>= 7)<<7 | l;
+                } while (it);
+
+                void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data);
+                _emit_data(cs, 0, data.len, (unsigned char*)data.ptr);
+            }
+
+            free(data.ptr);
+            return expr->usr = memcpy(pty, &(struct adpt_type){
+                    .size= sizeof(char*),
+                    .align= sizeof(char*),
+                    .tyty= TYPE_ARR,
+                    .info.arr= {
+                        .item= &adptb_char_type,
+                        .count= data.len,
+                    },
+                }, sizeof *pty);
         }
+
         if ('\'' == c) return expr->usr = (void*)&adptb_char_type;
         if (('0' <= c && c <= '9') || '.' == c) {
             bool isfp = false; // is fp if has '.' or e/E/p/P
@@ -173,6 +237,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                                       : isunsigned ? &adptb_uint_type : &adptb_int_type
                                       );
         }
+
         struct adpt_item cref found = cs->lookup(cs->usr, expr->info.atom);
         if (!found) fail("Unknown name: '%.*s'", bufmt(expr->info.atom));
         if (ITEM_TYPEDEF == found->kind) fail("Unexpected type name '%.*s'", bufmt(expr->info.atom));
@@ -342,11 +407,11 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             struct adpt_type ref pty = dyarr_push(&cs->chk_work);
             if (!pty) exitf("OOM");
             return expr->usr = memcpy(pty, &(struct adpt_type){
-                .size= sizeof(void*),
-                .align= sizeof(void*),
-                .tyty= TYPE_PTR,
-                .info.ptr= opr,
-            }, sizeof *pty);
+                    .size= sizeof(void*),
+                    .align= sizeof(void*),
+                    .tyty= TYPE_PTR,
+                    .info.ptr= opr,
+                }, sizeof *pty);
         }
         fail("Cannot take the address of expression");
     case UNOP_DEREF:

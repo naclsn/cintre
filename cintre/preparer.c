@@ -143,7 +143,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
                 if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("(void*)0,");
                 else {
                     indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
-                        if (!curr->next) errdie("Variadic functions are not supported");
+                        if (!curr->decl) errdie("Variadic functions are not supported");
                         indented ("[%zu]= {", count++) {
                             emitln(".name= \"%.*s\",", bufmt(curr->decl->name));
                             emit(".type= &");
@@ -310,7 +310,7 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
             if (-1ul != ty2->info.fun.count) {
                 if (0 == ty2->info.fun.count) emit("void");
                 else for_linked (ty2->info,fun) {
-                    if (!curr->next) errdie("Variadic functions are not supported");
+                    if (!curr->decl) errdie("Variadic functions are not supported");
                     emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
                     if (curr->next) emit(", ");
                 }
@@ -342,7 +342,7 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
         if (-1ul != ty->info.fun.count) {
             if (0 == ty->info.fun.count) emit("void");
             else for_linked (ty->info,fun) {
-                if (!curr->next) errdie("Variadic functions are not supported");
+                if (!curr->decl) errdie("Variadic functions are not supported");
                 emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
                 if (curr->next) emit(", ");
             }
@@ -475,7 +475,7 @@ void emit_extern(declaration cref decl)
             emit("%.*s(", bufmt(decl->name));
             size_t k = 0;
             for_linked (decl->type.info,fun) {
-                if (!curr->next) errdie("Variadic functions are not supported");
+                if (!curr->decl) errdie("Variadic functions are not supported");
                 emit("*(");
                 emit_forward(&(struct decl_type){
                         .kind= KIND_PTR,

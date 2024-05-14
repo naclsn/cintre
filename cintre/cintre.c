@@ -221,7 +221,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
     case KIND_STRUCT:
     case KIND_UNION:
         if (-1ul == ty->info.comp.count) {
-            char copy[ty->name.len+1];
+            char copy[ty->name.len+1]; // yyy: va
             memcpy(copy+1, ty->name.ptr, ty->name.len);
             copy[0] = '@';
             struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, (bufsl){.ptr= copy, .len= ty->name.len});

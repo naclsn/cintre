@@ -118,7 +118,7 @@ void _alloc_slot(compile_state ref cs, struct slot ref slot)
     slot->codeat = cs->res.len;
     slot->end = cs->vsp;
     if (slot->ty->size) {
-        cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->size));
+        cs->vsp = (cs->vsp - slot->ty->size) & (~(size_t)0<<_l2(slot->ty->align));
         _emit_instr_w_opr(0x0f, slot->end - cs->vsp);
     }
     slot->loc = cs->vsp;
@@ -478,7 +478,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         if ('"' == ptr[0]) {
             slot->as.variable = -1;
             slot->usage = _slot_variable;
-            exitf("NYI: string literal (should have been replaced with its slot during checking)");
+            notif("NYI: string literal (should have been replaced with its slot during checking)");
             // XXX: nah- it's gonna need to be a pointer proper, be it on the stack or not
             //      SO, will eventually need an instruction to write sp to a slot
             return;

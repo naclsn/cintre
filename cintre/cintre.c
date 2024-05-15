@@ -40,6 +40,10 @@ typedef struct cintre_state {
     dyarr(struct adpt_type) ty_work;
 } cintre_state;
 
+#ifndef CINTRE_NAMESPACES_DEFINED
+static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
+#endif
+
 void free_cintre_state(cintre_state ref gs)
 {
     ldel(&gs->lexr);
@@ -108,9 +112,68 @@ void _prompt_cc(int sigint)
     rl_forced_update_display();
     signal(sigint, _prompt_cc);
 }
+char* _prompt_compl(char cref text, int const state)
+{
+    rl_completion_suppress_append = 1; // yyy: the automatic trailing space
+    // TODO: could
+    //if (in string) return rl_filename_completion_function(text, state);
+    //if (TYPE_STRUCT || TYPE_UNION) .. rl_point, rl_line_buffer ..;
+    size_t const len = strlen(text);
+    static size_t ns, k;
+    if (0 == state) ns = k = 0;
+    // FIXME: not having locals in completion is dumb :/
+    //cintre_state cref gs = usr;
+    //for (size_t k = 0; k < gs->locs.len; k++) {
+    //    struct adpt_item const* const it = gs->locs.ptr+k;
+    //    if (bufis(name, it->name)) return it;
+    //}
+    for (; ns < countof(namespaces); ns++, k = 0)
+        for (; k < namespaces[ns].count; k++) {
+            struct adpt_item const* const it = namespaces[ns].items+k;
+            if (!memcmp(it->name, text, len)) {
+                size_t const len = strlen(it->name);
+                // "(" if function, "[" if array..?
+                bool const fun = TYPE_FUN == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_FUN == it->type->info.ptr->tyty); // xxx: || ...
+                bool const arr = TYPE_ARR == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_ARR == it->type->info.ptr->tyty); // xxx: || ...
+                char ref r = malloc(len+fun+arr);
+                strcpy(r, it->name);
+                if (fun || arr) r[len] = fun ? '(' : '[', r[len+1] = '\0';
+                k++;
+                return r;
+            }
+        }
+    return NULL;
+}
+void _prompt_list_compl(char** const matches, int const num_matches, int const max_length)
+{
+    int term_width = 0; {
+        printf("\x1b[9999G\x1b[6n\r\n");
+        while (';' != getchar());
+        char c;
+        while ('R' != (c = getchar())) term_width = term_width*10 + c-'0';
+    }
+    int const cols_count = term_width/(max_length+2) - 1;
+    int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count;
+    for (int j = 0; j < rows_count; j++) {
+        for (int i = 0; i < cols_count+1; i++) {
+            if (i*rows_count+j >= num_matches) break;
+            char cref it = matches[i*rows_count+j+1];
+            unsigned const len = strlen(it);
+            if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
+            else if ('_' == it[len-2] && 't' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it); // xxx: yea ofc
+            else printf("%-*s", max_length+2, it);
+        }
+        printf("\r\n");
+    }
+    rl_forced_update_display();
+}
 bool prompt(char const* prompt, char** res)
 {
     if (!*res) {
+        rl_readline_name = "Cintre";
+        rl_completer_word_break_characters = " 0123456789{}[]()<>%:;.?*+-/^&|~!=,";
+        rl_completion_entry_function = _prompt_compl;
+        rl_completion_display_matches_hook = _prompt_list_compl;
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);
     }
@@ -141,10 +204,6 @@ bool prompt(char const* prompt, char** res)
 // }}}
 
 // compile time (lookup and random helpers) {{{
-#ifndef CINTRE_NAMESPACES_DEFINED
-static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
-#endif
-
 struct adpt_item const* lookup(void* usr, bufsl const name)
 {
     cintre_state cref gs = usr;

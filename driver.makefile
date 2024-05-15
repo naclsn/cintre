@@ -2,22 +2,25 @@
 # prog     := simple
 # entries  := simple.c
 # objs     := simple.o
-# obps     := # supported: -nostd (disables standard.h), -norl (disables readline)
-# include driver.makefile # rules: $(build)/simple, clean-simple
+# opts     := # supported: -nostd (disables standard.h), -norl (disables readline)
+# include driver.makefile
+#
+# - it defines the rules `build/simple` and `clean-simple`
+# - it will not try to build the objects, this is left to user
+# - to change the build directory, define `$(build)`
+# - for entry-specific CFLAGS, define `$(CFLAGS-a-..)` (so in this example `$(CFLAGS-a-simple)`)
+
+build ?= build
+CFLAGS ?= -O2
 
 cintre := cintre
-build ?= build
 
 PR := $(build)/preparer.exe
-CFLAGS := -O2
 
 #---
 
-_nostd = $(findstring -nostd,$(opts))
-_norl = $(findstring -norl,$(opts))
-
-$(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c; $(CC) $^ -o $@ $(CFLAGS) -I. -I$(cintre) $(if $(_nostd),,-lc -lm) $(if $(_norl),,-DUSE_READLINE $(shell pkg-config readline --cflags --libs))
-$(build)/c-$(prog).c: $(if $(_nostd),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
+$(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c $(cintre)/cintre.c $(cintre)/*.h; $(CC) $(filter $(build)/%,$^) -o $@ $(CFLAGS) -I. -I$(cintre) -lc -lm $(if $(findstring -norl,$(opts)),,-DUSE_READLINE $(shell pkg-config readline --cflags --libs))
+$(build)/c-$(prog).c: $(if $(findstring -nostd,$(opts)),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
 $(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -Pno-emit-decl -Pno-emit-incl -o $@ $(CFLAGS-a-standard)
 
 # build/a-entry.h: some/entry.ch $(PR); $(PR) $< -o $@ $(CFLAGS-a-entry)

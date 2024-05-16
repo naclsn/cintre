@@ -1,36 +1,63 @@
 ### running a repl against a C lib
 
+Situation: you have a simplistic C lib (header/s + obj/ar/shared)
+
+Idea: automatically make a program that is a REPL linked against this lib, you
+enter C expressions, can interact with everything exposed in the header
+(declare variables with lib types, call lib functions, ...) as if you were
+writing a `main()` and compiling it over and over and editing it and mixing the order of the arguments and recompiling it and not thinking about having a `printf` right here and it should be printing something else and that was just an off by one and-
+
+Could you do that with just `gdb`? Yeah! (Well mostly I guess...)
+
+---
+
+### `example/`
+
 Example/PoC with `example/mylib`:
 ```console
-$ cp example/mylib.[ch] .
-$ cc cintre/preparer.c -o pr
-
-$ cc -c mylib.c -o mylib.o
-$ ./pr mylib.h -o a-mylib.h
-$ ./pr cintre/standard.h -o a-standard.h
-$ ./pr -m a-mylib.h a-standard.h -o c-main.c
-
-$ cc mylib.o c-main.c -o c-main -Icintre -DUSE_READLINE -lreadline
-
-$ ./c-main
+$ cd example
+$ make && ./example
 Type `;help` for a list of command
 (*^^),u~~ sayhi; ty
 Expression is of type: fun(times: int) -> void
-(*^^),u~~ sayhi(42);
-Segmentation fault (core dump)
-
-$ cd ..
-$ rm -rf $OLDPWD
+(*^^),u~~ sayhi(2);
+hi
+hi
+Result:
+_: void
+   = ()
+(*^^),u~~
 ```
 
-yeah that's a work in progress
+If you really don't want to use make (why?):
+```console
+$ make -n
+cc -O2   -c -o mylib.o mylib.c
+cc ../cintre/preparer.c -o preparer.exe -O2
+./preparer.exe ../cintre/standard.h -Pno-emit-decl -Pno-emit-incl -o a-standard.h
+./preparer.exe mylib.h -o a-mylib.h -O2
+./preparer.exe -m ./a-standard.h ./a-mylib.h -o c-example.c
+cc ./mylib.o ./c-example.c -o example -O2 -I. -I../cintre -lc -lm -DUSE_READLINE -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -lreadline
+```
 
-### not handled / not planned / known limitations / notable differences
+Bluntly the steps are:
+- build mylib.o
+- build `pr`
+- `pr standard.h` make an interface ("adapter") to stdlib/stdio/string...
+- `pr mylib.h` make an interface ("adapter") with mylib.o
+- `pr -m` merge into a compilable `main()`
+- compile the REPL (here with readline)
+The `driver.Makefile` does exactly that, see `example/Makefile`.
+
+---
+
+### not handled / not planned / known limitations / notable differences with std C
 
 For now assumes platform is:
 - 8 bits bytes (ie. `CHAR_BIT == 8`);
-- little endian (ie. `(char[4]){0xd6, 0xff} == 0xff2d`);
+- little endian (ie. `(char[4]){0xd6, 0xff, 0x00, 0x00} == (int)0xff2d`);
 - LP64 (ie. `sizeof(size_t) == sizeof(void*) == sizeof(long int) == 8`).
+ie "my machine"
 
 <details>
   <summary>Other jankiness and arbitrary changes:</summary>

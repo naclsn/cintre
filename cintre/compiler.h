@@ -137,7 +137,7 @@ void _rewind_slot(compile_state ref cs, struct slot cref slot)
     cs->vsp = slot->end;
 }
 
-void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data)
+void _emit_data(compile_state ref cs, size_t const dst, size_t const width, unsigned char const* data)
 {
     _emit_instr_w_opr(0x1d, dst, width);
     unsigned char* dt = dyarr_insert(&cs->res, cs->res.len, width);
@@ -145,26 +145,31 @@ void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char co
     memcpy(dt, data, width);
 }
 
-void _emit_move(compile_state ref cs, size_t dst, size_t width, size_t src)
+void _emit_move(compile_state ref cs, size_t const dst, size_t const width, size_t const src)
 {
     _emit_instr_w_opr(0x1f, dst, width, src);
 }
 
-void _emit_write(compile_state ref cs, size_t ptr_dst_slt, struct slot cref slot_src)
+void _emit_write(compile_state ref cs, size_t const ptr_dst_slt, struct slot cref slot_src)
 {
     _emit_instr_w_opr(0x2f, ptr_dst_slt, slot_src->ty->size, at(slot_src));
 }
 
-void _emit_read(compile_state ref cs, size_t ptr_src_slt, struct slot cref slot_dst)
+void _emit_read(compile_state ref cs, size_t const ptr_src_slt, struct slot cref slot_dst)
 {
     _emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, at(slot_dst));
+}
+
+void _emit_lea(compile_state ref cs, size_t const dst, size_t const off)
+{
+    _emit_instr_w_opr(0x20, dst, off);
 }
 
 //void _emit_slot_value(compile_state ref cs, struct slot cref slot) {
 //    _emit_data(cs, at(slot), slot->ty->size, (unsigned char*)&slot->as.value.ul);
 //}
 
-void _emit_call_base(compile_state ref cs, unsigned argc, size_t ret, size_t fun)
+void _emit_call_base(compile_state ref cs, unsigned const argc, size_t const ret, size_t const fun)
 {
     _emit_instr_w_opr(argc<<4 | 0xc, ret, fun);
 }
@@ -209,7 +214,7 @@ enum _arith_w {
     _oprw_d= 0xd
 };
 
-void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size_t dst, size_t a, size_t b)
+void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size_t const dst, size_t const a, size_t const b)
 {
     _emit_instr_w_opr(aop+w, dst, a, b);
 }
@@ -316,6 +321,7 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
     // ideal case when they have the same type is just compile the expr w/ res into the slot
     // otherwise ptr and num conversions must take place:
     // - ptr -> ptr is whever
+    // - arr -> ptr is what it is
     // - int -> int:
     //   - if the slot is wider then it can still be emit into it, conversion in-place (zero/sign extend)
     //   - otherwise truncating cvt doesn't requier an other slot, conversion in-place (because little endian)
@@ -326,6 +332,18 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
     // - the slot is a variable, a widening conversion will need to copy
     // - the slot is a value, compile-time conversion
 
+    struct adpt_type cref expr_ty = expr->usr;
+    if (TYPE_ARR == expr_ty->tyty && TYPE_PTR == slot->ty->tyty) {
+        struct slot tmp = {.ty= expr_ty};
+        compile_expression(cs, expr, &tmp);
+
+        if (_slot_variable != tmp.usage) exitf("unreachable: array should have usage _slot_variable");
+
+        _emit_lea(cs, at(slot), atv(&tmp));
+        slot->usage = _slot_used;
+        return;
+    }
+
     bool const is_to_int = TYPE_CHAR <= slot->ty->tyty && slot->ty->tyty <= TYPE_ULONG;
     bool const is_to_flt = TYPE_FLOAT <= slot->ty->tyty && slot->ty->tyty <= TYPE_DOUBLE;
 
@@ -335,7 +353,6 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
         return;
     }
 
-    struct adpt_type cref expr_ty = expr->usr;
     bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
     //bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
 
@@ -476,11 +493,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         size_t const len = expr->info.atom.len;
         char cref ptr = expr->info.atom.ptr;
         if ('"' == ptr[0]) {
-            slot->as.variable = -1;
+            slot->as.variable = len;
             slot->usage = _slot_variable;
-            notif("NYI: string literal (should have been replaced with its slot during checking)");
-            // XXX: nah- it's gonna need to be a pointer proper, be it on the stack or not
-            //      SO, will eventually need an instruction to write sp to a slot
             return;
         }
 
@@ -620,7 +634,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             struct expr_call_arg const* cons = expr->info.call.first;
             size_t count = fun.ty->info.fun.count;
             for (size_t k = 0; k < count; k++, cons = cons->next) {
-                args[k].ty = fun.ty->info.fun.params[count-1-k].type;
+                args[k].ty = fun.ty->info.fun.params[k].type;
                 _alloc_slot(cs, args+k);
 
                 _fit_expr_to_slot(cs, cons->expr, args+k);
@@ -629,7 +643,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             }
 
             _emit_call_base(cs, count, at(slot), _slot_variable == fun.usage ? atv(&fun) : at(&fun));
-            for (size_t k = count; k; k--) _emit_call_arg(cs, _slot_variable == args[k-1].usage ? atv(args+k-1) : at(args+k-1));
+            for (size_t k = 0; k < count; k++) _emit_call_arg(cs, _slot_variable == args[k].usage ? atv(args+k) : at(args+k));
 
             for (size_t k = count; k; k--) if (_slot_used == args[k-1].usage) _rewind_slot(cs, args+k-1);
             if (_slot_used == fun.usage) _rewind_slot(cs, &fun);

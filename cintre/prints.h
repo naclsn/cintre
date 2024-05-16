@@ -395,21 +395,23 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     switch (it->type->tyty) {
     case TYPE_VOID: fprintf(strm, "()"); break;
 
-    case TYPE_CHAR: switch (*(char*)p) {
-        case '\0': fprintf(strm, "'\\0'"); break;
-        case '\'': fprintf(strm, "'\\''"); break;
-        case '\"': fprintf(strm,"'\\\"'"); break;
-        case '\?': fprintf(strm, "'\\?'"); break;
-        case '\\': fprintf(strm,"'\\\\'"); break;
-        case '\a': fprintf(strm, "'\\a'"); break;
-        case '\b': fprintf(strm, "'\\b'"); break;
-        case '\f': fprintf(strm, "'\\f'"); break;
-        case '\n': fprintf(strm, "'\\n'"); break;
-        case '\r': fprintf(strm, "'\\r'"); break;
-        case '\t': fprintf(strm, "'\\t'"); break;
-        case '\v': fprintf(strm, "'\\v'"); break;
-        default: fprintf(strm, ' ' <= *(char*)p && *(char*)p <= '~' ? "'%c'" : "'\\x%02x'", *(char*)p);
-    } break;
+    case TYPE_CHAR:;
+        char const c = (*(char*)p)&0xff;
+        switch (c) {
+            case '\0': fprintf(strm, "'\\0'"); break;
+            case '\'': fprintf(strm, "'\\''"); break;
+            case '\"': fprintf(strm,"'\\\"'"); break;
+            case '\?': fprintf(strm, "'\\?'"); break;
+            case '\\': fprintf(strm,"'\\\\'"); break;
+            case '\a': fprintf(strm, "'\\a'"); break;
+            case '\b': fprintf(strm, "'\\b'"); break;
+            case '\f': fprintf(strm, "'\\f'"); break;
+            case '\n': fprintf(strm, "'\\n'"); break;
+            case '\r': fprintf(strm, "'\\r'"); break;
+            case '\t': fprintf(strm, "'\\t'"); break;
+            case '\v': fprintf(strm, "'\\v'"); break;
+            default: fprintf(strm, ' ' <= c && c <= '~' ? "'%c'" : "'\\x%02x'", c);
+        } break;
 
     case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", *(unsigned char*)p);  break;
     case TYPE_SCHAR:  fprintf(strm, "%hhi",     *(signed char*)p);    break;
@@ -432,7 +434,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
                     .type= f->type,
                     .as.object= (char*)p+f->offset, // xxx: discards const
                 }, stack, depth+1);
-            fprintf(strm, "\n");
+            //fprintf(strm, "\n");
         }
         fprintf(strm, "%*s}", depth*3, "");
         break;
@@ -455,7 +457,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
                     .type= it->type->info.arr.item,
                     .as.object= (char*)p+k*it->type->info.arr.item->size, // xxx: discards const
                 }, stack, depth+1);
-            fprintf(strm, "\n");
+            //fprintf(strm, "\n");
         }
         fprintf(strm, "%*s]", depth*3, "");
         break;
@@ -472,11 +474,16 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
     unsigned cur_var_color = 1;
 #   define col_n(_n) (((_n)&3)+31)
 
+    fprintf(strm, "                   . ");
+    for (int k = 0; k < 16; k++) fprintf(strm, " %02x", k);
+    fprintf(strm, "  .\n");
+
     for (size_t at = sz; 16 <= at && rs->sp < at; at-= 16) {
-        fprintf(strm, "0x%08zx @-%-5zu | ", at, sz-at);
+        fprintf(strm, "0x%08zx @-%-5zu | ", at-16, sz-at+16);
 
         unsigned off_var_color = 0;
-        for (unsigned k = 0; k < 16; k++) {
+        //for (unsigned k = 0; k < 16; k++) {
+        for (int k = 15; k >= 0; k--) {
             if (rs->sp >= at-k) {
                 fprintf(strm, "   ");
                 continue;
@@ -484,7 +491,7 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
             fprintf(strm, " ");
 
             if (!in_var_size) {
-                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-items[n].type->size-k) {
+                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-1-k) {
                     in_var_size = items[n].type->size;
                     break;
                 }
@@ -498,8 +505,8 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
 
         fprintf(strm, "  |");
         if (off_var_color)
-            for (unsigned k = 0; k < 16 && rs->sp < at-k; k++)
-                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-items[n].type->size-k)
+            for (int k = 15; k >= 0; k--)
+                for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-1-k)
                     fprintf(strm, "  \x1b[%um%s\x1b[m(%zu)", col_n(cur_var_color++), items[n].name, items[n].type->size);
 
         fprintf(strm, "\n");

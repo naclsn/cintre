@@ -20,7 +20,7 @@ PR := $(build)/preparer.exe
 #---
 
 $(build)/$(prog): $(addprefix $(build)/,$(objs)) $(build)/c-$(prog).c $(cintre)/cintre.c $(cintre)/*.h; $(CC) $(filter $(build)/%,$^) -o $@ $(CFLAGS) -I. -I$(cintre) -lc -lm $(if $(findstring -norl,$(opts)),,-DUSE_READLINE $(shell pkg-config readline --cflags --libs))
-$(build)/c-$(prog).c: $(if $(findstring -nostd,$(opts)),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))); $(PR) -m $^ -o $@
+$(build)/c-$(prog).c: $(if $(findstring -nostd,$(opts)),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries)))) $(PR); $(PR) -m $(filter-out $(PR),$^) -o $@
 $(build)/a-standard.h: cintre/standard.h $(PR); $(PR) $< -Pno-emit-decl -Pno-emit-incl -o $@ $(CFLAGS-a-standard)
 
 # build/a-entry.h: some/entry.ch $(PR); $(PR) $< -o $@ $(CFLAGS-a-entry)

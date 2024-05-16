@@ -200,6 +200,14 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 
                 void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data);
                 _emit_data(cs, 0, data.len, (unsigned char*)data.ptr);
+
+                // yyy: store the location of the array here, it is retrieved
+                // by the compiler. 2 things:
+                // - atom.ptr is not changed, so ptr[0] is still '"' which the
+                //   compiler needs to know what it is dealing with
+                // - atom.len is no longer needed because the data has already
+                //   been essentially emitted, len "points" to this 'variable'
+                expr->info.atom.len = cs->vsp;
             }
 
             free(data.ptr);

@@ -623,19 +623,22 @@ int do_merge(int argc, char** argv)
     if (!past_end) past_end = argv;
     if (!result) exitf("Missing result operand or file not writable");
 
-    for (char** it = first; it < past_end; it++) emitln("#include \"%s\"", *it);
-    emit_empty();
+    if (first != past_end) {
+        for (char** it = first; it < past_end; it++) emitln("#include \"%s\"", *it);
+        emit_empty();
 
-    indented ("static struct adpt_namespace const namespaces[] = {") for (char** it = first; it < past_end; it++) {
-        bufsl const itns = name_space(*it);
-        emit("{.name= \"%.*s\", .count= sizeof adptns_%.*s/sizeof*adptns_%.*s, .items= adptns_%.*s}", bufmt(itns), bufmt(itns), bufmt(itns), bufmt(itns));
-        if (past_end == it+1) emit(",");
-        else emitln(",");
+        indented ("static struct adpt_namespace const namespaces[] = {") for (char** it = first; it < past_end; it++) {
+            bufsl const itns = name_space(*it);
+            emit("{.name= \"%.*s\", .count= sizeof adptns_%.*s/sizeof*adptns_%.*s, .items= adptns_%.*s}", bufmt(itns), bufmt(itns), bufmt(itns), bufmt(itns));
+            if (past_end == it+1) emit(",");
+            else emitln(",");
+        }
+        emitln("};");
+        emit_empty();
+
+        emitln("#define CINTRE_NAMESPACES_DEFINED");
     }
-    emitln("};");
-    emit_empty();
 
-    emitln("#define CINTRE_NAMESPACES_DEFINED");
     emitln("#include \"cintre.c\"");
 
     return EXIT_SUCCESS;

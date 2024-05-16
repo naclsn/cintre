@@ -41,7 +41,7 @@ typedef struct cintre_state {
 } cintre_state;
 
 #ifndef CINTRE_NAMESPACES_DEFINED
-static struct adpt_namespace const namespaces[1] = {{.name= "(placeholder)", .count= 0, .items= NULL}};
+static struct adpt_namespace const namespaces[1] = {{.name= "(0 namespaces)", .count= 0, .items= NULL}};
 #endif
 
 void free_cintre_state(cintre_state ref gs)
@@ -478,6 +478,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
         printf("   loc[ales]               -  list local names\n");
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
+        printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
@@ -524,8 +525,17 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
 
     if (xcmdis("sta")) {
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
-        printf("Stack top (sp= %zx /%zx @-%zu):\n", gs->runr.sp, sz, sz-gs->runr.sp);
+        printf("Stack top %p (sp= %zx /%zx @-%zu):\n", gs->runr.stack, gs->runr.sp, sz, sz-gs->runr.sp);
         print_tops(stdout, &gs->runr, gs->locs.ptr, gs->locs.len);
+        return;
+    }
+
+    if (xcmdis("cls")) {
+        size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
+        gs->runr.sp = sz;
+        for (size_t k = 0; k < gs->locs.len; k++)
+            free((void*)gs->locs.ptr[k].name);
+        gs->locs.len = 0;
         return;
     }
 
@@ -536,12 +546,13 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
     }
 
     if (!expr) return;
-    gs->comp.vsp = gs->runr.sp;
+    size_t const psp = gs->comp.vsp = gs->runr.sp;
     gs->comp.res.len = 0;
 
     if (xcmdis("ty")) {
         gs->comp.chk_work.len = 0; // xxx: annoying
         struct adpt_type cref ty = check_expression(&gs->comp, expr);
+        gs->runr.sp = psp; // yyy: free string/comp literals
         if (!ty) return;
         printf("Expression is of type: ");
         print_type(stdout, ty);
@@ -569,7 +580,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
     printf("Result:\n");
     print_item(stdout, &res, gs->runr.stack, 0);
 
-    gs->runr.sp+= res.type->size; // yyy: free
+    gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho..)
 } // accept_expr
 // }}}
 

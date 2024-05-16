@@ -1,5 +1,5 @@
 warnings := -Wall -Wextra -Wpedantic -Werror
-override CFLAGS := -ggdb -O1 -std=c99 $(warnings) $(CFLAGS)
+override CFLAGS := -ggdb -O0 -std=c99 $(warnings) $(CFLAGS)
 
 prog := cintre
 include driver.makefile

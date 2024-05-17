@@ -262,13 +262,15 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
     // unsigned -> signed:   zero extend
     // signed   -> unsigned: sign extend
 
-    unsigned char ref b = dyarr_insert(&cs->res, cs->res.len, 3);
+    bool const is_src_signed =
+        TYPE_CHAR  == small_src->ty->tyty ||
+        TYPE_SCHAR == small_src->ty->tyty ||
+        TYPE_SHORT == small_src->ty->tyty ||
+        TYPE_INT   == small_src->ty->tyty ||
+        TYPE_LONG  == small_src->ty->tyty;
 
-    bool const issigned = TYPE_SCHAR == small_src->ty->tyty || TYPE_SHORT == small_src->ty->tyty || TYPE_INT == small_src->ty->tyty || TYPE_LONG == small_src->ty->tyty;
-
-    b[0] = _l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size) | !issigned<<3;
-    b[1] = at(big_dst);
-    b[2] = at(small_src);
+    _emit_instr_w_opr(_l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size) | !is_src_signed<<2,
+            at(big_dst), at(small_src));
 }
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)  \

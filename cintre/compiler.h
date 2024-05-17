@@ -606,19 +606,85 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_SUBSCR: { // TODO: wip
+    case BINOP_SUBSCR: {
             struct slot base = {.ty= expr->info.subscr.base->usr};
-            _alloc_slot(cs, &base);
 
-            compile_expression(cs, expr->info.subscr.base, &base);
-            // can be:
-            // - variable: stack, to ptr (far)
-            // - value: ptr (far), but outside of NULL..!?
-            // - used: -
+            if (TYPE_ARR == base.ty->tyty) {
+                compile_expression(cs, expr->info.subscr.base, &base);
 
-            struct slot off = {0};
-            compile_expression(cs, expr->info.subscr.off, &off);
-            slot->usage = _slot_variable;
+                if (_slot_variable != base.usage) exitf("unreachable: array should have usage _slot_variable");
+
+                struct slot off = {.ty= &adptb_ulong_type};
+                _alloc_slot(cs, &off);
+                _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
+
+                if (_slot_value == off.usage) {
+                    _cancel_slot(cs, &off);
+                    slot->as.variable = base.as.variable + off.as.value.ul;
+                    slot->usage = _slot_variable;
+                } else {
+                    if (_slot_variable == off.usage) _cancel_slot(cs, &off);
+
+                    struct slot ptr = {.ty= &(struct adpt_type){
+                            .size= sizeof(void*), .align= sizeof(void*),
+                            .tyty= TYPE_PTR, // xxx: USL
+                            .info.ptr= base.ty, // xxx: USL
+                        }};
+                    _alloc_slot(cs, &ptr);
+                    _emit_lea(cs, at(&ptr), atv(&base));
+
+                    _emit_arith(cs, _ops_add, _slot_arith_w(&off),
+                            at(&ptr),
+                            at(&ptr),
+                            _slot_variable == off.usage ? atv(&off) : at(&off));
+
+                    _emit_read(cs, at(&ptr), slot);
+                    slot->usage = _slot_used;
+
+                    _rewind_slot(cs, &ptr);
+                    if (_slot_used == off.usage) _rewind_slot(cs, &off);
+                }
+            }
+
+            else {
+                _alloc_slot(cs, &base);
+                compile_expression(cs, expr->info.subscr.base, &base);
+
+                if (_slot_value == base.usage) exitf("subscr on a compile time - this is surely very wrong");
+
+                if (_slot_variable == base.usage) _emit_move(cs, at(&base), base.ty->size, atv(&base));
+
+                // on the stack is the ptr (base)
+                // _fit off to ul
+                // add res onto base
+                // read from at base into slot over slot size
+
+                struct slot off = {.ty= &adptb_ulong_type};
+                _alloc_slot(cs, &off);
+                _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
+
+                switch (off.usage) {
+                case _slot_value:
+                    _cancel_slot(cs, &off);
+                    _emit_arith(cs, _ops_addi, _slot_arith_w(&off), at(&base), _slot_arith_v(&off), at(&base));
+                    break;
+
+                case _slot_used:
+                    _emit_arith(cs, _ops_add, _slot_arith_w(&off), at(&base), at(&base), at(&off));
+                    _rewind_slot(cs, &off);
+                    break;
+
+                case _slot_variable:
+                    _cancel_slot(cs, &off);
+                    _emit_arith(cs, _ops_add, _slot_arith_w(&off), at(&base), at(&base), atv(&off));
+                    break;
+                }
+
+                _emit_read(cs, at(&base), slot);
+                slot->usage = _slot_used;
+
+                _rewind_slot(cs, &base);
+            }
         }
         return;
 

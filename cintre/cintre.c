@@ -238,6 +238,10 @@ bool is_decl_keyword(cintre_state cref gs, bufsl const tok)
         bufis(tok, "union")    ||
         bufis(tok, "enum")     ||
         bufis(tok, "typedef")  ||
+        bufis(tok, "extern")   ||
+        bufis(tok, "static")   ||
+        bufis(tok, "auto")     ||
+        bufis(tok, "register") ||
         bufis(tok, "const")    ) return true;
 
     struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, tok);
@@ -449,10 +453,29 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok)
         return;
     }
 
-    //size_t end = gs->sp;
-    gs->runr.sp = ((gs->runr.sp-ty->size) / ty->align) * ty->align;
+    int kind = ITEM_VARIABLE;
+    switch (decl->spec) {
+    case SPEC_TYPEDEF:
+        kind = ITEM_TYPEDEF;
+        break;
 
-    struct adpt_item* it = dyarr_push(&gs->locs);
+    case SPEC_EXTERN:
+        notif("`extern` in declaration, nothing declared");
+        return;
+
+    case SPEC_STATIC:
+        notif("`static` ignored in declaration"); if (0)
+    case SPEC_AUTO:
+        notif("`auto` ignored in declaration"); if (0)
+    case SPEC_REGISTER:
+        notif("`register` ignored in declaration");
+        // fall through
+    case SPEC_NONE:
+        //size_t end = gs->sp;
+        gs->runr.sp = ((gs->runr.sp-ty->size) / ty->align) * ty->align;
+    }
+
+    struct adpt_item ref it = dyarr_push(&gs->locs);
     if (!it) exitf("OOM");
     char* name = malloc(decl->name.len+1);
     if (!name) free(it), exitf("OOM");
@@ -460,8 +483,8 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok)
     memcpy(it, &(struct adpt_item){
             .name= memcpy(name, decl->name.ptr, decl->name.len),
             .type= ty,
-            .kind= ITEM_VARIABLE,
-            .as.variable= gs->runr.sp,
+            .kind= kind,
+            .as.variable= gs->runr.sp, // (yyy: `.as` not used when `ITEM_TYPEDEF`)
         }, sizeof *it);
 }
 

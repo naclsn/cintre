@@ -132,12 +132,16 @@ char* _prompt_compl(char cref text, int const state)
             struct adpt_item const* const it = namespaces[ns].items+k;
             if (!memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
-                // "(" if function, "[" if array..?
+                bool const tdf = ITEM_TYPEDEF == it->kind;
                 bool const fun = TYPE_FUN == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_FUN == it->type->info.ptr->tyty); // xxx: || ...
                 bool const arr = TYPE_ARR == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_ARR == it->type->info.ptr->tyty); // xxx: || ...
-                char ref r = malloc(len+fun+arr);
+                char ref r = malloc(len + (tdf|fun|arr));
                 strcpy(r, it->name);
-                if (fun || arr) r[len] = fun ? '(' : '[', r[len+1] = '\0';
+                if (tdf|fun|arr) r[len] =
+                    tdf ? ' ' :
+                    fun ? '(' :
+                    arr ? '[' :
+                        '?', r[len+1] = '\0';
                 k++;
                 return r;
             }
@@ -160,7 +164,7 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
             char cref it = matches[i*rows_count+j+1];
             unsigned const len = strlen(it);
             if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
-            else if ('_' == it[len-2] && 't' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it); // xxx: yea ofc
+            else if (' ' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
             else printf("%-*s", max_length+2, it);
         }
         printf("\r\n");
@@ -612,7 +616,6 @@ int main(void)
                 tok = parse_declaration(&gs->decl, tok);
 
                 if (1 == tok.len && '=' == *tok.ptr) {
-                    // yyy: trust me bro, it's ok to do that here
                     // XXX: lexer_recycle
                     gs->lexr.slice.ptr--, gs->lexr.slice.len++;
                     char cref name = dyarr_top(&gs->locs)->name;

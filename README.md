@@ -1,4 +1,4 @@
-### running a repl against a C lib
+### Running a REPL against a C lib
 
 Situation: you have a simplistic C lib (header/s + obj/ar/shared)
 
@@ -57,7 +57,6 @@ For now assumes platform is:
 - 8 bits bytes (ie. `CHAR_BIT == 8`);
 - little endian (ie. `(char[4]){0xd6, 0xff, 0x00, 0x00} == (int)0xff2d`);
 - LP64 (ie. `sizeof(size_t) == sizeof(void*) == sizeof(long int) == 8`).
-ie "my machine"
 
 <details>
   <summary>Other jankiness and arbitrary changes:</summary>

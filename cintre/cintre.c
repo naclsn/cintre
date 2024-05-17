@@ -538,8 +538,12 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
         gs->runr.sp = sz;
         for (size_t k = 0; k < gs->locs.len; k++)
-            free((void*)gs->locs.ptr[k].name);
+            free((void*)gs->locs.ptr[k].name); // yyy: cast const
         gs->locs.len = 0;
+        // xxx: annoying, don't like this random thing here, same vibe as chk_work
+        for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
+            free(gs->comp.chk_interned.ptr[k].ptr);
+        gs->comp.chk_interned.len = 0;
         return;
     }
 

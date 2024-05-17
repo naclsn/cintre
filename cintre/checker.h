@@ -31,6 +31,8 @@ typedef struct compile_state {
     // - ptr decay (arr type to ptr)
     // - address of (ptr around type)
     dyarr(struct adpt_type) chk_work;
+    // used to deduplicat string literals
+    dyarr(buf) chk_interned;
 } compile_state;
 
 /// does modify the expression by at least adding a typing info in the usr fields
@@ -180,10 +182,26 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             }
             data.ptr[data.len++] = '\0';
 
-            // xxx: not pretty; cut down version of _alloc_slot with just the
-            // _emit_instr_w_opr for the push then call to _emit_data based on
-            // the assumption that compiler.h is included anyways
-            {
+            size_t found_at, found_off;
+            for (found_at = 0; found_at < cs->chk_interned.len; found_at++) {
+                buf cref it = cs->chk_interned.ptr+found_at;
+                char cref first = memchr(it->ptr, data.ptr[0], it->len);
+                found_off = first-it->ptr;
+                if (first && data.len <= it->len-found_off && !memcmp(first, data.ptr, data.len))
+                    break;
+            }
+            if (found_at < cs->chk_interned.len) {
+                size_t const cs_vsp_back_then = cs->chk_interned.ptr[found_at].cap;
+                // (yyy: same discussion as in the new string literal case bellow)
+                expr->info.atom.len = cs_vsp_back_then+found_off;
+                free(data.ptr);
+            }
+
+            else {
+                // xxx: not pretty; cut down version of _alloc_slot with just the
+                // _emit_instr_w_opr for the push then call to _emit_data based on
+                // the assumption that compiler.h is included anyways
+
                 cs->vsp-= data.len;
 
                 unsigned count = 1;
@@ -208,9 +226,17 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 // - atom.len is no longer needed because the data has already
                 //   been essentially emitted, len "points" to this 'variable'
                 expr->info.atom.len = cs->vsp;
+
+                buf ref intern = dyarr_push(&cs->chk_interned);
+                if (!intern) exitf("OOM");
+                *intern = data;
+                // yyy: stor the location of the array here, it is retrived
+                // when matching a new string literal at some other call. 2:
+                // - buffers in `chk_interned` should not be changed
+                // - `cs->vsp` should not be 0 so it won't mess with frry
+                intern->cap = cs->vsp;
             }
 
-            free(data.ptr);
             return expr->usr = memcpy(pty, &(struct adpt_type){
                     .size= sizeof(char*),
                     .align= sizeof(char*),

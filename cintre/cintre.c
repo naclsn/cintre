@@ -112,11 +112,37 @@ void _prompt_cc(int sigint)
     rl_forced_update_display();
     signal(sigint, _prompt_cc);
 }
+void _prompt_list_compl(char** const matches, int const num_matches, int const max_length)
+{
+    int term_width = 0; {
+        printf("\x1b[9999G\x1b[6n\r\n");
+        while (';' != getchar());
+        char c;
+        while ('R' != (c = getchar())) term_width = term_width*10 + c-'0';
+    }
+    int const cols_count = term_width/(max_length+2) - 1;
+    int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count;
+    for (int j = 0; j < rows_count; j++) {
+        for (int i = 0; i < cols_count+1; i++) {
+            if (i*rows_count+j >= num_matches) break;
+            char cref it = matches[i*rows_count+j+1];
+            unsigned const len = strlen(it);
+            if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
+            else if (' ' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
+            else printf("%-*s", max_length+2, it);
+        }
+        rl_crlf();
+    }
+    rl_forced_update_display();
+}
 char* _prompt_compl(char cref text, int const state)
 {
-    rl_completion_suppress_append = 1; // yyy: the automatic trailing space
+    rl_completion_suppress_append = 1; // yyy: disable the automatic trailing space
+    if (rl_completion_found_quote) {
+        rl_completion_display_matches_hook = NULL;
+        return rl_filename_completion_function(text, state);
+    } else rl_completion_display_matches_hook = _prompt_list_compl;
     // TODO: could
-    //if (in string) return rl_filename_completion_function(text, state);
     //if (TYPE_STRUCT || TYPE_UNION) .. rl_point, rl_line_buffer ..;
     size_t const len = strlen(text);
     static size_t ns, k;
@@ -148,36 +174,13 @@ char* _prompt_compl(char cref text, int const state)
         }
     return NULL;
 }
-void _prompt_list_compl(char** const matches, int const num_matches, int const max_length)
-{
-    int term_width = 0; {
-        printf("\x1b[9999G\x1b[6n\r\n");
-        while (';' != getchar());
-        char c;
-        while ('R' != (c = getchar())) term_width = term_width*10 + c-'0';
-    }
-    int const cols_count = term_width/(max_length+2) - 1;
-    int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count;
-    for (int j = 0; j < rows_count; j++) {
-        for (int i = 0; i < cols_count+1; i++) {
-            if (i*rows_count+j >= num_matches) break;
-            char cref it = matches[i*rows_count+j+1];
-            unsigned const len = strlen(it);
-            if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
-            else if (' ' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
-            else printf("%-*s", max_length+2, it);
-        }
-        printf("\r\n");
-    }
-    rl_forced_update_display();
-}
 bool prompt(char const* prompt, char** res)
 {
     if (!*res) {
         rl_readline_name = "Cintre";
         rl_completer_word_break_characters = " 0123456789{}[]()<>%:;.?*+-/^&|~!=,";
+        rl_completer_quote_characters = "\"";
         rl_completion_entry_function = _prompt_compl;
-        rl_completion_display_matches_hook = _prompt_list_compl;
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);
     }

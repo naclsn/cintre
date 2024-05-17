@@ -616,16 +616,22 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
                 if (_slot_variable != base.usage) exitf("unreachable: array should have usage _slot_variable");
 
-                struct slot off = {.ty= &adptb_ulong_type};
+                struct slot off = {.ty= &adptb_long_type};
                 _alloc_slot(cs, &off);
                 _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
 
                 if (_slot_value == off.usage) {
                     _cancel_slot(cs, &off);
-                    slot->as.variable = base.as.variable + off.as.value.ul;
+                    slot->as.variable = base.as.variable + off.as.value.sl*base.ty->info.arr.item->size;
                     slot->usage = _slot_variable;
                 } else {
-                    if (_slot_variable == off.usage) _cancel_slot(cs, &off);
+                    if (1 != base.ty->info.arr.item->size) {
+                        _emit_arith(cs, _ops_muli, _slot_arith_w(&off),
+                                at(&off),
+                                base.ty->info.arr.item->size,
+                                _slot_variable == off.usage ? atv(&off) : at(&off));
+                        off.usage = _slot_used;
+                    } else if (_slot_variable == off.usage) _cancel_slot(cs, &off);
 
                     struct slot ptr = {.ty= &(struct adpt_type){
                             .size= sizeof(void*), .align= sizeof(void*),
@@ -657,29 +663,35 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 if (_slot_variable == base.usage) _emit_move(cs, at(&base), base.ty->size, atv(&base));
 
                 // on the stack is the ptr (base)
-                // _fit off to ul
+                // _fit off to sl
                 // add res onto base
                 // read from at base into slot over slot size
 
-                struct slot off = {.ty= &adptb_ulong_type};
+                struct slot off = {.ty= &adptb_long_type};
                 _alloc_slot(cs, &off);
                 _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
 
-                switch (off.usage) {
-                case _slot_value:
+                if (_slot_value == off.usage) {
                     _cancel_slot(cs, &off);
-                    _emit_arith(cs, _ops_addi, _slot_arith_w(&off), at(&base), _slot_arith_v(&off), at(&base));
-                    break;
+                    _emit_arith(cs, _ops_addi, _slot_arith_w(&off),
+                            at(&base),
+                            _slot_arith_v(&off)*base.ty->info.ptr->size,
+                            at(&base));
+                } else {
+                    if (1 != base.ty->info.arr.item->size) {
+                        _emit_arith(cs, _ops_muli, _slot_arith_w(&off),
+                                at(&off),
+                                base.ty->info.ptr->size,
+                                _slot_variable == off.usage ? atv(&off) : at(&off));
+                        off.usage = _slot_used;
+                    } else if (_slot_variable == off.usage) _cancel_slot(cs, &off);
 
-                case _slot_used:
-                    _emit_arith(cs, _ops_add, _slot_arith_w(&off), at(&base), at(&base), at(&off));
-                    _rewind_slot(cs, &off);
-                    break;
+                    _emit_arith(cs, _ops_add, _slot_arith_w(&off),
+                            at(&base),
+                            at(&base),
+                            _slot_variable == off.usage ? atv(&off) : at(&off));
 
-                case _slot_variable:
-                    _cancel_slot(cs, &off);
-                    _emit_arith(cs, _ops_add, _slot_arith_w(&off), at(&base), at(&base), atv(&off));
-                    break;
+                    if (_slot_used == off.usage) _rewind_slot(cs, &off);
                 }
 
                 _emit_read(cs, at(&base), slot);
@@ -804,16 +816,57 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     case BINOP_MUL:  op = _ops_muli;  goto sw_binop;
         sw_binop:;
 
-            struct slot lhs = *slot, rhs;
-            _fit_expr_to_slot(cs, expr->info.binary.lhs, &lhs);
-            if (_slot_used != lhs.usage)
-                rhs = *slot;
-            else {
-                rhs.ty = slot->ty;
+            struct slot lhs = *slot, rhs = {0};
+
+            if (TYPE_PTR == slot->ty->tyty) {
+                // one is a pointer(/array), the other is promoted to long and mult by sizeof item
+                expression const* ptr, * off;
+                struct adpt_type const* ty = expr->info.binary.lhs->usr;
+                if (TYPE_PTR == ty->tyty || TYPE_ARR == ty->tyty)
+                    ptr = expr->info.binary.lhs, off = expr->info.binary.rhs;
+                else ty = expr->info.binary.rhs->usr,
+                    ptr = expr->info.binary.rhs, off = expr->info.binary.lhs;
+
+                lhs = *slot;
+                _fit_expr_to_slot(cs, ptr, &lhs);
+                if (_slot_value == lhs.usage) exitf("ptr arith on a compile time - this is surely very wrong");
+                if (_slot_variable == lhs.usage) {
+                    _emit_move(cs, at(&lhs), slot->ty->size, atv(&lhs));
+                    lhs.usage = _slot_used;
+                }
+                // YYY: to make things simpler, the slot is forcefully used
+                // (with the lea in _fit or the move above); only case where
+                // this is unnecessary is with TYPE_PTR and _slot_variable
+                // which, granted, is likely the most common case, but not
+                // worth 'optimizing'
+
+                rhs.ty = &adptb_long_type;
                 _alloc_slot(cs, &rhs);
+                _fit_expr_to_slot(cs, off, &rhs);
+                if (_slot_value == rhs.usage) {
+                    _cancel_slot(cs, &rhs);
+                    rhs.as.value.sl*= slot->ty->info.ptr->size;
+                } else {
+                    _emit_arith(cs, _ops_muli, _slot_arith_w(&rhs),
+                            at(&rhs),
+                            slot->ty->info.ptr->size,
+                            _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
+                    rhs.usage = _slot_used;
+                }
             }
-            _fit_expr_to_slot(cs, expr->info.binary.rhs, &rhs);
-            if (_slot_used == lhs.usage && _slot_used != rhs.usage) _cancel_slot(cs, &rhs);
+
+            else {
+                lhs = *slot;
+                _fit_expr_to_slot(cs, expr->info.binary.lhs, &lhs);
+                if (_slot_used != lhs.usage)
+                    rhs = *slot;
+                else {
+                    rhs.ty = slot->ty;
+                    _alloc_slot(cs, &rhs);
+                }
+                _fit_expr_to_slot(cs, expr->info.binary.rhs, &rhs);
+                if (_slot_used == lhs.usage && _slot_used != rhs.usage) _cancel_slot(cs, &rhs);
+            }
 
             bool was_asgn = false;
             if (0) {
@@ -826,7 +879,6 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 // so for now the destination is a stack variable
             }
 
-            // TODO: pointer arithmetic (is only correct for size 1 ie char)
             switch (lhs.usage <<8| rhs.usage) {
                 // neither is "physical"
             case _slot_value <<8| _slot_value:
@@ -865,7 +917,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case _slot_value    <<8| _slot_variable:
                     // lhs is value, use the [..]i form
                     val = &lhs, xhs = &rhs;
-                _emit_arith(cs, op, _slot_arith_w(slot),
+                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
                         _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_arith_v(val),
                         _slot_variable == xhs->usage ? atv(xhs) : at(xhs));
@@ -890,7 +942,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 case _ops_muli:  op = _ops_mul;  break;
                 default:;
                 }
-                _emit_arith(cs, op, _slot_arith_w(slot),
+                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
                         _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_variable == lhs.usage ? atv(&lhs) : at(&lhs),
                         _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
@@ -913,7 +965,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case UNOP_DEREF: {
-            struct slot ptr = {.ty= expr->usr};
+            struct slot ptr = {.ty= expr->info.unary.opr->usr};
             _alloc_slot(cs, &ptr);
             compile_expression(cs, expr->info.unary.opr, &ptr);
 
@@ -924,15 +976,20 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case _slot_used:
                 _emit_read(cs, at(&ptr), slot);
                 _rewind_slot(cs, &ptr);
+                slot->usage = _slot_used;
                 break;
 
             case _slot_variable:
                 _cancel_slot(cs, &ptr);
-                _emit_read(cs, atv(&ptr), slot);
+                if (TYPE_ARR == ptr.ty->tyty) {
+                    slot->as.variable = ptr.as.variable;
+                    slot->usage = _slot_variable;
+                } else {
+                    _emit_read(cs, atv(&ptr), slot);
+                    slot->usage = _slot_used;
+                }
                 break;
             }
-
-            slot->usage = _slot_used;
         }
         return;
 

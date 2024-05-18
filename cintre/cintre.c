@@ -34,42 +34,16 @@ typedef struct cintre_state {
     parse_expr_state expr;
     compile_state comp;
     run_state runr;
+
     dyarr(struct adpt_item) locs;
+    struct {
+        size_t const count;
+        struct adpt_namespace cref spaces;
+    } nsps;
 
     // needed for `decl_to_adpt_type`
     dyarr(struct adpt_type) ty_work;
 } cintre_state;
-
-#ifndef CINTRE_NAMESPACES_DEFINED
-static struct adpt_namespace const namespaces[1] = {{.name= "(0 namespaces)", .count= 0, .items= NULL}};
-#endif
-
-void free_cintre_state(cintre_state ref gs)
-{
-    ldel(&gs->lexr);
-
-    for (size_t k = 0; k < gs->locs.len; k++)
-        free((void*)gs->locs.ptr[k].name);
-    free(gs->locs.ptr);
-
-    for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
-    case TYPE_STRUCT:
-    case TYPE_UNION:;
-        struct adpt_comp_desc cref comp = &gs->ty_work.ptr[k].info.comp;
-        for (size_t kk = 0; kk < comp->count; kk++) free((void*)comp->fields[kk].name);
-        free((void*)comp->fields);
-        break;
-    case TYPE_FUN:;
-        struct adpt_fun_desc cref fun = &gs->ty_work.ptr[k].info.fun;
-        for (size_t kk = 0; kk < fun->count; kk++) free((void*)fun->params[kk].name);
-        free((void*)fun->params);
-        break;
-    default:;
-    }
-    free(gs->ty_work.ptr);
-
-    free(gs->comp.chk_work.ptr); // xxx: annoying
-}
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 {
@@ -103,6 +77,7 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 #include <readline/history.h>
 #include <signal.h>
 #define hist_file ".ignore/history"
+static struct cintre_state const* _prompt_rl_gs;
 void _prompt_cc(int sigint)
 {
     rl_crlf();
@@ -142,20 +117,15 @@ char* _prompt_compl(char cref text, int const state)
         rl_completion_display_matches_hook = NULL;
         return rl_filename_completion_function(text, state);
     } else rl_completion_display_matches_hook = _prompt_list_compl;
-    // TODO: could
+    // todo: could have completion based on type
     //if (TYPE_STRUCT || TYPE_UNION) .. rl_point, rl_line_buffer ..;
     size_t const len = strlen(text);
     static size_t ns, k;
     if (0 == state) ns = k = 0;
-    // FIXME: not having locals in completion is dumb :/
-    //cintre_state cref gs = usr;
-    //for (size_t k = 0; k < gs->locs.len; k++) {
-    //    struct adpt_item const* const it = gs->locs.ptr+k;
-    //    if (bufis(name, it->name)) return it;
-    //}
-    for (; ns < countof(namespaces); ns++, k = 0)
-        for (; k < namespaces[ns].count; k++) {
-            struct adpt_item const* const it = namespaces[ns].items+k;
+    cintre_state cref gs = _prompt_rl_gs;
+    for (; ns < gs->nsps.count+1; ns++, k = 0)
+        for (; k < (!ns ? gs->locs.len : gs->nsps.spaces[ns-1].count); k++) {
+            struct adpt_item cref it = !ns ? gs->locs.ptr+k : gs->nsps.spaces[ns-1].items+k;
             if (!memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
                 bool const tdf = ITEM_TYPEDEF == it->kind;
@@ -174,7 +144,7 @@ char* _prompt_compl(char cref text, int const state)
         }
     return NULL;
 }
-bool prompt(char const* prompt, char** res)
+bool prompt(char const* prompt, char** res, cintre_state cref gs)
 {
     if (!*res) {
         rl_readline_name = "Cintre";
@@ -183,8 +153,8 @@ bool prompt(char const* prompt, char** res)
         rl_completion_entry_function = _prompt_compl;
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);
-    }
-    free(*res);
+    } else free(*res);
+    _prompt_rl_gs = gs;
     if (!(*res = readline(prompt))) {
         write_history(hist_file);
         clear_history();
@@ -198,8 +168,9 @@ bool prompt(char const* prompt, char** res)
 }
 #undef hist_file
 #else
-bool prompt(char const* prompt, char** res)
+bool prompt(char const* prompt, char** res, cintre_state cref gs)
 {
+    (void)gs;
     static char r[1024];
     *res = r;
     printf("%s", prompt);
@@ -210,23 +181,56 @@ bool prompt(char const* prompt, char** res)
 #endif
 // }}}
 
+void cintre_cleanup(cintre_state ref gs)
+{
+    ldel(&gs->lexr);
+
+    for (size_t k = 0; k < gs->locs.len; k++)
+        free((void*)gs->locs.ptr[k].name);
+    free(gs->locs.ptr);
+
+    for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
+    case TYPE_STRUCT:
+    case TYPE_UNION:;
+        struct adpt_comp_desc cref comp = &gs->ty_work.ptr[k].info.comp;
+        for (size_t kk = 0; kk < comp->count; kk++) free((void*)comp->fields[kk].name);
+        free((void*)comp->fields);
+        break;
+    case TYPE_FUN:;
+        struct adpt_fun_desc cref fun = &gs->ty_work.ptr[k].info.fun;
+        for (size_t kk = 0; kk < fun->count; kk++) free((void*)fun->params[kk].name);
+        free((void*)fun->params);
+        break;
+    default:;
+    }
+    free(gs->ty_work.ptr);
+
+    // xxx: annoying
+    free(gs->comp.chk_work.ptr);
+    for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
+        free(gs->comp.chk_interned.ptr[k].ptr);
+    free(gs->comp.chk_interned.ptr);
+}
+
 // compile time (lookup and random helpers) {{{
-struct adpt_item const* lookup(void* usr, bufsl const name)
+struct adpt_item const* cintre_lookup(void* usr, bufsl const name)
 {
     cintre_state cref gs = usr;
+    // TODO: same idea as below, so make sure to insert them sorted
     for (size_t k = 0; k < gs->locs.len; k++) {
-        struct adpt_item const* const it = gs->locs.ptr+k;
+        struct adpt_item cref it = gs->locs.ptr+k;
         if (bufis(name, it->name)) return it;
     }
-    for (size_t ns = 0; ns < countof(namespaces); ns++)
-        for (size_t k = 0; k < namespaces[ns].count; k++) {
-            struct adpt_item const* const it = namespaces[ns].items+k;
+    // TODO: names will be sorted (from preparer), use that to go n -> logn
+    for (size_t ns = 0; ns < gs->nsps.count; ns++)
+        for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
+            struct adpt_item cref it = gs->nsps.spaces[ns].items+k;
             if (bufis(name, it->name)) return it;
         }
     return NULL;
 }
 
-bool is_decl_keyword(cintre_state cref gs, bufsl const tok)
+bool _is_decl_keyword(cintre_state cref gs, bufsl const tok)
 {
     if (bufis(tok, "char")     ||
         bufis(tok, "short")    ||
@@ -253,7 +257,7 @@ bool is_decl_keyword(cintre_state cref gs, bufsl const tok)
 
 /// allocates using `gs->ty_work`; on failure, it is safe to set the length of
 /// it back to what it was to free wip temporaries, it should not cause a leak
-struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type cref ty)
+struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type cref ty)
 {
     switch (ty->kind) {
         struct adpt_type* r;
@@ -322,7 +326,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
     case KIND_ENUM: return &adptb_int_type;
 
     case KIND_PTR:;
-        struct adpt_type cref ptr = decl_to_adpt_type(gs, &ty->info.ptr->type);
+        struct adpt_type cref ptr = _decl_to_adpt_type(gs, &ty->info.ptr->type);
         if (!ptr) return NULL;
 
         if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
@@ -336,7 +340,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
     case KIND_FUN:
         if (-1ul == ty->info.fun.count) return NULL;
 
-        struct adpt_type cref ret = decl_to_adpt_type(gs, &ty->info.fun.ret->type);
+        struct adpt_type cref ret = _decl_to_adpt_type(gs, &ty->info.fun.ret->type);
         if (!ret) return NULL;
 
         struct adpt_fun_param* const params = malloc(ty->info.fun.count*sizeof*params);
@@ -344,7 +348,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
 
         size_t k = 0;
         for (struct decl_type_param const* curr = ty->info.fun.first; curr; curr = curr->next, k++) {
-            struct adpt_type cref type = decl_to_adpt_type(gs, &curr->decl->type);
+            struct adpt_type cref type = _decl_to_adpt_type(gs, &curr->decl->type);
             if (!type) {
                 while (k--) free((void*)params[k].name);
                 free(params);
@@ -375,7 +379,7 @@ struct adpt_type const* decl_to_adpt_type(cintre_state ref gs, struct decl_type 
             }, sizeof*r);
 
     case KIND_ARR:;
-        struct adpt_type cref item = decl_to_adpt_type(gs, &ty->info.arr.item->type);
+        struct adpt_type cref item = _decl_to_adpt_type(gs, &ty->info.arr.item->type);
         if (!item) return NULL;
 
         size_t count = 0;
@@ -448,7 +452,7 @@ void accept_decl(void ref usr, declaration cref decl, bufsl ref tok)
     }
 
     size_t const pwork = gs->ty_work.len;
-    struct adpt_type cref ty = decl_to_adpt_type(gs, &decl->type);
+    struct adpt_type cref ty = _decl_to_adpt_type(gs, &decl->type);
     if (!ty || !ty->size) {
         if (!ty) notif("Could not understand type");
         else notif("Zero-sized variable type");
@@ -534,14 +538,14 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
         char cref name = end+strspn(end, " \t");
         if (end == name) {
             printf("List of namespaces:\n");
-            for (size_t ns = 0; ns < countof(namespaces); ns++)
-                printf("   %s (%zu names)\n", namespaces[ns].name, namespaces[ns].count);
+            for (size_t ns = 0; ns < gs->nsps.count; ns++)
+                printf("   %s (%zu names)\n", gs->nsps.spaces[ns].name, gs->nsps.spaces[ns].count);
             return;
         }
-        for (size_t ns = 0; ns < countof(namespaces); ns++) if (!strcmp(namespaces[ns].name, name)) {
-            printf("List of names in %s:\n", namespaces[ns].name);
-            for (size_t k = 0; k < namespaces[ns].count; k++) {
-                struct adpt_item cref it = namespaces[ns].items+k;
+        for (size_t ns = 0; ns < gs->nsps.count; ns++) if (!strcmp(gs->nsps.spaces[ns].name, name)) {
+            printf("List of names in %s:\n", gs->nsps.spaces[ns].name);
+            for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
+                struct adpt_item cref it = gs->nsps.spaces[ns].items+k;
                 if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
                 else printf("   [%p] %-8s\t", it->as.object, it->name);
                 print_type(stdout, it->type);
@@ -614,7 +618,7 @@ void accept_expr(void ref usr, expression ref expr, bufsl ref tok)
     printf("Result:\n");
     print_item(stdout, &res, gs->runr.stack, 0);
 
-    gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho..)
+    gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho, some alignment padding sticks..)
 } // accept_expr
 // }}}
 
@@ -626,20 +630,23 @@ int main(void)
         .lexr= {.file= "<input>"},
         .decl= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_decl},
         .expr= {.ls= &_gs.lexr, .usr= &_gs, .on= accept_expr},
-        .comp= {.usr= &_gs, .lookup= lookup},
+        .comp= {.usr= &_gs, .lookup= cintre_lookup},
         .runr= {.sp= sizeof _gs.runr.stack}, // (xxx: sizeof stack)
+#ifdef CINTRE_NAMESPACES_DEFINED
+        .nsps= {.count= countof(namespaces), .spaces= namespaces},
+#endif
     };
     cintre_state ref gs = &_gs;
 
     char* line = NULL;
-    while (prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line)) {
+    while (prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line, gs)) {
         gs->lexr.line++;
         gs->lexr.slice.len = strlen(gs->lexr.slice.ptr = line);
 
         bufsl tok = lext(&gs->lexr);
         if (!tok.len || ';' == *tok.ptr) accept_expr(gs->expr.usr, NULL, &tok);
 
-        else if (is_decl_keyword(gs, tok)) {
+        else if (_is_decl_keyword(gs, tok)) {
             gs->decl.base = (declaration){0};
 
             do {
@@ -659,7 +666,7 @@ int main(void)
         else parse_expression(&gs->expr, tok);
     }
 
-    free_cintre_state(gs);
+    cintre_cleanup(gs);
 
     return EXIT_SUCCESS;
 }

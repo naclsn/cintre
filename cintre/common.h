@@ -44,6 +44,8 @@ static bool _try_jmp_flg = false;
             (ls)->file, (ls)->line, bufmt(llne((ls)))),             \
     notif(__VA_ARGS__))
 
+// used in lexer and preparer
+// TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push
 #define search_namespace(n, ns) for (size_t k = 0; k < ns.len; k++) if (!dyarr_cmp(&ns.ptr[k].name, &n))
 
 struct declaration;

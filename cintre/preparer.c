@@ -1,4 +1,4 @@
-/// program to generate the <a-file.h> and <c-main.h>
+/// Program to generate the <a-file.h> and <c-main.h>;
 /// see `$ preparer -h` (or the main function at the end of the file)
 ///
 /// function declarations and other static objects make a `name_adapt_type`

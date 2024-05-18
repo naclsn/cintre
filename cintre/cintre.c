@@ -89,6 +89,16 @@ void _prompt_cc(int sigint)
 }
 void _prompt_list_compl(char** const matches, int const num_matches, int const max_length)
 {
+    if (rl_completion_query_items < num_matches) {
+        rl_crlf();
+        printf("Display all %d possibilities? (y or n)", num_matches);
+        fflush(stdout);
+        if ('y' != (rl_read_key()|32)) {
+            rl_crlf();
+            rl_forced_update_display();
+            return;
+        }
+    }
     int term_width = 0; {
         printf("\x1b[9999G\x1b[6n\r\n");
         while (';' != getchar());
@@ -104,7 +114,12 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
             unsigned const len = strlen(it);
             if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
             else if (' ' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
-            else printf("%-*s", max_length+2, it);
+            else {
+                bool all_cap = true;
+                for (unsigned k = 0; k < len; k++) if (!(all_cap = '_' == it[k] || ('A' <= it[k] && it[k] <= 'Z'))) break;
+                if (all_cap) printf("\x1b[34m%-*s\x1b[m", max_length+2, it);
+                else printf("%-*s", max_length+2, it);
+            }
         }
         rl_crlf();
     }
@@ -130,7 +145,7 @@ char* _prompt_compl(char cref text, int const state)
                 size_t const len = strlen(it->name);
                 bool const tdf = ITEM_TYPEDEF == it->kind;
                 bool const fun = TYPE_FUN == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_FUN == it->type->info.ptr->tyty); // xxx: || ...
-                bool const arr = TYPE_ARR == it->type->tyty || (TYPE_PTR == it->type->tyty && TYPE_ARR == it->type->info.ptr->tyty); // xxx: || ...
+                bool const arr = TYPE_ARR == it->type->tyty;
                 char ref r = malloc(len + (tdf|fun|arr));
                 strcpy(r, it->name);
                 if (tdf|fun|arr) r[len] =
@@ -149,7 +164,7 @@ bool prompt(char const* prompt, char** res, cintre_state cref gs)
     if (!*res) {
         rl_readline_name = "Cintre";
         rl_completer_word_break_characters = " 0123456789{}[]()<>%:;.?*+-/^&|~!=,";
-        rl_completer_quote_characters = "\"";
+        rl_completer_quote_characters = "\"'";
         rl_completion_entry_function = _prompt_compl;
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);

@@ -967,7 +967,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     //    return;
     //}
 
-    // TODO: join adjacent string literals
+    // TODO: join adjacent string literals (would like to say this should be done in the lexer tho-)
     expression atom = {.kind= ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
 

@@ -30,6 +30,7 @@ typedef struct compile_state {
     // needed for cases:
     // - ptr decay (arr type to ptr)
     // - address of (ptr around type)
+    // - cast (type to itself)
     dyarr(struct adpt_type) chk_work;
     // used to deduplicat string literals
     dyarr(buf) chk_interned;
@@ -118,6 +119,60 @@ bool _is_expr_lvalue(expression cref expr)
         return false;
     }
 }
+
+struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref ty)
+{
+    switch (ty->kind) {
+    case KIND_NOTAG:;
+        bool _signed = false, _unsigned = false, _short = false, _long = false;
+        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case QUAL_SIGNED:    _signed = true;          break;
+            case QUAL_UNSIGNED:  _unsigned = true;        break;
+            case QUAL_SHORT:     _short = true;           break;
+            case QUAL_LONG:      _long = true;            break;
+            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
+            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            default:;
+        }
+
+#       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+        if (nameis("char"))
+            return _signed ? &adptb_schar_type
+                 : _unsigned ? &adptb_uchar_type
+                 : &adptb_char_type;
+        if (nameis("int") || !ty->name.len)
+            return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
+                 : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
+                 : _unsigned ? &adptb_uint_type : &adptb_int_type;
+        if (nameis("float"))  return &adptb_float_type;
+        if (nameis("double")) return &adptb_double_type;
+        if (nameis("void"))   return &adptb_void_type;
+#       undef nameis
+
+        struct adpt_item cref it = cs->lookup(cs->usr, ty->name);
+        if (it && ITEM_TYPEDEF == it->kind &&
+                TYPE_VOID <= it->type->tyty && it->type->tyty <= TYPE_DOUBLE)
+            return it->type;
+        return NULL;
+
+    case KIND_ENUM: return &adptb_int_type;
+
+    case KIND_PTR:;
+        struct adpt_type cref ptr = _cast_type(cs, &ty->info.ptr->type);
+        if (!ptr) return NULL;
+
+        struct adpt_type* r;
+        if (!(r = dyarr_push(&cs->chk_work))) exitf("OOM");
+        return memcpy(r, &(struct adpt_type){
+                .size= sizeof(void*),
+                .align= sizeof(void*),
+                .tyty= TYPE_PTR,
+                .info.ptr= ptr,
+            }, sizeof*r);
+
+    default: return NULL;
+    }
+}
 // }}}
 
 struct slot;
@@ -149,37 +204,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             char cref ptr = expr->info.atom.ptr;
             buf data = {0};
             if (!(data.ptr = malloc(data.cap = len))) exitf("OOM");
-            for (size_t k = 1; k < len-1;) {
-                char c = 0;
-                if ('\\' == ptr[k]) switch (ptr[++k]) {
-                case'\'': c = '\''; k++; break;
-                case '"': c = '\"'; k++; break;
-                case '?': c = '\?'; k++; break;
-                case'\\': c = '\\'; k++; break;
-                case 'a': c = '\a'; k++; break;
-                case 'b': c = '\b'; k++; break;
-                case 'f': c = '\f'; k++; break;
-                case 'n': c = '\n'; k++; break;
-                case 'r': c = '\r'; k++; break;
-                case 't': c = '\t'; k++; break;
-                case 'v': c = '\v'; k++; break;
-                case 'x':;
-                    static char const dgts[] = "0123456789abcdef";
-                    char const* v = strchr(dgts, ptr[++k]|32);
-                    do c = (c<<4) + (v-dgts);
-                    while (++k < len && (v = strchr(dgts, ptr[k]|32)));
-                    break;
-                case 'u':
-                case 'U':
-                    fail("NIY: 'Universal character names' (Unicode)");
-                default:
-                    if ('0' <= ptr[k] && ptr[k] <= '7')
-                        do c = (c<<3) + (ptr[k]-'0');
-                        while ('0' <= ptr[++k] && ptr[k] <= '7');
-                    else k++;
-                } else c = ptr[k++];
-                data.ptr[data.len++] = c;
-            }
+            for (size_t k = 1; k < len-1;)
+                data.ptr[data.len++] = '\\' == ptr[k] ? unescape(ptr, len, &k) : ptr[k++];
             data.ptr[data.len++] = '\0';
 
             size_t found_at, found_off;
@@ -248,6 +274,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 }, sizeof *pty);
         }
 
+        // xxx: not supposed to be of type `char` but `int`
         if ('\'' == c) return expr->usr = (void*)&adptb_char_type;
         if (('0' <= c && c <= '9') || '.' == c) {
             bool isfp = false; // is fp if has '.' or e/E/p/P
@@ -454,11 +481,21 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         fail("Operand is not of a pointer type");
 
     case UNOP_CAST:
-        fail("NIY: type check cast op");
         failforward(opr, expr->info.cast.opr);
-        // TODO: uuuh :<
-        struct adpt_type ref cty = (void*)expr->info.cast.type;
-        return expr->usr = cty;
+        struct adpt_type cref tyto = _cast_type(cs, expr->info.cast.type);
+        if (!tyto) fail("Type invalid in cast expression");
+        // allowed:
+        // - void
+        // - int <-> ptr
+        // - int <-> flt
+        // - ptr[obj] <-> ptr[obj]
+        // - ptr[fun] <-> ptr[fun]
+        if (&adptb_void_type == tyto ||
+                (isnum(tyto) && isnum(opr)) ||
+                (isint(tyto) && isindir(opr)) || (isptr(tyto) && isint(opr)) ||
+                (isptr(tyto) && isindir(opr) && isfun(tyto->info.ptr) != isfun(atindir(opr)))
+           ) return expr->usr = (void*)tyto;
+        fail("Operand cannot be casted to this type");
 
     case UNOP_PMEMBER:
     case UNOP_MEMBER:

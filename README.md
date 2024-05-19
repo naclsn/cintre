@@ -1,13 +1,11 @@
 ### Running a REPL against a C lib
 
-Situation: you have a simplistic C lib (header/s + obj/ar/shared)
+Situation: you have a C lib (header/s + obj/ar/shared)
 
 Idea: automatically make a program that is a REPL linked against this lib, you
 enter C expressions, can interact with everything exposed in the header
 (declare variables with lib types, call lib functions, ...) as if you were
 writing a `main()` and compiling it over and over and editing it and mixing the order of the arguments and recompiling it and not thinking about having a `printf` right here and it should be printing something else and that was just an off by one and-
-
-Could you do that with just `gdb`? Yeah! (Well mostly I guess...)
 
 ---
 
@@ -47,6 +45,7 @@ Bluntly the steps are:
 - `pr mylib.h` make an interface ("adapter") with mylib.o
 - `pr -m` merge into a compilable `main()`
 - compile the REPL (here with readline)
+
 The `driver.Makefile` does exactly that, see `example/Makefile`.
 
 ---
@@ -61,17 +60,14 @@ For now assumes platform is:
 <details>
   <summary>Other jankiness and arbitrary changes:</summary>
   <ul>
-    <li>lexer doesn't handle insanely placed line continuation (eg. `#def\<nl>ine some` where `<nl>` is a literal new line)</li>
-    <li>declarators without a type (old C assumes these to be of type `int`)</li>
-    <li>unnamed function parameters (eg. `void main(int, char**)`)</li>
-    <li>expressions in array size (only plain int literals for now..)</li>
-    <li>pointer-to-pointer-to-function and more for now until less lazy about it</li>
-    <li>[forward] declaration of a function with `ret name()` (ie. "any params" syntax) or will be interpreted as `(void)`</li>
+    <li>current lexer doesn't handle insanely placed line continuation (eg. <code>#def\&lt;nl&gt;ine some</code> where <code>&lt;nl&gt;</code> is a literal new line)</li>
+    <li>some exoteric declarations like <code>const a = 1</code> (C would assume it to be <code>int</code>)</li>
+    <li>[forward] declaration of a function with <code>ret name()</code> (ie. "any params" syntax) or will be interpreted as <code>(void)</code></li>
     <li>va-args function</li>
-    <li>for now at least, there is no way to distinguish between `fn(1, 2, 3)` and `fn((1, 2), 3)` (later has only 2 args)</li>
-    <li>base of a subscript expression must be the pointer, and the offset must be integral</li>
+    <li>base of a subscript expression must be the pointer, and the offset must be integral (ie. no <code>2["abc"]</code>)</li>
     <li>function call has at most 15 arguments</li>
-    <li>octal constants are written with the `0o` prefix, and so `042 == 42 == '*'`</li>
+    <li>octal constants are written with the <code>0o</code> prefix, and so <code>042 == 42 == '&ast;'</code></li>
+    <li>character literals are of type <code>char</code> (instead of <code>int</code>)</li>
   </ul>
 </details>
 

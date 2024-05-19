@@ -76,6 +76,47 @@ long lxpr(lex_state cref ls, bufsl ref xpr);
 /// next token, move forward
 bufsl lext(lex_state ref ls);
 
+/// uint c = '\\' == ptr[k]
+///        ? unescape(ptr, len, &k)
+///        : ptr[k++];
+int unescape(char cref ptr, size_t const len, size_t* const k)
+{
+    int r = 0;
+    switch (ptr[++*k]) {
+        case'\'': ++*k; return '\''; break;
+        case '"': ++*k; return '\"'; break;
+        case '?': ++*k; return '\?'; break;
+        case'\\': ++*k; return '\\'; break;
+        case 'a': ++*k; return '\a'; break;
+        case 'b': ++*k; return '\b'; break;
+        case 'f': ++*k; return '\f'; break;
+        case 'n': ++*k; return '\n'; break;
+        case 'r': ++*k; return '\r'; break;
+        case 't': ++*k; return '\t'; break;
+        case 'v': ++*k; return '\v'; break;
+
+        case 'x':
+            r = 0;
+            static char const dgts[] = "0123456789abcdef";
+            char const* v = strchr(dgts, ptr[++*k]|32);
+            do r = (r<<4) + (v-dgts);
+            while (++*k < len && (v = strchr(dgts, ptr[*k]|32)));
+            break;
+
+        case 'u':
+        case 'U':
+            exitf("NIY: 'Universal character names' (Unicode)");
+            break;
+
+        default:
+            if ('0' <= ptr[*k] && ptr[*k] <= '7')
+                do r = (r<<3) + (ptr[*k]-'0');
+                while ('0' <= ptr[++*k] && ptr[*k] <= '7');
+            else ++*k;
+    }
+    return r;
+}
+
 // ---
 
 buf _lex_read_all(FILE ref f)
@@ -182,6 +223,7 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
         while (nx() && (v = strchr(dgts, at()|32)));
         if (xpr->len && strchr("ulUL", at())) nx();
     } else if ('\'' == at()) {
+        //r = '\\' == at() ? unescape(...) : at();
         while (nx() && '\'' != at()) {
             if ('\\' == at()) switch (nx() ? at() : 0) {
             case '0': r = r<<8 | '\0'; break;

@@ -24,7 +24,7 @@ void comp(void ref usr, expression ref expr, bufsl ref tok)
             case '\r': printf("'\\r'"); break;
             case '\t': printf("'\\t'"); break;
             case '\v': printf("'\\v'"); break;
-            default: printf(' ' <= slot.as.value.c && slot.as.value.c <= '~' ? "'%c'" : "'\\x%02x'", slot.as.value.c);
+            default: printf(' ' <= slot.as.value.c && slot.as.value.c <= '~' ? "'%c'" : "'\\x%02hhx'", slot.as.value.c);
         } break;
         case TYPE_UCHAR:  printf("0x%02hhx", slot.as.value.uc); break;
         case TYPE_SCHAR:  printf("%hhi",     slot.as.value.sc); break;

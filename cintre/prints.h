@@ -396,8 +396,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     case TYPE_VOID: fprintf(strm, "()"); break;
 
     case TYPE_CHAR:;
-        char const c = (*(char*)p)&0xff;
-        switch (c) {
+        switch (*(char*)p) {
             case '\0': fprintf(strm, "'\\0'"); break;
             case '\'': fprintf(strm, "'\\''"); break;
             case '\"': fprintf(strm,"'\\\"'"); break;
@@ -410,7 +409,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
             case '\r': fprintf(strm, "'\\r'"); break;
             case '\t': fprintf(strm, "'\\t'"); break;
             case '\v': fprintf(strm, "'\\v'"); break;
-            default: fprintf(strm, ' ' <= c && c <= '~' ? "'%c'" : "'\\x%02x'", c);
+            default: fprintf(strm, ' ' <= *(char*)p && *(char*)p <= '~' ? "'%c'" : "'\\x%02hhx'", *(char*)p);
         } break;
 
     case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", *(unsigned char*)p);  break;

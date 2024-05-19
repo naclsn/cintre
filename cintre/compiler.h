@@ -501,22 +501,9 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
 
         if ('\'' == ptr[0]) {
-            char v = ptr[1];
-            if ('\\' == v) switch (ptr[2]) {
-            case '0': v = '\0'; break;
-            case'\'': v = '\''; break;
-            case '"': v = '\"'; break;
-            case '?': v = '\?'; break;
-            case'\\': v = '\\'; break;
-            case 'a': v = '\a'; break;
-            case 'b': v = '\b'; break;
-            case 'f': v = '\f'; break;
-            case 'n': v = '\n'; break;
-            case 'r': v = '\r'; break;
-            case 't': v = '\t'; break;
-            case 'v': v = '\v'; break;
-            }
-            slot->as.value.c = v;
+            size_t k = 1;
+            // xxx: not supposed to be of type `char` but `int`
+            slot->as.value.c = '\\' == ptr[1] ? unescape(ptr, len, &k) : ptr[1];
             slot->usage = _slot_value;
             return;
         }
@@ -994,7 +981,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case UNOP_CAST:
-        exitf("NIY: cast");
+        _fit_expr_to_slot(cs, expr->info.cast.opr, slot);
+        return;
 
     case UNOP_PMEMBER:
         exitf("NIY: pmember");

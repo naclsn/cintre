@@ -719,8 +719,56 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
     case BINOP_TERNCOND:
-    case BINOP_TERNBRANCH:
-        exitf("NIY: branches");
+    case BINOP_TERNBRANCH: {
+            expression cref condition = expr->info.binary.lhs;
+            expression cref consequence = expr->info.binary.rhs->info.binary.lhs;
+            expression cref alternative = expr->info.binary.rhs->info.binary.rhs;
+
+            struct slot cdt = {.ty= &adptb_int_type};
+            _alloc_slot(cs, &cdt);
+            _fit_expr_to_slot(cs, condition, &cdt);
+
+            if (_slot_value == cdt.usage) {
+                _cancel_slot(cs, &cdt);
+                _fit_expr_to_slot(cs, cdt.as.value.si ? consequence : alternative, slot);
+            } else {
+                // cdt
+                // cmp1
+                // breq -> csq
+                // alt
+                // jmp -> fall
+                // csq
+                // fall
+
+                if (_slot_used != cdt.usage) _cancel_slot(cs, &cdt);
+
+                // wip
+                _emit_instr_w_opr(0x14, _slot_value == cdt.usage ? atv(&cdt) : at(&cdt));
+                _emit_instr_w_opr(0x0b, 0);
+                {
+                    struct slot tmp = *slot;
+                    _fit_expr_to_slot(cs, alternative, &tmp);
+                    switch (tmp.usage) {
+                    case _slot_value: _emit_data(cs, at(&tmp), tmp.ty->size, tmp.as.value.bytes); break; // (yyy: endianness)
+                    case _slot_used: break;
+                    case _slot_variable: _emit_move(cs, at(&tmp), tmp.ty->size, atv(&tmp)); break;
+                    }
+                }
+                _emit_instr_w_opr(0x0a, 0);
+                {
+                    struct slot tmp = *slot;
+                    _fit_expr_to_slot(cs, consequence, &tmp);
+                    switch (tmp.usage) {
+                    case _slot_value: _emit_data(cs, at(&tmp), tmp.ty->size, tmp.as.value.bytes); break; // (yyy: endianness)
+                    case _slot_used: break;
+                    case _slot_variable: _emit_move(cs, at(&tmp), tmp.ty->size, atv(&tmp)); break;
+                    }
+                }
+                slot->usage = _slot_used;
+
+                if (_slot_used == cdt.usage) _rewind_slot(cs, &cdt);
+            }
+        }
         return;
 
     case BINOP_COMMA: {

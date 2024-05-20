@@ -85,11 +85,11 @@ void run(run_state ref rs, bytecode const code)
     case code:                      \
         imm(a);                     \
         imm(b);                     \
-        *at(a, from) = *at(b, to);  \
+        *at(a, to) = *at(b, from);  \
         continue;
-#       define extend_cvt(from_w, from, to_w, to)       \
-        cvt(from_w<<4 | to_w, signed from, signed to);  \
-        cvt(from_w<<4 | to_w | 0x4, unsigned from, unsigned to);
+#       define extend_cvt(from_w, from, to_w, to)      \
+        cvt(from_w<<4 | to_w, signed from, signed to)  \
+        cvt(from_w<<4 | to_w | 0x4, unsigned from, unsigned to)
         extend_cvt(0, char, 1, short)
         extend_cvt(0, char, 2, int)
         extend_cvt(0, char, 3, long)

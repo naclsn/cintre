@@ -15,10 +15,10 @@
 //#include <limits.h> // macro-only
 //#include <locale.h>
 #include <math.h>
-//#include <setjmp.h> // expectedly not exposed in a repl
+#include <setjmp.h>
 //#include <signal.h> // maybe at some point, but again platform-independant not
 //#include <stdarg.h> // not exposed either
-//#include <stdbool.h> // idk but not yet
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -351,6 +351,27 @@ extern float (fmaf)(float x, float y, float z);
 // xxx(long double): extern long double (fminl)(long double x, long double y);
 // xxx(long double): extern long double (fmal)(long double x, long double y, long double z);
 // xxx(long double): extern long double (scalbl)(long double x, long double n);
+// }}}
+
+// setjmp.h {{{
+static struct adpt_type const jmp_buf_adapt_type = {
+    .size= sizeof(jmp_buf), .align= alignof(jmp_buf),
+    .tyty= TYPE_ARR,
+    .info.arr= {
+        .item= &adptb_void_type,
+        .count= 1,
+    },
+};
+// expectedly not exposed in a repl
+//int (setjmp)(jmp_buf env);
+//void (longjmp)(jmp_buf env, int val);
+// }}}
+
+// stdbool.h {{{
+static struct adpt_type const bool_adapt_type = {
+    .size= sizeof(bool), .align= 1,
+    .tyty= TYPE_CHAR,
+};
 // }}}
 
 // stddef.h {{{

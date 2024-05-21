@@ -195,19 +195,6 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
 /// forwards as-is
 void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
 {
-    for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
-    case QUAL_END: break;
-    case QUAL_CONST:                   emit("const ");     break;
-    case QUAL_RESTRICT:  if (!in_cast) emit("restrict ");  break;
-    case QUAL_VOLATILE:                emit("volatile ");  break;
-    case QUAL_SIGNED:                  emit("signed ");    break;
-    case QUAL_UNSIGNED:                emit("unsigned ");  break;
-    case QUAL_SHORT:                   emit("short ");     break;
-    case QUAL_LONG:                    emit("long ");      break;
-    case QUAL_COMPLEX:                 emit("complex ");   break;
-    case QUAL_IMAGINARY:               emit("imaginary "); break;
-    }
-
     switch (ty->kind) {
     case KIND_NOTAG: emit("%.*s", bufmt(ty->name)); break;
 
@@ -304,6 +291,7 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
             bool const twice = KIND_PTR == ty->info.ptr->type.kind;
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.fun.ret->type, NULL, in_cast);
+            // const and such (after '*')
             if (name) emit(" (*%s%.*s)", twice ? "*" : "", bufmt(*name));
             else emit(" (*%s)", twice ? "*" : "");
             emit("(");
@@ -316,6 +304,7 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
                 }
             }
             emit(")");
+            return; // name already done
         }
         else if (KIND_ARR == ty->info.ptr->type.kind || (KIND_PTR == ty->info.ptr->type.kind && KIND_ARR == ty->info.ptr->type.info.ptr->type.kind)) {
             bool const twice = KIND_PTR == ty->info.ptr->type.kind;
@@ -326,14 +315,14 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
             emit("[");
             if (ty2->info.arr.count) emit_cexpr(ty2->info.arr.count);
             emit("]");
+            return; // name already done
         }
 
         else {
             emit_forward(&ty->info.ptr->type, NULL, in_cast);
-            if (name) emit("* %.*s", bufmt(*name));
-            else emit("*");
+            emit("*");
         }
-        return; // name already done
+        break;
 
     case KIND_FUN:
         emit_forward(&ty->info.fun.ret->type, NULL, in_cast);
@@ -357,6 +346,19 @@ void emit_forward(struct decl_type cref ty, bufsl cref name, bool const in_cast)
         if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
         emit("]");
         return; // name already done
+    }
+
+    for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
+    case QUAL_END: break;
+    case QUAL_CONST:                   emit(" const");     break;
+    case QUAL_RESTRICT:  if (!in_cast) emit(" restrict");  break;
+    case QUAL_VOLATILE:                emit(" volatile");  break;
+    case QUAL_SIGNED:                  emit(" signed");    break;
+    case QUAL_UNSIGNED:                emit(" unsigned");  break;
+    case QUAL_SHORT:                   emit(" short");     break;
+    case QUAL_LONG:                    emit(" long");      break;
+    case QUAL_COMPLEX:                 emit(" complex");   break;
+    case QUAL_IMAGINARY:               emit(" imaginary"); break;
     }
 
     if (name && name->len) emit(" %.*s", bufmt(*name));
@@ -546,8 +548,31 @@ void emit_top(void* _, declaration cref decl, bufsl ref tok)
     if (decl->is_inline) return;
 
     switch (decl->spec) {
-    case SPEC_STATIC: // internal linkage (not visible)
     default: // others are unreachable
+        return;
+
+    case SPEC_STATIC: // internal linkage (not visible)
+        emit("static ");
+        emit_forward(&decl->type, &decl->name, false);
+        if (1 == tok->len && '=' == *tok->ptr) {
+            emit(" = ");
+            *tok = lext(&ls);
+            if (1 == tok->len && '{' == *tok->ptr) {
+                emit("{ ");
+                for (unsigned depth = 0; (*tok = lext(&ls)).len; ) {
+                    emit("%.*s ", bufmt(*tok));
+                    bool c = '}' == *tok->ptr;
+                    if (!tok->len || (!depth && c)) break;
+                    depth+= ('{' == *tok->ptr)-c;
+                }
+                *tok = lext(&ls);
+            } else {
+                *tok = parse_expression(&(parse_expr_state){.ls= &ls, .disallow_comma= true}, *tok);
+                emit("{0}");
+            }
+        }
+        emitln(";");
+        emit_empty();
         return;
 
     case SPEC_EXTERN: // external linkage

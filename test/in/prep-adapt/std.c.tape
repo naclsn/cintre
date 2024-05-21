@@ -222,6 +222,7 @@ strlen: [34mfun[m(s: [34mptr[m[[32mchar[m]) -> [32mulong[m;
 strerror: [34mfun[m(errnum: [32mint[m) -> [34mptr[m[[32mchar[m];
 fexcept_t: [32mvoid[m;
 fenv_t: [32mvoid[m;
+bool: [32mchar[m;
 ptrdiff_t: [32mlong[m;
 size_t: [32mulong[m;
 int8_t: [32mschar[m;

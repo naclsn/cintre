@@ -1,28 +1,28 @@
 #include "run"
 
-void show(void ref usr, expression ref expr, bufsl ref tok)
+void show(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
 {
-    lex_state cref ls = usr;
-    print_expr(stdout, expr, 0);
+    ct_lex_state cref ls = usr;
+    ct_print_expr(stdout, expr, 0);
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
 }
 
 void run_test(char* file)
 {
-    lex_state ls = {0};
-    lini(&ls, file);
+    ct_lex_state ls = {0};
+    ct_lini(&ls, file);
 
-    bufsl tok = lext(&ls);
-    parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= show};
-    while (tok.len) if ((tok = parse_expression(&ps, tok)).len)
+    ct_bufsl tok = ct_lext(&ls);
+    ct_parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= show};
+    while (tok.len) if ((tok = ct_parse_expression(&ps, tok)).len)
         switch (*tok.ptr) {
         case ';':
-            tok = lext(&ls);
+            tok = ct_lext(&ls);
             continue;
 
         default:
             exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
         }
 
-    ldel(&ls);
+    ct_ldel(&ls);
 }

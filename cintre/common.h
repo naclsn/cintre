@@ -13,8 +13,8 @@
 #define cref const* const
 
 #include "dyarr.h"
-typedef dyarr(char) buf;
-typedef struct { char const* ptr; size_t len; } bufsl;
+typedef ct_dyarr(char) ct_buf;
+typedef struct { char const* ptr; size_t len; } ct_bufsl;
 #define bufmt(x) (unsigned)(x).len, (x).ptr
 #define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
 
@@ -41,27 +41,27 @@ static bool _try_jmp_flg = false;
 #define report_lex_locate(ls, ...) (                                \
     fflush(stdout),                                                 \
     fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %.*s \x1b[1m##\x1b[m ",  \
-            (ls)->file, (ls)->line, bufmt(llne((ls)))),             \
+            (ls)->file, (ls)->line, bufmt(ct_llne((ls)))),             \
     notif(__VA_ARGS__))
 
 // used in lexer and preparer
 // TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push
 #define search_namespace(n, ns) for (size_t k = 0; k < ns.len; k++) if (!dyarr_cmp(&ns.ptr[k].name, &n))
 
-struct declaration;
-struct expression;
-struct adpt_type;
-struct adpt_item;
-struct slot;
-struct bytecode;
-struct run_state;
+struct ct_declaration;
+struct ct_expression;
+struct ct_adpt_type;
+struct ct_adpt_item;
+struct ct_slot;
+struct ct_bytecode;
+struct ct_run_state;
 
-void print_decl(FILE ref strm, struct declaration cref decl);
-void print_expr(FILE ref strm, struct expression cref expr, unsigned const depth);
-void print_type(FILE ref strm, struct adpt_type cref ty);
-void print_code(FILE ref strm, struct bytecode const code);
-void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
-void print_tops(FILE ref strm, struct run_state cref rs, struct adpt_item cref items, size_t const count);
-void print_slot(FILE ref strm, struct slot cref slt);
+void ct_print_decl(FILE ref strm, struct ct_declaration cref decl);
+void ct_print_expr(FILE ref strm, struct ct_expression cref expr, unsigned const depth);
+void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty);
+void ct_print_code(FILE ref strm, struct ct_bytecode const code);
+void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, unsigned const depth);
+void ct_print_tops(FILE ref strm, struct ct_run_state cref rs, struct ct_adpt_item cref items, size_t const count);
+void ct_print_slot(FILE ref strm, struct ct_slot cref slt);
 
 #endif // CINTRE_COMMON_H

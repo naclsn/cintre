@@ -1,17 +1,17 @@
 /// C lexer with inbuilt preprocessor; example:
 /// ```c
-/// lex_state ls = {0};              // cpp
-/// ldef(&ls, "_XOPEN_SOURCE", "1"); //  -D_XOPEN_SOURCE=1
-/// linc(&ls, "./lib/include");      //  -I./lib/include
-/// lini(&ls, "./main.c");           //  ./main.c
+/// ct_lex_state ls = {0};              // cpp
+/// ct_ldef(&ls, "_XOPEN_SOURCE", "1"); //  -D_XOPEN_SOURCE=1
+/// ct_linc(&ls, "./lib/include");      //  -I./lib/include
+/// ct_lini(&ls, "./main.c");           //  ./main.c
 ///
 /// while (!lend(&ls)) {
-///     bufsl const token = lext(&ls);
+///     ct_bufsl const token = ct_lext(&ls);
 ///     // note: the last ("EOF") token has `token.len == 0`
 ///     printf("[%s:%zu] %.*s\n", ls.file, ls.line, (int)token.len, token.ptr);
 /// }
 ///
-/// ldel(&ls);
+/// ct_ldel(&ls);
 /// ```
 ///
 /// comments can also be obtained by defining `on_lcom`,
@@ -33,53 +33,53 @@
 
 #include "common.h"
 
-typedef struct lex_state {
-    bufsl slice;
+typedef struct ct_lex_state {
+    ct_bufsl slice;
     char const* file;
     size_t line;
     size_t sidx;
     unsigned macro_depth;
-    dyarr(struct _lex_state_source {
+    ct_dyarr(struct _ct_lex_state_source {
         char const* file;
-        buf text;
+        ct_buf text;
     }) sources;
-    dyarr(bufsl) include_paths;
-    dyarr(struct _lex_state_macro {
-        bufsl name;
-        bufsl repl;
-        dyarr(struct { bufsl name; }) params;
+    ct_dyarr(ct_bufsl) include_paths;
+    ct_dyarr(struct _ct_lex_state_macro {
+        ct_bufsl name;
+        ct_bufsl repl;
+        ct_dyarr(struct { ct_bufsl name; }) params;
     }) macros;
-    dyarr(struct _lex_state_hold {
-        bufsl slice;
+    ct_dyarr(struct _ct_lex_state_hold {
+        ct_bufsl slice;
         char const* file;
         size_t line;
         size_t sidx;
     }) include_stack;
-    dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
-    dyarr(buf) workbufs;
-} lex_state;
+    ct_dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
+    ct_dyarr(ct_buf) workbufs;
+} ct_lex_state;
 
 /// add to defined macros
-void ldef(lex_state ref ls, char cref name, char cref value);
+void ct_ldef(ct_lex_state ref ls, char cref name, char cref value);
 /// add to include paths
-void linc(lex_state ref ls, char cref path);
+void ct_linc(ct_lex_state ref ls, char cref path);
 /// set the entry file, lexer ready to go
-void lini(lex_state ref ls, char cref entry);
-/// clear and delete everything (do not hold on to bufsl tokens!)
-void ldel(lex_state ref ls);
+void ct_lini(ct_lex_state ref ls, char cref entry);
+/// clear and delete everything (do not hold on to ct_bufsl tokens!)
+void ct_ldel(ct_lex_state ref ls);
 /// true if no more token (also last token is empty)
 #define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
 /// current line (at the end of last token) or empty if end of input
-bufsl llne(lex_state cref ls);
+ct_bufsl ct_llne(ct_lex_state cref ls);
 /// compute a preprocessor expression
-long lxpr(lex_state cref ls, bufsl ref xpr);
+long ct_lxpr(ct_lex_state cref ls, ct_bufsl ref xpr);
 /// next token, move forward
-bufsl lext(lex_state ref ls);
+ct_bufsl ct_lext(ct_lex_state ref ls);
 
 /// uint c = '\\' == ptr[k]
-///        ? unescape(ptr, len, &k)
+///        ? ct_unescape(ptr, len, &k)
 ///        : ptr[k++];
-int unescape(char cref ptr, size_t const len, size_t* const k)
+int ct_unescape(char cref ptr, size_t const len, size_t* const k)
 {
     int r = 0;
     switch (ptr[++*k]) {
@@ -119,9 +119,9 @@ int unescape(char cref ptr, size_t const len, size_t* const k)
 
 // ---
 
-buf _lex_read_all(FILE ref f)
+ct_buf _ct_lex_read_all(FILE ref f)
 {
-    buf r = {0};
+    ct_buf r = {0};
     if (!fseek(f, 0, SEEK_END)) {
         r.ptr = malloc(r.len = r.cap = ftell(f));
         if (!r.ptr) exitf("OOM");
@@ -135,28 +135,28 @@ buf _lex_read_all(FILE ref f)
     return r;
 }
 
-void ldef(lex_state ref ls, char cref name, char cref value)
+void ct_ldef(ct_lex_state ref ls, char cref name, char cref value)
 {
-    struct _lex_state_macro* it = dyarr_push(&ls->macros);
+    struct _ct_lex_state_macro* it = dyarr_push(&ls->macros);
     if (!it) exitf("OOM");
-    *it = (struct _lex_state_macro){0};
+    *it = (struct _ct_lex_state_macro){0};
     it->name.len = strlen(it->name.ptr = name);
     it->repl.len = strlen(it->repl.ptr = value);
 }
 
-void linc(lex_state ref ls, char cref path)
+void ct_linc(ct_lex_state ref ls, char cref path)
 {
-    bufsl* it = dyarr_push(&ls->include_paths);
+    ct_bufsl* it = dyarr_push(&ls->include_paths);
     if (!it) exitf("OOM");
     it->ptr = path;
     it->len = strlen(path);
 }
 
-void lini(lex_state ref ls, char cref entry)
+void ct_lini(ct_lex_state ref ls, char cref entry)
 {
     FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
     if (!f) exitf("Could not open entry file %s", entry);
-    struct _lex_state_source* src = dyarr_push(&ls->sources);
+    struct _ct_lex_state_source* src = dyarr_push(&ls->sources);
     if (src) src->file = src->text.ptr = NULL;
     size_t n = strlen(entry);
     char* dup = malloc(n+1);
@@ -164,7 +164,7 @@ void lini(lex_state ref ls, char cref entry)
     memcpy(dup, entry, n);
     dup[n] = '\0';
     src->file = dup;
-    src->text = _lex_read_all(f);
+    src->text = _ct_lex_read_all(f);
     if (stdin != f) fclose(f);
     if (!src->text.len) exitf("Could not read entry file %s", entry);
     ls->slice.ptr = src->text.ptr;
@@ -174,7 +174,7 @@ void lini(lex_state ref ls, char cref entry)
     ls->sidx = 0;
 }
 
-void ldel(lex_state ref ls)
+void ct_ldel(ct_lex_state ref ls)
 {
     for (size_t k = 0; k < ls->sources.len; k++) {
         free((void*)ls->sources.ptr[k].file);
@@ -189,11 +189,11 @@ void ldel(lex_state ref ls)
     dyarr_clear(&ls->workbufs);
 }
 
-bufsl llne(lex_state cref ls)
+ct_bufsl ct_llne(ct_lex_state cref ls)
 {
-    bufsl r = {.ptr= ls->slice.ptr};
+    ct_bufsl r = {.ptr= ls->slice.ptr};
     if (!ls->slice.len) return r;
-    buf cref ins = &ls->sources.ptr[ls->sidx].text;
+    ct_buf cref ins = &ls->sources.ptr[ls->sidx].text;
     while (ins->ptr < r.ptr && '\n' != r.ptr[-1]) r.ptr--, r.len++;
     char cref end = memchr(ls->slice.ptr, '\n', ins->len-(ls->slice.ptr-ins->ptr));
     r.len = end ? (size_t)(end-r.ptr) : ins->len-(r.ptr-ins->ptr);
@@ -201,7 +201,7 @@ bufsl llne(lex_state cref ls)
 }
 
 // preproc expression helpers {{{
-static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
+static long _ct_lex_atmxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
 {
 #   define nx() (++xpr->ptr, --xpr->len)
 #   define at() (*xpr->ptr)
@@ -223,7 +223,7 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
         while (nx() && (v = strchr(dgts, at()|32)));
         if (xpr->len && strchr("ulUL", at())) nx();
     } else if ('\'' == at()) {
-        //r = '\\' == at() ? unescape(...) : at();
+        //r = '\\' == at() ? ct_unescape(...) : at();
         while (nx() && '\'' != at()) {
             if ('\\' == at()) switch (nx() ? at() : 0) {
             case '0': r = r<<8 | '\0'; break;
@@ -243,7 +243,7 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
         }
         nx();
     } else if ('(' == at() && nx()) {
-        r = lxpr(ls, xpr);
+        r = ct_lxpr(ls, xpr);
         if (xpr->len && ')' == at()) nx();
     } else if ('_' == at() || ('a' <= (at()|32) && (at()|32) <= 'z')) {
         bool defd = strlen("defined") < xpr->len && !memcmp("defined", xpr->ptr, strlen("defined"));
@@ -256,12 +256,12 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
             pars = xpr->len && '(' == at();
             if (pars && nx()) while (strchr(" \t\n\\", at()) && nx());
         }
-        bufsl name = {.ptr= xpr->ptr};
+        ct_bufsl name = {.ptr= xpr->ptr};
         while (nx() && ('_' == at() || ('A' <= at() && at() <= 'Z') || ('a' <= at() && at() <= 'z') || ('0' <= at() && at() <= '9')));
         name.len = xpr->ptr - name.ptr;
         search_namespace(name, ls->macros) {
-            bufsl w = ls->macros.ptr[k].repl;
-            r = defd ? 1 : lxpr(ls, &w);
+            ct_bufsl w = ls->macros.ptr[k].repl;
+            r = defd ? 1 : ct_lxpr(ls, &w);
             break;
         }
         if (pars && xpr->len) {
@@ -269,14 +269,14 @@ static long _lex_atmxpr(lex_state cref ls, bufsl ref xpr)
             if (xpr->len && ')' == at()) nx();
         }
     } else switch (at()) {
-    case '-': nx(); r = -lxpr(ls, xpr); break;
-    case '+': nx(); r = +lxpr(ls, xpr); break;
-    case '~': nx(); r = ~lxpr(ls, xpr); break;
-    case '!': nx(); r = !lxpr(ls, xpr); break;
+    case '-': nx(); r = -ct_lxpr(ls, xpr); break;
+    case '+': nx(); r = +ct_lxpr(ls, xpr); break;
+    case '~': nx(); r = ~ct_lxpr(ls, xpr); break;
+    case '!': nx(); r = !ct_lxpr(ls, xpr); break;
     }
     return r;
 }
-enum _lex_operator {
+enum _ct_lex_operator {
     _lex_opnone,
     _lex_oplor,
     _lex_opland,
@@ -289,7 +289,7 @@ enum _lex_operator {
     _lex_opadd, _lex_opsub,
     _lex_opmul, _lex_opdiv, _lex_oprem,
 };
-static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long const rhs)
+static inline long _ct_lex_exexpr(long const lhs, enum _ct_lex_operator const op, long const rhs)
 {
     switch (op) {
     case _lex_oplor:  return lhs || rhs;
@@ -313,13 +313,13 @@ static inline long _lex_exexpr(long const lhs, enum _lex_operator const op, long
     default: return 0;
     }
 }
-static long _lex_oprxpr(lex_state cref ls, bufsl ref xpr, long lhs, enum _lex_operator lop)
+static long _ct_lex_oprxpr(ct_lex_state cref ls, ct_bufsl ref xpr, long lhs, enum _ct_lex_operator lop)
 {
     long rhs = 0;
-    enum _lex_operator nop;
+    enum _ct_lex_operator nop;
 again:
     if (lop) {
-        rhs = lxpr(ls, xpr);
+        rhs = ct_lxpr(ls, xpr);
         if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
     }
     nop = _lex_opnone;
@@ -349,31 +349,31 @@ again:
     }
     if (!lop && nop) { lop = nop; goto again; }
     if (lop < nop) {
-        rhs = _lex_exexpr(lhs, nop, _lex_oprxpr(ls, xpr, rhs, nop));
+        rhs = _ct_lex_exexpr(lhs, nop, _ct_lex_oprxpr(ls, xpr, rhs, nop));
         nop = lop;
     } else {
-        lhs = _lex_exexpr(lhs, lop, rhs);
-        if (nop) lhs = _lex_oprxpr(ls, xpr, lhs, nop);
+        lhs = _ct_lex_exexpr(lhs, lop, rhs);
+        if (nop) lhs = _ct_lex_oprxpr(ls, xpr, lhs, nop);
     }
-    return nop ? _lex_exexpr(lhs, nop, rhs) : lhs;
+    return nop ? _ct_lex_exexpr(lhs, nop, rhs) : lhs;
 }
 // }}}
-long lxpr(lex_state cref ls, bufsl ref xpr)
+long ct_lxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
 {
-    long first = _lex_atmxpr(ls, xpr);
+    long first = _ct_lex_atmxpr(ls, xpr);
     if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
     if ('?' == at() && nx()) {
-        long maybe = lxpr(ls, xpr);
+        long maybe = ct_lxpr(ls, xpr);
         if (xpr->len && ':' == at()) nx();
         else return 0;
-        return first ? maybe : lxpr(ls, xpr);
+        return first ? maybe : ct_lxpr(ls, xpr);
     }
-    return xpr->len && !strchr(":)", at()) ? _lex_oprxpr(ls, xpr, first, _lex_opnone) : first;
+    return xpr->len && !strchr(":)", at()) ? _ct_lex_oprxpr(ls, xpr, first, _lex_opnone) : first;
 #   undef at
 #   undef nx
 }
 
-bufsl lext(lex_state ref ls)
+ct_bufsl ct_lext(ct_lex_state ref ls)
 {
 #   define nx() (ls->line+= --ls->slice.len && '\n' == *ls->slice.ptr && !ls->macro_depth, ++ls->slice.ptr)
 #   define at() (*ls->slice.ptr)
@@ -389,10 +389,10 @@ bufsl lext(lex_state ref ls)
     )
 
     skip(strchr(" \t\n\r", at()));
-    if (has(2) && is('\\')) return nx(), lext(ls);
+    if (has(2) && is('\\')) return nx(), ct_lext(ls);
     if (has(2) && is('/') && strchr("*/", (&at())[1])) {
 #       ifdef on_lcom
-        bufsl comtxt;
+        ct_bufsl comtxt;
         accu(comtxt)
 #       endif
         {
@@ -409,7 +409,7 @@ bufsl lext(lex_state ref ls)
 #       ifdef on_lcom
         on_lcom(comtxt);
 #       endif
-        return lext(ls);
+        return ct_lext(ls);
     }
 
     bool const disab = ls->ifdef_stack.len && *dyarr_top(&ls->ifdef_stack);
@@ -418,13 +418,13 @@ bufsl lext(lex_state ref ls)
         // preproc directive {{{
         nx();
         skip(strchr(" \t", at()));
-        bufsl dir;
+        ct_bufsl dir;
         accu(dir) skip(isid());
 #       define diris(wo) (!memcmp(wo, dir.ptr, dir.len < strlen(wo) ? strlen(wo) : dir.len))
 
         if (!disab && diris("error")) {
             skip(strchr(" \t", at()));
-            bufsl err;
+            ct_bufsl err;
             accu(err) {
                 do if (has(1) && is('\\')) nx();
                 while (nx(), has(1) && !is('\n'));
@@ -438,19 +438,19 @@ bufsl lext(lex_state ref ls)
             char c = at();
             nx();
             bool s;
-            bufsl path;
+            ct_bufsl path;
             accu(path) {
                 if ((s = '<' == c)) skip(!is('>'));
                 else if ('"' == c) skip(!is('"'));
             }
             nx();
             if (!s) {
-                struct _lex_state_hold* hold = dyarr_push(&ls->include_stack);
-                struct _lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
+                struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
+                struct _ct_lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
                 if (src) src->file = src->text.ptr = NULL;
                 if (!hold || !src) exitf("OOM");
                 char const* dirend = strrchr(ls->file, '/');
-                bufsl* it = dirend ? &(bufsl){.ptr= ls->file, .len= dirend-ls->file} : &(bufsl){0};
+                ct_bufsl* it = dirend ? &(ct_bufsl){.ptr= ls->file, .len= dirend-ls->file} : &(ct_bufsl){0};
                 size_t k = -1;
                 do {
                     char file[2048];
@@ -465,7 +465,7 @@ bufsl lext(lex_state ref ls)
                     file[n] = '\0';
                     FILE* f = fopen(file, "rb");
                     if (f) {
-                        src->text = _lex_read_all(f);
+                        src->text = _ct_lex_read_all(f);
                         fclose(f);
                         if (src->text.len) {
                             char* dup = malloc(n+1);
@@ -488,7 +488,7 @@ bufsl lext(lex_state ref ls)
                 ls->file = src->file;
                 ls->line = 1;
                 ls->sidx++;
-                return lext(ls);
+                return ct_lext(ls);
             }
 #           ifdef on_lsys
             else on_lsys(path);
@@ -504,7 +504,7 @@ bufsl lext(lex_state ref ls)
                 nx();
                 free((void*)ls->file);
                 ls->file = NULL;
-                bufsl path;
+                ct_bufsl path;
                 accu(path) skip(!is('"'));
                 char* dup = malloc(--path.len);
                 if (!dup) exitf("OOM");
@@ -517,18 +517,18 @@ bufsl lext(lex_state ref ls)
 
         else if (!disab && diris("define")) {
             skip(strchr(" \t", at()));
-            bufsl name;
+            ct_bufsl name;
             accu(name) skip(isid());
-            struct _lex_state_macro* it = NULL;
+            struct _ct_lex_state_macro* it = NULL;
             search_namespace(name, ls->macros) { it = ls->macros.ptr+k; break; }
             if (!it && !(it = dyarr_push(&ls->macros))) exitf("OOM");
-            *it = (struct _lex_state_macro){0};
+            *it = (struct _ct_lex_state_macro){0};
             it->name = name;
             if (is('(')) {
                 nx();
                 skip(strchr(" \t", at()));
                 while (!is(')')) {
-                    bufsl* arg = (bufsl*)dyarr_push(&it->params);
+                    ct_bufsl* arg = (ct_bufsl*)dyarr_push(&it->params);
                     if (!arg) exitf("OOM");
                     accu(*arg) skip(isid() || is('.'));
                     skip(strchr(" \t", at()));
@@ -549,7 +549,7 @@ bufsl lext(lex_state ref ls)
 
         else if (!disab && diris("undef")) {
             skip(strchr(" \t", at()));
-            bufsl name;
+            ct_bufsl name;
             accu(name) skip(isid());
             search_namespace(name, ls->macros) {
                 dyarr_remove(&ls->macros, k, 1);
@@ -559,7 +559,7 @@ bufsl lext(lex_state ref ls)
 
         else if (diris("ifdef") || diris("ifndef")) {
             skip(strchr(" \t", at()));
-            bufsl name;
+            ct_bufsl name;
             accu(name) skip(isid());
             char* top = dyarr_push(&ls->ifdef_stack);
             if (!top) exitf("OOM");
@@ -572,7 +572,7 @@ bufsl lext(lex_state ref ls)
 
         else if (diris("if") || diris("elif")) {
             skip(strchr(" \t", at()));
-            bufsl expr;
+            ct_bufsl expr;
             accu(expr) {
                 if (!has(1) || is('\n')) break;
                 do if (has(1) && is('\\')) nx();
@@ -581,7 +581,7 @@ bufsl lext(lex_state ref ls)
             bool e = 'e' == dir.ptr[0];
             char* top = e ? dyarr_top(&ls->ifdef_stack) : dyarr_push(&ls->ifdef_stack);
             if (!top) exitf("OOM");
-            *top = (e ? 1 != *top : disab) ? 2 : !lxpr(ls, &expr);
+            *top = (e ? 1 != *top : disab) ? 2 : !ct_lxpr(ls, &expr);
         }
 
         else if (diris("else")) {
@@ -595,7 +595,7 @@ bufsl lext(lex_state ref ls)
 
 #       ifdef on_lunr
         else if (!disab) {
-            bufsl dirlne;
+            ct_bufsl dirlne;
             accu(dirlne) {
                 if (!has(1) || is('\n')) break;
                 do if (has(1) && is('\\')) nx();
@@ -609,27 +609,27 @@ bufsl lext(lex_state ref ls)
 
 #       undef diris
         if (has(1) && !is('\n')) do if (has(1) && is('\\')) nx(); while (nx(), has(1) && !is('\n'));
-        return lext(ls);
+        return ct_lext(ls);
         // }}}
     } // if is '#'
 
     if (disab) {
         skip(!is('\n'));
-        if (has(1)) return lext(ls);
+        if (has(1)) return ct_lext(ls);
     }
 
     // xxx: (<backslash><newline>)+ in a token other than string literal not handled
-    bufsl r;
+    ct_bufsl r;
     accu(r) {
         if (!has(1)) {
             if (!ls->include_stack.len) return r;
-            struct _lex_state_hold ref hold = dyarr_pop(&ls->include_stack);
+            struct _ct_lex_state_hold ref hold = dyarr_pop(&ls->include_stack);
             ls->slice = hold->slice;
             ls->file = hold->file;
             ls->line = hold->line;
             ls->sidx = hold->sidx;
             if (ls->macro_depth) ls->macro_depth--;
-            return lext(ls);
+            return ct_lext(ls);
         }
 
         if (isin('0', '9') || (is('.') && has(1) && '0' <= (&at())[1] && (&at())[1] <= '9')) {
@@ -657,13 +657,13 @@ bufsl lext(lex_state ref ls)
         }
 
         else if (isid()) {
-            bufsl name;
+            ct_bufsl name;
             accu(name) skip(isid());
             search_namespace(name, ls->macros) {
                 // expand preproc macro {{{
-                struct _lex_state_macro* macro = ls->macros.ptr+k;
+                struct _ct_lex_state_macro* macro = ls->macros.ptr+k;
                 size_t argc = 0;
-                bufsl argv[128];
+                ct_bufsl argv[128];
                 bool isva = false;
                 if ('(' == dyarr_top(&macro->name)[1]) { // xxx: 1-char read overrun
                     isva = macro->params.len && !memcmp("...", dyarr_top(&macro->params)->name.ptr, 3);
@@ -695,9 +695,9 @@ bufsl lext(lex_state ref ls)
                     nx();
                     while (argc < macro->params.len) argv[argc++].len = 0;
                 }
-                struct _lex_state_hold* hold = dyarr_push(&ls->include_stack);
-                buf* work = dyarr_push(&ls->workbufs);
-                if (work) *work = (buf){0};
+                struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
+                ct_buf* work = dyarr_push(&ls->workbufs);
+                if (work) *work = (ct_buf){0};
                 if (macro->repl.len && (!hold || !work || !dyarr_replace(work, 0, 0, &macro->repl))) exitf("OOM");
                 k = 0;
                 while (k < work->len) {
@@ -735,12 +735,12 @@ bufsl lext(lex_state ref ls)
                             size_t st = k-1;
                             while (k < work->len && strchr(" \r\n\\", work->ptr[k])) k++;
                             if (work->len == k) break;
-                            bufsl name = {.ptr= work->ptr+k};
+                            ct_bufsl name = {.ptr= work->ptr+k};
                             char c = work->ptr[k];
                             while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
                                 c = work->ptr[++k];
                             name.len = work->ptr+k-name.ptr;
-                            bufsl repl;
+                            ct_bufsl repl;
                             bool f = false;
                             if (nameis("__VA_ARGS__") && isva) {
                                 repl.ptr = argv[macro->params.len-1].ptr;
@@ -786,14 +786,14 @@ bufsl lext(lex_state ref ls)
                         break;
                     default:
                         if ('_' == c || cin('A', 'Z') || cin('a', 'z')) {
-                            bufsl name = {.ptr= work->ptr+k++};
+                            ct_bufsl name = {.ptr= work->ptr+k++};
                             if (k < work->len) {
                                 char c = work->ptr[k];
                                 while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
                                     c = work->ptr[++k];
                             }
                             name.len = work->ptr+k-name.ptr;
-                            bufsl repl = name;
+                            ct_bufsl repl = name;
                             char tmp[32];
                             time_t tt;
                             if (nameis("__VA_ARGS__") && isva) repl.len = argv[argc-1].ptr - (repl.ptr = argv[macro->params.len-1].ptr) + argv[argc-1].len;
@@ -816,7 +816,7 @@ bufsl lext(lex_state ref ls)
                 ls->slice.ptr = work->ptr;
                 ls->slice.len = work->len;
                 ls->macro_depth++;
-                return lext(ls);
+                return ct_lext(ls);
                 // }}}
             } // found name in macros
         }

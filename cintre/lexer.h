@@ -245,7 +245,7 @@ static long _ct_lex_atmxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
     } else if ('(' == at() && nx()) {
         r = ct_lxpr(ls, xpr);
         if (xpr->len && ')' == at()) nx();
-    } else if ('_' == at() || ('a' <= (at()|32) && (at()|32) <= 'z')) {
+    } else if (isidstart(at())) {
         bool defd = strlen("defined") < xpr->len && !memcmp("defined", xpr->ptr, strlen("defined"));
         bool pars = false;
         if (defd) {
@@ -257,7 +257,7 @@ static long _ct_lex_atmxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
             if (pars && nx()) while (strchr(" \t\n\\", at()) && nx());
         }
         ct_bufsl name = {.ptr= xpr->ptr};
-        while (nx() && ('_' == at() || ('A' <= at() && at() <= 'Z') || ('a' <= at() && at() <= 'z') || ('0' <= at() && at() <= '9')));
+        while (nx() && isidcont(at()));
         name.len = xpr->ptr - name.ptr;
         search_namespace(name, ls->macros) {
             ct_bufsl w = ls->macros.ptr[k].repl;
@@ -380,7 +380,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
 #   define has(n) ((n) <= ls->slice.len)
 #   define is(c) ((c) == at())
 #   define isin(lo, hi) ((lo) <= at() && at() <= (hi))
-#   define isid() (isin('A', 'Z') || isin('a', 'z') || is('_') || isin('0', '9'))
+#   define isid() isidcont(at())
 #   define skip(cx) while (has(1) && (cx)) nx()
 #   define accu(wh) for (                                               \
         bool accuini = ((wh).len = 0, (wh).ptr = ls->slice.ptr, true);  \
@@ -702,7 +702,6 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                 k = 0;
                 while (k < work->len) {
 #                   define nameis(li) (strlen(li) == name.len && !memcmp(li, name.ptr, strlen(li)))
-#                   define cin(lo, hi) ((lo) <= c && c <= (hi))
                     char const c = work->ptr[k];
                     switch (c) {
                     case '/':
@@ -737,8 +736,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                             if (work->len == k) break;
                             ct_bufsl name = {.ptr= work->ptr+k};
                             char c = work->ptr[k];
-                            while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
-                                c = work->ptr[++k];
+                            while (k < work->len && isidcont(c)) c = work->ptr[++k];
                             name.len = work->ptr+k-name.ptr;
                             ct_bufsl repl;
                             bool f = false;
@@ -785,12 +783,11 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                         } // '#name'
                         break;
                     default:
-                        if ('_' == c || cin('A', 'Z') || cin('a', 'z')) {
+                        if (isidstart(c)) {
                             ct_bufsl name = {.ptr= work->ptr+k++};
                             if (k < work->len) {
                                 char c = work->ptr[k];
-                                while (k < work->len && ('_' == c || cin('A', 'Z') || cin('a', 'z') || cin('0', '9')))
-                                    c = work->ptr[++k];
+                                while (k < work->len && isidcont(c)) c = work->ptr[++k];
                             }
                             name.len = work->ptr+k-name.ptr;
                             ct_bufsl repl = name;
@@ -806,7 +803,6 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                             k = k-name.len+repl.len;
                         } else k++;
                     }
-#                   undef cin
 #                   undef nameis
                 } // for k in work
                 hold->slice = ls->slice;

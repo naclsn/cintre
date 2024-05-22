@@ -224,7 +224,7 @@ ct_bufsl ct_parse_expression(ct_parse_expr_state ref ps, ct_bufsl const tok);
             report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got \"%.*s\"", bufmt(*(_tok))), true)  \
             return
 #define _expectid(_tok)                                                                       \
-    if ((((*(_tok)->ptr|32) < 'a' || 'z' < (*(_tok)->ptr|32)) && '_' != *(_tok)->ptr) && (    \
+    if (!isidstart(*(_tok)->ptr) && (                                                         \
         report_lex_locate(ps->ls, "Expected identifier, got \"%.*s\"", bufmt(*_tok)), true))  \
         return
 
@@ -342,7 +342,7 @@ void _ct_parse_decl_ator(ct_parse_decl_state ref ps, struct _ct_parse_decl_captu
         return;
     }
 
-    if (ps->tok.len && (('a' <= (*ps->tok.ptr|32) && (*ps->tok.ptr|32) <= 'z') || '_' == *ps->tok.ptr)) {
+    if (ps->tok.len && isidstart(*ps->tok.ptr)) {
         decl->name = ps->tok;
         ps->tok = ct_lext(ps->ls);
     }
@@ -659,8 +659,6 @@ void _ct_parse_decl_fields(ct_parse_decl_state ref ps, struct _ct_parse_decl_cap
 /// parse the specifier and initial qualifiers then one declarator
 void _ct_parse_decl_spec(ct_parse_decl_state ref ps, struct _ct_parse_decl_capture ref capt, ct_declaration ref decl)
 {
-#   define is1(w) (ps->tok.len && w == *ps->tok.ptr)
-#   define isid() (ps->tok.len && ('_' == *ps->tok.ptr || ('A' <= *ps->tok.ptr && *ps->tok.ptr <= 'Z') || ('a' <= *ps->tok.ptr && *ps->tok.ptr <= 'z') || ('0' <= *ps->tok.ptr && *ps->tok.ptr <= '9')))
 #   define case_iskw(...) if (0) case kws(__VA_ARGS__): if (!iskwx(ps->tok, __VA_ARGS__)) goto notkw;
 
     for (unsigned askw; ps->tok.len; ps->tok = ct_lext(ps->ls)) redo: switch (askw = ps->tok.len <3 ? 0 : kw(ps->tok.ptr)) {
@@ -687,11 +685,11 @@ void _ct_parse_decl_spec(ct_parse_decl_state ref ps, struct _ct_parse_decl_captu
         decl->type.kind = askw;
         bool const e = CT_KIND_ENUM == askw;
         ps->tok = ct_lext(ps->ls);
-        if (isid()) {
+        if (ps->tok.len && isidstart(*ps->tok.ptr)) {
             decl->type.name = ps->tok;
             ps->tok = ct_lext(ps->ls);
         }
-        if (is1('{')) {
+        if (ps->tok.len && '{' == *ps->tok.ptr) {
             ps->tok = ct_lext(ps->ls);
             if (e) _ct_parse_decl_enumer(ps, &(struct _ct_parse_decl_capture){
                     .hold= decl,
@@ -722,7 +720,7 @@ void _ct_parse_decl_spec(ct_parse_decl_state ref ps, struct _ct_parse_decl_captu
         //   - a ':' -> emit and return
         // - a '=' or a ',' or a ';' -> emit and return
 
-        if (isid()) {
+        if (isidstart(*ps->tok.ptr)) {
             if (!decl->type.name.len ||
                     (bufis(decl->type.name, "int") &&
                      ( bufis(ps->tok, "int")    ||
@@ -755,8 +753,6 @@ void _ct_parse_decl_spec(ct_parse_decl_state ref ps, struct _ct_parse_decl_captu
     } // for-switch tok
 
 #   undef case_iskw
-#   undef isid
-#   undef is1
 
     capt->then(ps, capt->next, decl);
 }

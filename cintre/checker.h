@@ -108,8 +108,7 @@ bool _ct_is_expr_lvalue(ct_expression cref expr)
     // yeah no idea either that'll do for now until it actually shows too much
     switch (expr->kind) {
     case CT_ATOM:;
-        char const c = *expr->info.atom.ptr|32;
-        return 'a' <= c && c <= 'z';
+        return isidstart(*expr->info.atom.ptr);
     case CT_BINOP_SUBSCR:
     case CT_UNOP_DEREF:
     case CT_UNOP_PMEMBER:
@@ -493,7 +492,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         if (&ct_adptb_void_type == tyto ||
                 (isnum(tyto) && isnum(opr)) ||
                 (isint(tyto) && isindir(opr)) || (isptr(tyto) && isint(opr)) ||
-                (isptr(tyto) && isindir(opr) && isfun(tyto->info.ptr) != isfun(atindir(opr)))
+                (isptr(tyto) && isindir(opr) && isfun(tyto->info.ptr) == isfun(atindir(opr)))
            ) return expr->usr = (void*)tyto;
         fail("Operand cannot be casted to this type");
 

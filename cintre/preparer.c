@@ -627,7 +627,7 @@ ct_bufsl name_space(char ref name)
     if (fileext) itns.len = fileext - itns.ptr;
 
     for (size_t k = 0; k < itns.len; k++)
-        if ((itns.ptr[k]|32) < 'a' || 'z' < (itns.ptr[k]|32))
+        if (!(!k ? isidstart(itns.ptr[k]) : isidcont(itns.ptr[k])))
             ((char*)itns.ptr)[k] = '_';
 
     // adapter files are expected to start with "a-",

@@ -48,6 +48,9 @@ static bool _try_jmp_flg = false;
 // TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push
 #define search_namespace(n, ns) for (size_t k = 0; k < ns.len; k++) if (!dyarr_cmp(&ns.ptr[k].name, &n))
 
+#define isidstart(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || '_' == (__c))
+#define isidcont(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || ('0' <= (__c) && (__c) <= '9') || '_' == (__c))
+
 struct ct_declaration;
 struct ct_expression;
 struct ct_adpt_type;

@@ -45,6 +45,8 @@ typedef struct ct_cintre_state {
         struct ct_adpt_namespace cref spaces;
     } nsps;
 
+    FILE* save;
+
     // needed for `decl_to_adpt_type`
     ct_dyarr(struct ct_adpt_type) ty_work;
 } ct_cintre_state;
@@ -136,11 +138,26 @@ char* _ct_prompt_compl(char cref text, int const state)
         rl_completion_display_matches_hook = NULL;
         return rl_filename_completion_function(text, state);
     } else rl_completion_display_matches_hook = _ct_prompt_list_compl;
+    static size_t ns, k;
+    static bool is_xcmd = false;
+    if (0 == state) {
+        for (int p = rl_point; p && !(is_xcmd = ';' == rl_line_buffer[p-1]); p--);
+        ns = k = 0;
+    }
+    size_t const len = strlen(text);
     // todo: could have completion based on type
     //if (CT_TYPE_STRUCT || CT_TYPE_UNION) .. rl_point, rl_line_buffer ..;
-    size_t const len = strlen(text);
-    static size_t ns, k;
-    if (0 == state) ns = k = 0;
+    if (is_xcmd) {
+        static char cref cmds[] = {"help", "locales", "namespaces", "stacktop", "clstack", "save \"", "load \"", "ast", "type", "bytecode"};
+        while (k < countof(cmds)) if (!memcmp(cmds[k++], text, len)) {
+            size_t const len = strlen(cmds[k-1]);
+            char ref r = malloc(len+2);
+            if (!r) return NULL;
+            strcpy(r, cmds[k-1]);
+            return r;
+        }
+        return NULL;
+    } // else
     ct_cintre_state cref gs = _ct_prompt_rl_gs;
     for (; ns < gs->nsps.count+1; ns++, k = 0)
         for (; k < (!ns ? gs->locs.len : gs->nsps.spaces[ns-1].count); k++) {
@@ -151,6 +168,7 @@ char* _ct_prompt_compl(char cref text, int const state)
                 bool const fun = CT_TYPE_FUN == it->type->tyty || (CT_TYPE_PTR == it->type->tyty && CT_TYPE_FUN == it->type->info.ptr->tyty); // xxx: || ...
                 bool const arr = CT_TYPE_ARR == it->type->tyty;
                 char ref r = malloc(len + (tdf|fun|arr));
+                if (!r) return NULL;
                 strcpy(r, it->name);
                 if (tdf|fun|arr) r[len] =
                     tdf ? ' ' :
@@ -518,12 +536,15 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
 {
     ct_cintre_state ref gs = usr;
 
-    // NOTE: thinking about moving this xcmd stuff in its own function, in
-    //       a way it could be called from ct_accept_decl (and maybe even
-    //       accept_sttm, idk that doesn't make sense but all this isn't
-    //       devised yest)
-    char cref xcmd = tok->len && ';' == *tok->ptr ? tok->ptr+1+strspn(tok->ptr+1, " \t") : "";
-#   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
+    ct_bufsl xcmd = {0};
+    if (1 == tok->len && ';' == *tok->ptr) {
+        xcmd = ct_lext(&gs->lexr);
+        // yyy: hackish, this is for the gs->save (end of main repl)
+        //      it assumes the ';' is part of the actual input
+        //      (ie. not from macro, etc..)
+        *(char*)tok->ptr = '\0';
+    }
+#   define xcmdis(s)  (xcmd.len && !memcmp(s, xcmd.ptr, strlen(s)))
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
@@ -532,6 +553,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
+        printf("   save \"file\"           -  save each next lines to the file\n");
+        printf("   load \"file\"           -  load the file, running each lines\n");
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
@@ -553,15 +576,14 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
     }
 
     if (xcmdis("names") || xcmdis("ns")) {
-        char cref end = xcmd+strcspn(xcmd, " \t");
-        char cref name = end+strspn(end, " \t");
-        if (end == name) {
+        ct_bufsl const name = ct_lext(&gs->lexr);
+        if (!name.len) {
             printf("List of namespaces:\n");
             for (size_t ns = 0; ns < gs->nsps.count; ns++)
                 printf("   %s (%zu names)\n", gs->nsps.spaces[ns].name, gs->nsps.spaces[ns].count);
             return;
         }
-        for (size_t ns = 0; ns < gs->nsps.count; ns++) if (!strcmp(gs->nsps.spaces[ns].name, name)) {
+        for (size_t ns = 0; ns < gs->nsps.count; ns++) if (!memcmp(gs->nsps.spaces[ns].name, name.ptr, name.len)) {
             printf("List of names in %s:\n", gs->nsps.spaces[ns].name);
             for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
                 struct ct_adpt_item cref it = gs->nsps.spaces[ns].items+k;
@@ -572,7 +594,7 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             }
             return;
         }
-        printf("No such namespace '%s'\n", name);
+        printf("No such namespace '%.*s'\n", bufmt(name));
         return;
     }
 
@@ -593,6 +615,27 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
             free(gs->comp.chk_interned.ptr[k].ptr);
         gs->comp.chk_interned.len = 0;
+        return;
+    }
+
+    if (xcmdis("save") || xcmdis("load")) {
+        ct_bufsl file = ct_lext(&gs->lexr);
+        if (!file.len || '"' != *file.ptr) printf("Expected a name for the file to %.4s\n", xcmd.ptr);
+        else {
+            file.len--, file.ptr++;
+            file.len-= '"' == file.ptr[file.len-1];
+            char filename[file.len+1]; // xxx: va
+            memcpy(filename, file.ptr, file.len);
+            filename[file.len] = '\0';
+            FILE ref f = fopen(filename, 's' == *xcmd.ptr ? "w" : "r");
+            if (!f) printf("Could not open file '%s'\n", filename);
+            else {
+                if ('s' == *xcmd.ptr) {
+                    if (gs->save) fclose(gs->save);
+                    gs->save = f;
+                } else notif("NIY: run loaded file");
+            }
+        }
         return;
     }
 
@@ -641,10 +684,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
 } // ct_accept_expr
 // }}}
 
-int main(void)
+int main(int argc, char cref* argv)
 {
-    printf("Type `;help` for a list of command\n");
-
     static ct_cintre_state _gs = {
         .lexr= {.file= "<input>"},
         .decl= {.ls= &_gs.lexr, .usr= &_gs, .on= ct_accept_decl},
@@ -656,6 +697,28 @@ int main(void)
 #endif
     };
     ct_cintre_state ref gs = &_gs;
+
+    char cref prog = (argc--, *argv++);
+    while (0 < argc) if ('-' == **argv) switch ((argc--, *argv++)[1]) {
+
+    case 'h':
+        printf("Usage: %s [-f file]\n", prog);
+        return 1;
+
+    case 'f':
+        gs->save = fopen((argc--, *argv++), "r+");
+        if (!gs->save) {
+            gs->save = fopen(argv[-1], "w");
+            if (!gs->save) printf("Could not opent file '%s'\n", argv[-1]);
+        } else notif("NIY: run loaded file");
+        break;
+
+    } else {
+        printf("Unexpected argument %s, see -h, continuing", *argv);
+        break;
+    }
+
+    printf("Type `;help` for a list of command\n");
 
     char* line = NULL;
     while (ct_prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line, gs)) {
@@ -683,6 +746,8 @@ int main(void)
         }
 
         else ct_parse_expression(&gs->expr, tok);
+
+        if (gs->save && *line) fprintf(gs->save, "%s;\n", line);
     }
 
     ct_cintre_cleanup(gs);

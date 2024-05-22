@@ -20,7 +20,7 @@ ct_lex_state ls = {0};
 FILE* result = NULL;
 int indent = 0;
 
-bool emit_decl = true, emit_incl = false, emit_sysi = true;
+bool emit_decl = true, emit_incl = false, emit_sysi = true, follow_incl = false;
 
 #ifdef LOC_NOTIF
 # define EMIT_HERE fprintf(result, " /*\x1b[36m%s(" _HERE_XSTR(__LINE__) ")\x1b[m*/ ", __func__)
@@ -546,6 +546,13 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
     (void)_;
     (void)tok;
 
+    // xxx: lexer internals,
+    // but basically we need to know if we are in the top-level ("entry") file
+    if (!follow_incl && ls.include_stack.len) {
+        //notif("Skipping: '%.*s' (%.*s)", bufmt(decl->name), bufmt(decl->type.name));
+        return;
+    }
+
     if (decl->is_inline) return;
 
     switch (decl->spec) {
@@ -716,6 +723,7 @@ int do_prepare(int argc, char** argv)
             else if (flagis("no-emit-decl")) emit_decl = false, emit_incl = true;
             else if (flagis("no-emit-incl")) emit_incl = false;
             else if (flagis("no-emit-sysi")) emit_sysi = false;
+            else if (flagis("do-follow-incl")) follow_incl = true;
 #           undef flagis
             break;
 
@@ -808,6 +816,10 @@ int main(int argc, char** argv)
                 "                  entry file\n"
                 "  -Pno-emit-incl  do not even emit the `#include \"\"`\n"
                 "  -Pno-emit-sysi  do not forward the `#include <>`\n"
+                "  -Pdo-follow-incl  by default the `#include \"\"`\n"
+                "                    directives are only preprocessed,\n"
+                "                    none of there declarations are used;\n"
+                "                    this makes it do declare these too\n"
                 "\n"
                 "  The second form (when the first argument is \"-m\")\n"
                 "takes a series of previously generated \"adapter\" files\n"

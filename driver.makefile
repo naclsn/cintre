@@ -1,8 +1,8 @@
 ## example:
-# prog     := simple
-# entries  := simple.c
-# objs     := simple.o
-# opts     := # supported: -nostd (disables standard.h), -norl (disables readline)
+# prog    := simple
+# entries := simple.c
+# objs    := simple.o
+# opts    := # supported: -nostd (disables standard.h), -norl (disables readline)
 # include driver.makefile
 #
 # - it defines the rules `build/simple` and `clean-simple`

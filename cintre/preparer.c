@@ -34,9 +34,14 @@ bool emit_decl = true, emit_incl = false, emit_sysi = true, follow_incl = false;
 #define emitln(...)  (emit(__VA_ARGS__), fprintf(result, "\n%*s", indent*4, ""))
 #define emit_empty()  fprintf(result, "\n%*s", indent*4, "")
 
+// so as to remember to put an empty line after the last one
+bool just_did_sys_include = false;
 void on_lsys(ct_bufsl const path)
 {
-    if (emit_sysi) emitln("#include <%.*s>", bufmt(path));
+    if (emit_sysi) {
+        emitln("#include <%.*s>", bufmt(path));
+        just_did_sys_include = true;
+    }
 }
 
 struct {
@@ -44,6 +49,7 @@ struct {
     ct_dyarr(struct ct_seen_tag { ct_bufsl name; }) tags;
     ct_dyarr(struct ct_seen_tdf { ct_bufsl name; }) tdfs;
     ct_dyarr(struct ct_seen_obj { ct_bufsl name; }) objs;
+    ct_dyarr(struct ct_seen_enu { ct_bufsl name; }) enus;
     ct_dyarr(struct ct_seen_sta { ct_bufsl name; }) stas;
 } seen = {0};
 
@@ -59,7 +65,7 @@ struct {
 #define have_tag_name_bufsl(__ident, __ty)  \
     char __ident_##loc_tmp[35];  \
     if (!(__ty)->name.len) sprintf(__ident_##loc_tmp, "_%016zx_%016zx", (size_t)(__ty), (size_t)ls.slice.ptr);  \
-    ct_bufsl const __ident = !(__ty)->__ident.len ? (ct_bufsl){.ptr= __ident_##loc_tmp, .len= sizeof __ident_##loc_tmp-1} : (__ty)->__ident;
+    ct_bufsl const __ident = !(__ty)->name.len ? (ct_bufsl){.ptr= __ident_##loc_tmp, .len= sizeof __ident_##loc_tmp-1} : (__ty)->name;
 
 /// forwards as-is
 void emit_cexpr(ct_expression cref expr)
@@ -217,6 +223,12 @@ void emit_forward(struct ct_decl_type cref ty, ct_bufsl cref name, bool const in
 
             if (in_cast) return;
 
+            if (ty->name.len) {
+                struct ct_seen_tag ref tag = dyarr_push(&seen.tags);
+                if (!tag) errdie("OOM");
+                tag->name = ty->name;
+            }
+
             if (emit_decl || !ty->name.len) {
                 indented (" {") for_linked (ty->info,comp) {
                     emit_forward(&curr->decl->type, &curr->decl->name, in_cast);
@@ -228,12 +240,6 @@ void emit_forward(struct ct_decl_type cref ty, ct_bufsl cref name, bool const in
                     else emit(";");
                 }
                 emit("}");
-            }
-
-            if (ty->name.len) {
-                struct ct_seen_tag ref tag = dyarr_push(&seen.tags);
-                if (!tag) errdie("OOM");
-                tag->name = ty->name;
             }
         }
         break;
@@ -263,7 +269,13 @@ void emit_forward(struct ct_decl_type cref ty, ct_bufsl cref name, bool const in
 
             if (in_cast) return;
 
-            if (emit_decl) {
+            if (ty->name.len) {
+                struct ct_seen_tag ref tag = dyarr_push(&seen.tags);
+                if (!tag) errdie("OOM");
+                tag->name = ty->name;
+            }
+
+            if (emit_decl && ty->info.enu.count) {
                 indented (" {") for_linked (ty->info,enu) {
                     emit("%.*s", bufmt(curr->name));
                     if (curr->expr) {
@@ -272,17 +284,12 @@ void emit_forward(struct ct_decl_type cref ty, ct_bufsl cref name, bool const in
                     }
                     if (curr->next) emitln(",");
                     else emit(",");
+
+                    struct ct_seen_enu ref enu = dyarr_push(&seen.enus);
+                    if (!enu) errdie("OOM");
+                    enu->name = curr->name;
                 }
                 emit("}");
-            }
-
-            // TODO: also need to emit the enumerators and add them to
-            // seen.objs as if they were declared `static const int`
-
-            if (ty->name.len) {
-                struct ct_seen_tag ref tag = dyarr_push(&seen.tags);
-                if (!tag) errdie("OOM");
-                tag->name = ty->name;
             }
         }
         break;
@@ -377,6 +384,10 @@ void emit_named_comps_adpt_type_def(struct ct_decl_type cref ty)
     case CT_KIND_FUN: emit_named_comps_adpt_type_def(&ty->info.fun.ret->type);  return;
     case CT_KIND_ARR: emit_named_comps_adpt_type_def(&ty->info.arr.item->type); return;
 
+    case CT_KIND_ENUM:
+        if (ty->name.len) emitln("#define %.*s_adapt_tag_type ct_adptb_int_type", bufmt(ty->name));
+        return;
+
     case CT_KIND_STRUCT:
     case CT_KIND_UNION:
         if (-1ul == ty->info.comp.count)
@@ -390,6 +401,7 @@ void emit_named_comps_adpt_type_def(struct ct_decl_type cref ty)
     }
 
     have_tag_name_bufsl(name, ty);
+    emitln("static struct ct_adpt_type const %.*s_adapt_tag_type;", bufmt(name));
 
     for_linked (ty->info,comp) emit_named_comps_adpt_type_def(&curr->decl->type);
 
@@ -402,6 +414,7 @@ void emit_named_comps_adpt_type_def(struct ct_decl_type cref ty)
         emitln(".align= alignof(%s %.*s),", comp_kind, bufmt(name));
         emitln(".tyty= CT_TYPE_%s,", CT_KIND_UNION == ty->kind ? "UNION" : "STRUCT");
         indented (".info.comp= {") {
+            if (ty->name.len) emitln(".named= \"%.*s\",", bufmt(ty->name));
             size_t count = 0;
             indented (".fields= (struct ct_adpt_comp_field[]){") for_linked (ty->info,comp) {
                 indented ("[%zu]= {", count++) {
@@ -464,6 +477,10 @@ void emit_extern(ct_declaration cref decl)
         search_namespace (decl->name, seen.funs) { found = true; break; }
         if (found) return;
 
+        struct ct_seen_fun ref fun = dyarr_push(&seen.funs);
+        if (!fun) errdie("OOM");
+        fun->name = decl->name;
+
         indented ("void %.*s_adapt_call(char* ret, char** args) {", bufmt(decl->name)) {
             if (0 == decl->type.info.fun.count) emitln("(void)args;");
             if (bufis(decl->type.info.fun.ret->type.name, "void")) emitln("(void)ret;");
@@ -490,10 +507,6 @@ void emit_extern(ct_declaration cref decl)
             emit(");");
         }
         emitln("}");
-
-        struct ct_seen_fun ref fun = dyarr_push(&seen.funs);
-        if (!fun) errdie("OOM");
-        fun->name = decl->name;
     }
 
     else if (decl->name.len) {
@@ -501,11 +514,11 @@ void emit_extern(ct_declaration cref decl)
         search_namespace (decl->name, seen.objs) { found = true; break; }
         if (found) return;
 
-        emitln("// object not quite handled anywhere yet");
-
         struct ct_seen_obj ref obj = dyarr_push(&seen.objs);
         if (!obj) errdie("OOM");
         obj->name = decl->name;
+
+        emitln("// object not quite handled anywhere yet");
     }
 
     if (decl->name.len) {
@@ -527,6 +540,10 @@ void emit_typedef(ct_declaration cref decl)
     }
     emit_named_comps_adpt_type_def(&decl->type);
 
+    struct ct_seen_tdf ref tdf = dyarr_push(&seen.tdfs);
+    if (!tdf) errdie("OOM");
+    tdf->name = decl->name;
+
     bool const use_def = adpt_type_val_needs_define(&decl->type);
     if (use_def) emit("#define %.*s_adapt_tdf_type ", bufmt(decl->name));
     else emit("static struct ct_adpt_type const %.*s_adapt_tdf_type = ", bufmt(decl->name));
@@ -535,10 +552,6 @@ void emit_typedef(ct_declaration cref decl)
     else emitln(";");
 
     emitln("#define %.*s_adapt_type %.*s_adapt_tdf_type", bufmt(decl->name), bufmt(decl->name));
-
-    struct ct_seen_tdf ref tdf = dyarr_push(&seen.tdfs);
-    if (!tdf) errdie("OOM");
-    tdf->name = decl->name;
 }
 
 void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
@@ -555,6 +568,11 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
 
     if (decl->is_inline) return;
 
+    if (just_did_sys_include) {
+        just_did_sys_include = false;
+        emit_empty();
+    }
+
     switch (decl->spec) {
     default: // others are unreachable
         return;
@@ -564,6 +582,10 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
             bool found = false;
             search_namespace (decl->name, seen.stas) { found = true; break; }
             if (found) return;
+
+            struct ct_seen_sta ref sta = dyarr_push(&seen.stas);
+            if (!sta) errdie("OOM");
+            sta->name = decl->name;
         }
 
         emit("static ");
@@ -584,12 +606,6 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
         }
         emitln(";");
         emit_empty();
-
-        {
-            struct ct_seen_sta ref sta = dyarr_push(&seen.stas);
-            if (!sta) errdie("OOM");
-            sta->name = decl->name;
-        }
         return;
 
     case CT_SPEC_NONE: // default at file scope is external linkage
@@ -779,11 +795,13 @@ int do_prepare(int argc, char** argv)
 
     ct_bufsl const thisns = name_space(outfile ? outfile : infile);
     indented ("static struct ct_adpt_item const adptns_%.*s[] = {", bufmt(thisns)) {
-        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= CT_ITEM_VALUE, .as.function= %.*s_adapt_call},", bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name));
+        // TODO: sorted
+        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= CT_ITEM_OBJECT, .as.function= %.*s_adapt_call},", bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name), bufmt(seen.funs.ptr[k].name));
         for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%.*s\", .type= &%.*s_adapt_tag_type, .kind= CT_ITEM_TYPEDEF},", bufmt(seen.tags.ptr[k].name), bufmt(seen.tags.ptr[k].name));
         for (size_t k = 0; k < seen.tdfs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= CT_ITEM_TYPEDEF},", bufmt(seen.tdfs.ptr[k].name), bufmt(seen.tdfs.ptr[k].name));
-        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= CT_ITEM_VALUE, .as.object= &%.*s},", bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name));
-        size_t const count = seen.funs.len+seen.tags.len+seen.tdfs.len+seen.objs.len;
+        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%.*s\", .type= &%.*s_adapt_type, .kind= CT_ITEM_OBJECT, .as.object= (void*)&%.*s},", bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name), bufmt(seen.objs.ptr[k].name));
+        for (size_t k = 0; k < seen.enus.len; k++) emitln("{.name= \"%.*s\", .type= &ct_adptb_int_type, .kind= CT_ITEM_VALUE, .as.value= %.*s},", bufmt(seen.enus.ptr[k].name), bufmt(seen.enus.ptr[k].name));
+        size_t const count = seen.funs.len+seen.tags.len+seen.tdfs.len+seen.objs.len+seen.enus.len;
         emit("// exporting %zu name%s", count, 1 == count ? "" : "s");
     }
     emitln("};");

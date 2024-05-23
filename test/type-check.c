@@ -87,7 +87,7 @@ struct ct_adpt_item const* test_lookup(void* _, ct_bufsl const name)
 void check(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
 {
     struct ct_adpt_type cref ty = ct_check_expression(&(ct_compile_state){.lookup= test_lookup}, expr);
-    ct_print_type(stdout, ty);
+    ct_print_type(stdout, ty, true);
     printf("\n");
     ct_lex_state cref ls = usr;
     report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));

@@ -30,10 +30,12 @@ static struct ct_adpt_type {
         CT_TYPE_FUN,
         CT_TYPE_PTR,
         CT_TYPE_ARR,
+        //CT_TYPE_NAMED,
     } const tyty;
 
     union ct_adpt_type_info {
         struct ct_adpt_comp_desc {
+            char const* const named;
             struct ct_adpt_comp_field {
                 char const* const name;
                 struct ct_adpt_type const* const type;
@@ -58,6 +60,11 @@ static struct ct_adpt_type {
             struct ct_adpt_type const* const item;
             unsigned long const count;
         } const arr; // arr
+
+        //struct ct_adpt_named_desc {
+        //    struct ct_adpt_type const* const def;
+        //    char const* const name;
+        //} const named; // typedefs
     } const info;
 }
 const ct_adptb_void_type = {0}
@@ -78,11 +85,13 @@ struct ct_adpt_item {
     char const* const name;
     struct ct_adpt_type const* const type;
     enum {
-        CT_ITEM_VALUE,
-        CT_ITEM_TYPEDEF,
-        CT_ITEM_VARIABLE,
+        CT_ITEM_VALUE, // enumerator values
+        CT_ITEM_OBJECT, // object, function
+        CT_ITEM_TYPEDEF, // typedef
+        CT_ITEM_VARIABLE, // runtime stack variable
     } kind;
     union {
+        long const value; // int is enough, but to be safer
         void* const object;
         void (* const function)(char*, char**);
         unsigned long const variable;

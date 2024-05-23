@@ -48,7 +48,7 @@ int main(void)
     for (size_t k = 0; k < countof(_PREP_ADAPT_DUMP_NS); k++) {
         struct ct_adpt_item cref it = _PREP_ADAPT_DUMP_NS+k;
         printf("%s: ", it->name);
-        ct_print_type(stdout, it->type);
+        ct_print_type(stdout, it->type, true);
         printf(";\n");
     }
 }

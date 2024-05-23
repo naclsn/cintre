@@ -103,7 +103,7 @@ typedef struct ct_declaration {
             } comp; // struct or union
 
             struct ct_decl_type_enu {
-                size_t count;
+                size_t count; // 0 if no enumerator (because `enum e {}` is invalid anyways)
                 struct ct_decl_type_enumer {
                     ct_bufsl const name;
                     struct ct_expression* expr; // NULL if not specified

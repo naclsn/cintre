@@ -586,12 +586,25 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         }
 
         struct ct_adpt_item const* found = cs->lookup(cs->usr, expr->info.atom);
-        if (CT_ITEM_VALUE == found->kind) {
-            slot->as.value.ul = (size_t)found->as.object;
+        switch (found->kind) {
+        case CT_ITEM_VALUE:
+            slot->as.value.sl = found->as.value;
             slot->usage = _slot_value;
-        } else {
+            break;
+
+        case CT_ITEM_OBJECT:
+            slot->as.value.ul = (size_t)found->as.object; // xxx: is a C pointer
+            slot->usage = _slot_value;
+            break;
+
+        case CT_ITEM_TYPEDEF:
+            // unreachable
+            break;
+
+        case CT_ITEM_VARIABLE:
             slot->as.variable = found->as.variable;
             slot->usage = _slot_variable;
+            break;
         }
         return;
 

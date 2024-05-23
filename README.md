@@ -14,7 +14,7 @@ writing a `main()` and compiling it over and over and editing it and mixing the 
 Example/PoC with `example/mylib`:
 ```console
 $ cd example
-$ make && ./example
+$ make -f mylib.makefile && ./example
 Type `;help` for a list of command
 (*^^),u~~ sayhi; ty
 Expression is of type: fun(times: int) -> void

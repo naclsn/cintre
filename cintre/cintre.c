@@ -335,7 +335,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
             char copy[ty->name.len+1]; // yyy: va
             memcpy(copy+1, ty->name.ptr, ty->name.len);
             copy[0] = '@';
-            struct ct_adpt_item cref it = gs->comp.lookup(gs->comp.usr, (ct_bufsl){.ptr= copy, .len= ty->name.len});
+            struct ct_adpt_item cref it = gs->comp.lookup(gs->comp.usr, (ct_bufsl){.ptr= copy, .len= sizeof copy});
             if (it && CT_ITEM_TYPEDEF == it->kind) return it->type;
             return NULL;
         }
@@ -569,7 +569,7 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             struct ct_adpt_item cref it = gs->locs.ptr+k;
             if (CT_ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
             else printf("   [top-%zu] %-8s\t", sz-it->as.variable, it->name);
-            ct_print_type(stdout, it->type);
+            ct_print_type(stdout, it->type, true);
             printf("\n");
         }
         return;
@@ -587,9 +587,13 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             printf("List of names in %s:\n", gs->nsps.spaces[ns].name);
             for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
                 struct ct_adpt_item cref it = gs->nsps.spaces[ns].items+k;
-                if (CT_ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
-                else printf("   [%p] %-8s\t", it->as.object, it->name);
-                ct_print_type(stdout, it->type);
+                switch (it->kind) {
+                case CT_ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
+                case CT_ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
+                case CT_ITEM_TYPEDEF: printf("   [typedef] %-8s\t", it->name);            break;
+                default: printf("   ??? %-8s\t", it->name);
+                }
+                ct_print_type(stdout, it->type, true);
                 printf("\n");
             }
             return;
@@ -655,7 +659,7 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         gs->runr.sp = psp; // yyy: free string/comp literals
         if (!ty) return;
         printf("Expression is of type: ");
-        ct_print_type(stdout, ty);
+        ct_print_type(stdout, ty, true);
         printf("\n");
         return;
     }

@@ -61,7 +61,7 @@ struct ct_run_state;
 
 void ct_print_decl(FILE ref strm, struct ct_declaration cref decl);
 void ct_print_expr(FILE ref strm, struct ct_expression cref expr, unsigned const depth);
-void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty);
+void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top);
 void ct_print_code(FILE ref strm, struct ct_bytecode const code);
 void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, unsigned const depth);
 void ct_print_tops(FILE ref strm, struct ct_run_state cref rs, struct ct_adpt_item cref items, size_t const count);

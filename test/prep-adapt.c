@@ -31,7 +31,7 @@ void run_test(char* file)
     stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
 
     if (!strcmp("cintre_test_std", ns))
-        do_prepare(5, (char*[]){file, "-Pno-emit-decl", "-Pno-emit-incl", "-o", src, NULL});
+        do_prepare(6, (char*[]){file, "-Pno-emit-decl", "-Pno-emit-incl", "-Pdo-follow-incl", "-o", src, NULL});
     else
         do_prepare(3, (char*[]){file, "-o", src, NULL});
     fflush(result);

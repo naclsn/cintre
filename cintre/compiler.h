@@ -1008,8 +1008,14 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         }
         return;
 
-    case CT_UNOP_ADDR:
-        exitf("NIY: address of");
+    case CT_UNOP_ADDR: {
+            struct ct_slot obj = {.ty= expr->info.unary.opr->usr};
+            //if (..FUN..) slot->usage = _slot_var.. idk;
+            ct_compile_expression(cs, expr->info.unary.opr, &obj);
+            if (_slot_variable != obj.usage) exitf("NIY: only supports stack variables for now");
+            _ct_emit_lea(cs, at(slot), atv(&obj));
+            slot->usage = _slot_used;
+        }
         return;
 
     case CT_UNOP_DEREF: {

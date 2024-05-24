@@ -47,6 +47,8 @@ static inline int   _ct_dyarr_cmp(void** s1, size_t z1, void** s2, size_t z2);
 
 /* same as memcmp as for value sign, also compares lengths first in same way */
 #define dyarr_cmp(__s1, __s2)  _ct_dyarr_cmp((void**)(__s1)->ptr, (__s1)->len*sizeof*(__s1)->ptr, (void**)(__s2)->ptr, (__s2)->len*sizeof*(__s2)->ptr)
+/* assumes dest is in a correct state (eg. zeroed out) */
+#define dyarr_cpy(__dest, __src)  (((__dest)->len = (__src)->len) < (__dest)->cap || dyarr_resize((__dest), (__src)->len) ? memcpy((__dest)->ptr, (__src)->ptr, (__src)->len*sizeof*(__src)->ptr), true : false)
 
 bool _ct_dyarr_resize(void** ptr, size_t isz, size_t* cap, size_t rsz)
 {

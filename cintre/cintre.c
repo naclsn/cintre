@@ -46,6 +46,12 @@ typedef struct ct_cintre_state {
     } nsps;
 
     FILE* save;
+    ct_dyarr(struct snap {
+        char name[8];
+        ct_run_state stack;
+        ct_dyarr(struct ct_adpt_item) locs;
+        ct_dyarr(ct_buf) chk_interned; // xxx: annoying
+    }) snaps;
 
     // needed for `decl_to_adpt_type`
     ct_dyarr(struct ct_adpt_type) ty_work;
@@ -555,6 +561,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
         printf("   save \"file\"           -  save each next lines to the file\n");
         printf("   load \"file\"           -  load the file, running each lines\n");
+        printf("   qs[ave]                 -  save a snapshot of the state\n");
+        printf("   ql[oad]                 -  load a snapshot of the state\n");
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
@@ -612,14 +620,54 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
     if (xcmdis("cls")) {
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
         gs->runr.sp = sz;
-        for (size_t k = 0; k < gs->locs.len; k++)
-            free((void*)gs->locs.ptr[k].name); // yyy: cast const
+        for (size_t k = 0; k < gs->locs.len; k++) free((void*)gs->locs.ptr[k].name); // yyy: cast const
         gs->locs.len = 0;
         // xxx: annoying, don't like this random thing here, same vibe as chk_work
-        for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
-            free(gs->comp.chk_interned.ptr[k].ptr);
+        for (size_t k = 0; k < gs->comp.chk_interned.len; k++) free(gs->comp.chk_interned.ptr[k].ptr);
         gs->comp.chk_interned.len = 0;
         return;
+    }
+
+    // XXX: i hate it and it doesn't even work
+    if (xcmdis("qs") || xcmdis("ql")) {
+        ct_bufsl name = ct_lext(&gs->lexr);
+        if (!name.len) name.len = 1, name.ptr = "_";
+        else if (7 < name.len) name.len = 7;
+        struct snap* found = NULL;
+        for (size_t k = 0; k < gs->snaps.len; k++) if (memcmp(gs->snaps.ptr[k].name, name.ptr, name.len)) {
+            found = gs->snaps.ptr+k;
+            break;
+        }
+        if (!found) {
+            if ('s' == xcmd.ptr[1]) {
+                found = dyarr_push(&gs->snaps);
+                if (!found) exitf("OOM");
+                memcpy(found->name, name.ptr, name.len);
+                found->name[name.len] = '\0';
+                found->locs.ptr = NULL, found->locs.cap = 0;
+                found->chk_interned.ptr = NULL, found->chk_interned.cap = 0;
+            } else {
+                printf("No state named '%.*s'\n", bufmt(name));
+                return;
+            }
+        }
+        for (size_t k = 0; k < found->locs.len; k++) free((void*)found->locs.ptr[k].name); // yyy: cast const
+        free(found->locs.ptr);
+        for (size_t k = 0; k < found->chk_interned.len; k++) free(found->chk_interned.ptr[k].ptr);
+        free(found->chk_interned.ptr);
+        if ('s' == xcmd.ptr[1]) {
+            found->stack = gs->runr;
+            if (!((found->locs.len = gs->locs.len) < found->locs.cap || dyarr_resize(&found->locs, gs->locs.len))) exitf("OOM");
+            for (size_t k = 0; k < gs->locs.len; k++) *(char**)found->locs.ptr[k].name = strcpy(malloc(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
+            if (!((found->chk_interned.len = gs->comp.chk_interned.len) < found->chk_interned.cap || dyarr_resize(&found->chk_interned, gs->comp.chk_interned.len))) exitf("OOM");
+            for (size_t k = 0; k < gs->comp.chk_interned.len; k++) dyarr_cpy(&found->chk_interned.ptr[k], &gs->comp.chk_interned.ptr[k]);
+        } else {
+            gs->runr = found->stack;
+            if (!((gs->locs.len = found->locs.len) < gs->locs.cap || dyarr_resize(&gs->locs, found->locs.len))) exitf("OOM");
+            for (size_t k = 0; k < found->locs.len; k++) *(char**)gs->locs.ptr[k].name = strcpy(malloc(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
+            if (!((gs->comp.chk_interned.len = found->chk_interned.len) < gs->comp.chk_interned.cap || dyarr_resize(&gs->comp.chk_interned, found->chk_interned.len))) exitf("OOM");
+            for (size_t k = 0; k < found->chk_interned.len; k++) dyarr_cpy(&gs->comp.chk_interned.ptr[k], &found->chk_interned.ptr[k]);
+        }
     }
 
     if (xcmdis("save") || xcmdis("load")) {

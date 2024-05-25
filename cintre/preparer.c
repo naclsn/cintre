@@ -572,7 +572,8 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
 
     // xxx: lexer internals,
     // but basically we need to know if we are in the top-level ("entry") file
-    if (!follow_incl && ls.include_stack.len) {
+    // (that is the `sidx = 0` from `ct_lini`)
+    if (!follow_incl && ls.sidx) {
         //notif("Skipping: '%.*s' (%.*s)", bufmt(decl->name), bufmt(decl->type.name));
         return;
     }

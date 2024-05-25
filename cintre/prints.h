@@ -259,6 +259,10 @@ void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top)
 
     case CT_TYPE_NAMED:
         fprintf(strm, "\x1b[32m%s\x1b[m", tty->info.named.name);
+        if (top) {
+            fprintf(strm, " = ");
+            ct_print_type(strm, tty->info.named.def, false);
+        }
         break;
     }
 }
@@ -394,7 +398,7 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
 {
     if (!depth) {
         fprintf(strm, "%s: ", it->name);
-        ct_print_type(strm, it->type, true);
+        ct_print_type(strm, it->type, false);
         fprintf(strm, "\n   = ");
     }
 
@@ -451,9 +455,10 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
             fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
             ct_print_item(strm, &(struct ct_adpt_item){
                     .type= f->type,
+                    .kind= CT_ITEM_OBJECT,
                     .as.object= (char*)p+f->offset, // xxx: discards const
                 }, stack, depth+1);
-            //fprintf(strm, "\n");
+            fprintf(strm, "\n");
         }
         fprintf(strm, "%*s}", depth*3, "");
         break;
@@ -476,7 +481,7 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
                     .type= tty->info.arr.item,
                     .as.object= (char*)p+k*tty->info.arr.item->size, // xxx: discards const
                 }, stack, depth+1);
-            //fprintf(strm, "\n");
+            fprintf(strm, "\n");
         }
         fprintf(strm, "%*s]", depth*3, "");
         break;
@@ -485,7 +490,7 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
     case CT_TYPE_NAMED:;
     }
 
-    fprintf(strm, "\n");
+    if (!depth) fprintf(strm, "\n");
 }
 
 void ct_print_tops(FILE ref strm, ct_run_state cref rs, struct ct_adpt_item cref items, size_t const count)
@@ -511,9 +516,12 @@ void ct_print_tops(FILE ref strm, ct_run_state cref rs, struct ct_adpt_item cref
 
             if (!in_var_size) {
                 size_t n;
-                for (n = 0; n < count; n++) if (CT_ITEM_VARIABLE == items[n].kind && items[n].as.variable <= at-1-k && at-1-k < items[n].as.variable+items[n].type->size) {
-                    in_var_size = items[n].type->size - ((at-1-k)-items[n].as.variable);
-                    break;
+                for (n = 0; n < count; n++) if (CT_ITEM_VARIABLE == items[n].kind && items[n].as.variable <= at-1-k) {
+                    struct ct_adpt_type cref tty = _ct_truetype(items[n].type);
+                    if (at-1-k < items[n].as.variable+tty->size) {
+                        in_var_size = tty->size - ((at-1-k)-items[n].as.variable);
+                        break;
+                    }
                 }
                 if (in_var_size) fprintf(strm, "\x1b[%um\x1b[4m", col_n(items[n].name));
             }
@@ -527,7 +535,7 @@ void ct_print_tops(FILE ref strm, ct_run_state cref rs, struct ct_adpt_item cref
         fprintf(strm, "  \x1b[1m|\x1b[m");
         for (int k = 15; k >= 0; k--)
             for (size_t n = 0; n < count; n++) if (CT_ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-1-k)
-                fprintf(strm, "  \x1b[%um%s\x1b[m(%zu)", col_n(items[n].name), items[n].name, items[n].type->size);
+                fprintf(strm, "  \x1b[%um%s\x1b[m(%zu)", col_n(items[n].name), items[n].name, _ct_truetype(items[n].type)->size);
 
         fprintf(strm, "\n");
     }
@@ -538,7 +546,7 @@ void ct_print_tops(FILE ref strm, ct_run_state cref rs, struct ct_adpt_item cref
 void ct_print_slot(FILE ref strm, struct ct_slot cref slot)
 {
     fprintf(strm, "slot ");
-    ct_print_type(strm, slot->ty, true);
+    ct_print_type(strm, slot->ty, false);
     switch (slot->usage) {
     case _slot_value:
         fprintf(strm, " \x1b[36mvalue\x1b[m = ");

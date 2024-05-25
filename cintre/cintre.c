@@ -501,7 +501,8 @@ void ct_accept_decl(void ref usr, ct_declaration cref decl, ct_bufsl ref tok)
 
     size_t const pwork = gs->ty_work.len;
     struct ct_adpt_type cref ty = _ct_decl_to_adpt_type(gs, &decl->type);
-    if (!ty || !ty->size) {
+    struct ct_adpt_type cref tty = _ct_truetype(ty);
+    if (!ty || !tty->size) {
         if (!ty) notif("Could not understand type");
         else notif("Zero-sized variable type");
         gs->ty_work.len = pwork;
@@ -527,7 +528,7 @@ void ct_accept_decl(void ref usr, ct_declaration cref decl, ct_bufsl ref tok)
         // fall through
     case CT_SPEC_NONE:
         //size_t end = gs->sp;
-        gs->runr.sp = ((gs->runr.sp-ty->size) / ty->align) * ty->align;
+        gs->runr.sp = ((gs->runr.sp-tty->size) / tty->align) * tty->align;
     }
 
     struct ct_adpt_item ref it = dyarr_push(&gs->locs);
@@ -580,7 +581,7 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             struct ct_adpt_item cref it = gs->locs.ptr+k;
             if (CT_ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
             else printf("   [top-%zu] %-8s\t", sz-it->as.variable, it->name);
-            ct_print_type(stdout, it->type, true);
+            ct_print_type(stdout, it->type, false);
             printf("\n");
         }
         return;
@@ -605,7 +606,7 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
                     // unreachable case
                 case CT_ITEM_VARIABLE:;
                 }
-                ct_print_type(stdout, it->type, true);
+                ct_print_type(stdout, it->type, false);
                 printf("\n");
             }
             return;
@@ -710,6 +711,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         gs->runr.sp = psp; // yyy: free string/comp literals
         if (!ty) return;
         printf("Expression is of type: ");
+        if (CT_TYPE_NAMED == ty->tyty)
+            printf("(\x1b[32m%s\x1b[m) ", ty->info.named.name);
         ct_print_type(stdout, ty, true);
         printf("\n");
         return;

@@ -544,12 +544,17 @@ void emit_typedef(ct_declaration cref decl)
     if (!tdf) errdie("OOM");
     tdf->name = decl->name;
 
-    bool const use_def = adpt_type_val_needs_define(&decl->type);
-    if (use_def) emit("#define %.*s_adapt_tdf_type ", bufmt(decl->name));
-    else emit("static struct ct_adpt_type const %.*s_adapt_tdf_type = ", bufmt(decl->name));
-    emit_adpt_type_val(&decl->type, true);
-    if (use_def) emit_empty();
-    else emitln(";");
+    indented ("static struct ct_adpt_type const %.*s_adapt_tdf_type = {", bufmt(decl->name)) {
+        emitln(".tyty= CT_TYPE_NAMED,");
+        indented (".info.named= {") {
+            emit(".def= &");
+            emit_adpt_type_val(&decl->type, true);
+            emitln(",");
+            emit(".name= \"%.*s\",", bufmt(decl->name));
+        }
+        emit("},");
+    }
+    emitln("};");
 
     emitln("#define %.*s_adapt_type %.*s_adapt_tdf_type", bufmt(decl->name), bufmt(decl->name));
 }

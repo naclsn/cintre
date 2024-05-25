@@ -171,8 +171,8 @@ char* _ct_prompt_compl(char cref text, int const state)
             if (!memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
                 bool const tdf = CT_ITEM_TYPEDEF == it->kind;
-                bool const fun = CT_TYPE_FUN == it->type->tyty || (CT_TYPE_PTR == it->type->tyty && CT_TYPE_FUN == it->type->info.ptr->tyty); // xxx: || ...
-                bool const arr = CT_TYPE_ARR == it->type->tyty;
+                bool const fun = CT_TYPE_FUN == _ct_tailtype(it->type)->tyty;
+                bool const arr = CT_TYPE_ARR == _ct_truetype(it->type)->tyty;
                 char ref r = malloc(len + (tdf|fun|arr));
                 if (!r) return NULL;
                 strcpy(r, it->name);
@@ -428,17 +428,18 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
             size_t const plen = gs->comp.res.len;
             size_t const psp = gs->runr.sp;
 
-            // TODO: once CT_UNOP_CAST is added, use it by wrapping `ty->info.arr.count`
-            struct ct_adpt_type cref count_expr = ct_check_expression(&gs->comp, ty->info.arr.count);
-            if (!count_expr) return NULL;
-            if (!(CT_TYPE_CHAR <= count_expr->tyty && count_expr->tyty <= CT_TYPE_ULONG)) {
-                notif("Array size is not of an integral type");
-                return NULL;
-            }
+            ct_expression cast = {
+                .kind= CT_UNOP_CAST,
+                .info.cast= {
+                    .opr= ty->info.arr.count,
+                    .type= &(struct ct_decl_type){.quals= {CT_QUAL_UNSIGNED, CT_QUAL_LONG}},
+                },
+            };
+            if (!ct_check_expression(&gs->comp, &cast)) return NULL;
 
             struct ct_slot slot = {.ty= &ct_adptb_ulong_type};
             _ct_alloc_slot(&gs->comp, &slot);
-            _ct_fit_expr_to_slot(&gs->comp, ty->info.arr.count, &slot);
+            _ct_fit_expr_to_slot(&gs->comp, &cast, &slot);
 
             switch (slot.usage) {
             case _slot_value:

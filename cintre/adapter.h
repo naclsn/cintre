@@ -30,7 +30,7 @@ static struct ct_adpt_type {
         CT_TYPE_FUN,
         CT_TYPE_PTR,
         CT_TYPE_ARR,
-        //CT_TYPE_NAMED,
+        CT_TYPE_NAMED,
     } const tyty;
 
     union ct_adpt_type_info {
@@ -61,10 +61,10 @@ static struct ct_adpt_type {
             unsigned long const count;
         } const arr; // arr
 
-        //struct ct_adpt_named_desc {
-        //    struct ct_adpt_type const* const def;
-        //    char const* const name;
-        //} const named; // typedefs
+        struct ct_adpt_named_desc {
+            struct ct_adpt_type const* const def;
+            char const* const name;
+        } const named; // typedefs
     } const info;
 }
 const ct_adptb_void_type = {0}
@@ -80,6 +80,17 @@ const ct_adptb_void_type = {0}
 , ct_adptb_float_type    = {.size= sizeof(float),          .align= sizeof(float),          .tyty= CT_TYPE_FLOAT }
 , ct_adptb_double_type   = {.size= sizeof(double),         .align= sizeof(double),         .tyty= CT_TYPE_DOUBLE}
 ;
+
+static inline struct ct_adpt_type const* _ct_truetype(struct ct_adpt_type const* ty)
+{
+    while (CT_TYPE_NAMED == ty->tyty) ty = ty->info.named.def;
+    return ty;
+}
+static inline struct ct_adpt_type const* _ct_tailtype(struct ct_adpt_type const* ty)
+{
+    for (ty = _ct_truetype(ty); CT_TYPE_PTR == ty->tyty; ty = _ct_truetype(ty->info.ptr));
+    return ty;
+}
 
 struct ct_adpt_item {
     char const* const name;

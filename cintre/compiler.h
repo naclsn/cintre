@@ -5,6 +5,7 @@
 ///
 /// struct ct_slot slot = {.ty= ct_check_expression(&cs, expr)};
 /// if (slot.ty) {
+///     slot.ty = _ct_truetype(slot.ty);
 ///     _ct_alloc_slot(&cs, &ct_slot);
 ///
 ///     ct_compile_expression(&cs, expr, &ct_slot);
@@ -330,7 +331,7 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
     // - the slot is a variable, a widening conversion will need to copy
     // - the slot is a value, compile-time conversion
 
-    struct ct_adpt_type cref expr_ty = expr->usr;
+    struct ct_adpt_type cref expr_ty = _ct_truetype(expr->usr);
     if (CT_TYPE_ARR == expr_ty->tyty && CT_TYPE_PTR == slot->ty->tyty) {
         struct ct_slot tmp = {.ty= expr_ty};
         ct_compile_expression(cs, expr, &tmp);
@@ -505,6 +506,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         }
 
         if (('0' <= ptr[0] && ptr[0] <= '9') || '.' == ptr[0]) {
+            // no _ct_truetype because it's an adptb_.._type from checker
             enum ct_adpt_type_tag const tyty = ((struct ct_adpt_type const*)expr->usr)->tyty;
             switch (tyty) {
             case CT_TYPE_INT:
@@ -605,7 +607,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_BINOP_SUBSCR: {
-            struct ct_slot base = {.ty= expr->info.subscr.base->usr};
+            struct ct_slot base = {.ty= _ct_truetype(expr->info.subscr.base->usr)};
 
             if (CT_TYPE_ARR == base.ty->tyty) {
                 ct_compile_expression(cs, expr->info.subscr.base, &base);
@@ -708,7 +710,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_BINOP_CALL: {
-            struct ct_slot fun = {.ty= expr->info.call.base->usr};
+            struct ct_slot fun = {.ty= _ct_truetype(expr->info.call.base->usr)};
             _ct_alloc_slot(cs, &fun);
 
             ct_compile_expression(cs, expr->info.call.base, &fun);
@@ -790,12 +792,12 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_BINOP_COMMA: {
-            struct ct_slot drp = {.ty= expr->info.binary.lhs->usr};
+            struct ct_slot drp = {.ty= _ct_truetype(expr->info.binary.lhs->usr)};
             _ct_alloc_slot(cs, &drp);
             ct_compile_expression(cs, expr->info.binary.lhs, &drp);
             if (_slot_used != drp.usage) _ct_cancel_slot(cs, &drp);
+            else _ct_rewind_slot(cs, &drp);
             ct_compile_expression(cs, expr->info.binary.rhs, slot);
-            if (_slot_used == drp.usage) _ct_rewind_slot(cs, &drp);
         }
         return;
 
@@ -818,7 +820,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
 
             _ct_fit_expr_to_slot(cs, src_ex, slot);
 
-            struct ct_slot dst = {.ty= dst_ex->usr};
+            struct ct_slot dst = {.ty= _ct_truetype(dst_ex->usr)};
             switch (dst_ex->kind) {
             case CT_ATOM:
             case CT_UNOP_MEMBER:
@@ -879,10 +881,10 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             if (CT_TYPE_PTR == slot->ty->tyty) {
                 // one is a pointer(/array), the other is promoted to long and mult by sizeof item
                 ct_expression const* ptr, * off;
-                struct ct_adpt_type const* ty = expr->info.binary.lhs->usr;
+                struct ct_adpt_type const* ty = _ct_truetype(expr->info.binary.lhs->usr);
                 if (CT_TYPE_PTR == ty->tyty || CT_TYPE_ARR == ty->tyty)
                     ptr = expr->info.binary.lhs, off = expr->info.binary.rhs;
-                else ty = expr->info.binary.rhs->usr,
+                else ty = _ct_truetype(expr->info.binary.rhs->usr),
                     ptr = expr->info.binary.rhs, off = expr->info.binary.lhs;
 
                 lhs = *slot;
@@ -1023,7 +1025,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_UNOP_ADDR: {
-            struct ct_slot obj = {.ty= expr->info.unary.opr->usr};
+            struct ct_slot obj = {.ty= _ct_truetype(expr->info.unary.opr->usr)};
             //if (..FUN..) slot->usage = _slot_var.. idk;
             ct_compile_expression(cs, expr->info.unary.opr, &obj);
             if (_slot_variable != obj.usage) {
@@ -1037,7 +1039,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_UNOP_DEREF: {
-            struct ct_slot ptr = {.ty= expr->info.unary.opr->usr};
+            struct ct_slot ptr = {.ty= _ct_truetype(expr->info.unary.opr->usr)};
             _ct_alloc_slot(cs, &ptr);
             ct_compile_expression(cs, expr->info.unary.opr, &ptr);
 
@@ -1078,7 +1080,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
     case CT_UNOP_MEMBER: {
             ct_expression cref base_ex = expr->info.member.base;
             ct_bufsl const name = *expr->info.member.name;
-            struct ct_adpt_comp_desc cref comp = &((struct ct_adpt_type*)base_ex->usr)->info.comp;
+            struct ct_adpt_type cref base_ty = _ct_truetype(base_ex->usr);
+            struct ct_adpt_comp_desc cref comp = &base_ty->info.comp;
 
             size_t off = 0;
             for (size_t k = 0; k < comp->count; k++) if (bufis(name, comp->fields[k].name)) {
@@ -1086,7 +1089,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 break;
             }
 
-            struct ct_slot base = {.ty= base_ex->usr};
+            struct ct_slot base = {.ty= base_ty};
             ct_compile_expression(cs, base_ex, &base);
             // can be stack variable or static global object or a function's return;
             // for now only support stack variable

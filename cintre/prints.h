@@ -204,7 +204,8 @@ void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top)
         return;
     }
 
-    switch (ty->tyty) {
+    struct ct_adpt_type cref tty = top ? _ct_truetype(ty) : ty;
+    switch (tty->tyty) {
     case CT_TYPE_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
     case CT_TYPE_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
     case CT_TYPE_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
@@ -220,13 +221,13 @@ void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top)
 
     case CT_TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
     case CT_TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
-        if (ty->info.comp.named) {
-            fprintf(strm, " %s", ty->info.comp.named);
+        if (tty->info.comp.named) {
+            fprintf(strm, " %s", tty->info.comp.named);
             if (!top) break;
         }
         fprintf(strm, "{");
-        for (size_t k = 0; k < ty->info.comp.count; k++) {
-            struct ct_adpt_comp_field const* it = ty->info.comp.fields+k;
+        for (size_t k = 0; k < tty->info.comp.count; k++) {
+            struct ct_adpt_comp_field const* it = tty->info.comp.fields+k;
             fprintf(strm, k ? ", %s@%zu: " : "%s@%zu: ", it->name, it->offset);
             ct_print_type(strm, it->type, false);
         }
@@ -235,25 +236,29 @@ void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top)
 
     case CT_TYPE_FUN:
         fprintf(strm, "\x1b[34mfun\x1b[m(");
-        for (size_t k = 0; k < ty->info.fun.count; k++) {
-            struct ct_adpt_fun_param const* it = ty->info.fun.params+k;
+        for (size_t k = 0; k < tty->info.fun.count; k++) {
+            struct ct_adpt_fun_param const* it = tty->info.fun.params+k;
             fprintf(strm, k ? ", %s: " : "%s: ", it->name);
             ct_print_type(strm, it->type, false);
         }
         fprintf(strm, ") -> ");
-        ct_print_type(strm, ty->info.fun.ret, false);
+        ct_print_type(strm, tty->info.fun.ret, false);
         break;
 
     case CT_TYPE_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
-        ct_print_type(strm, ty->info.ptr, false);
+        ct_print_type(strm, tty->info.ptr, false);
         fprintf(strm, "]");
         break;
 
     case CT_TYPE_ARR:
-        fprintf(strm, "\x1b[34marr\x1b[m[%zu, ", ty->info.arr.count);
-        ct_print_type(strm, ty->info.arr.item, false);
+        fprintf(strm, "\x1b[34marr\x1b[m[%zu, ", tty->info.arr.count);
+        ct_print_type(strm, tty->info.arr.item, false);
         fprintf(strm, "]");
+        break;
+
+    case CT_TYPE_NAMED:
+        fprintf(strm, "\x1b[32m%s\x1b[m", tty->info.named.name);
         break;
     }
 }
@@ -406,7 +411,8 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
         ? it->as.object
         : stack+it->as.variable;
 
-    switch (it->type->tyty) {
+    struct ct_adpt_type cref tty = _ct_truetype(it->type);
+    switch (tty->tyty) {
     case CT_TYPE_VOID: fprintf(strm, "()"); break;
 
     case CT_TYPE_CHAR:;
@@ -440,8 +446,8 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
     case CT_TYPE_STRUCT:
     case CT_TYPE_UNION:
         fprintf(strm, "{\n");
-        for (size_t k = 0; k < it->type->info.comp.count; k++) {
-            struct ct_adpt_comp_field cref f = it->type->info.comp.fields+k;
+        for (size_t k = 0; k < tty->info.comp.count; k++) {
+            struct ct_adpt_comp_field cref f = tty->info.comp.fields+k;
             fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
             ct_print_item(strm, &(struct ct_adpt_item){
                     .type= f->type,
@@ -457,23 +463,26 @@ void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, 
     case CT_TYPE_PTR:
         fprintf(strm, "(%p) ", p);
         //ct_print_item(strm, &(struct ct_adpt_item){
-        //        .type= it->type->info.ptr,
+        //        .type= tty->info.ptr,
         //        .as.object= *(void**)p,
         //    }, stack, depth);
         break;
 
     case CT_TYPE_ARR:
         fprintf(strm, "[\n");
-        for (size_t k = 0; k < it->type->info.arr.count; k++) {
+        for (size_t k = 0; k < tty->info.arr.count; k++) {
             fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
             ct_print_item(strm, &(struct ct_adpt_item){
-                    .type= it->type->info.arr.item,
-                    .as.object= (char*)p+k*it->type->info.arr.item->size, // xxx: discards const
+                    .type= tty->info.arr.item,
+                    .as.object= (char*)p+k*tty->info.arr.item->size, // xxx: discards const
                 }, stack, depth+1);
             //fprintf(strm, "\n");
         }
         fprintf(strm, "%*s]", depth*3, "");
         break;
+
+        // unreachable case
+    case CT_TYPE_NAMED:;
     }
 
     fprintf(strm, "\n");
@@ -526,26 +535,26 @@ void ct_print_tops(FILE ref strm, ct_run_state cref rs, struct ct_adpt_item cref
 #   undef col_n
 }
 
-void ct_print_slot(FILE ref strm, struct ct_slot cref ct_slot)
+void ct_print_slot(FILE ref strm, struct ct_slot cref slot)
 {
     fprintf(strm, "slot ");
-    ct_print_type(strm, ct_slot->ty, true);
-    switch (ct_slot->usage) {
+    ct_print_type(strm, slot->ty, true);
+    switch (slot->usage) {
     case _slot_value:
         fprintf(strm, " \x1b[36mvalue\x1b[m = ");
-        switch (ct_slot->ty->tyty) {
-        case CT_TYPE_CHAR:   fprintf(strm, "'%c'",     ct_slot->as.value.c);  break;
-        case CT_TYPE_UCHAR:  fprintf(strm, "0x%02hhx", ct_slot->as.value.uc); break;
-        case CT_TYPE_SCHAR:  fprintf(strm, "%hhi",     ct_slot->as.value.sc); break;
-        case CT_TYPE_SHORT:  fprintf(strm, "%hi",      ct_slot->as.value.ss); break;
-        case CT_TYPE_INT:    fprintf(strm, "%i",       ct_slot->as.value.si); break;
-        case CT_TYPE_LONG:   fprintf(strm, "%li",      ct_slot->as.value.sl); break;
-        case CT_TYPE_USHORT: fprintf(strm, "%hu",      ct_slot->as.value.us); break;
-        case CT_TYPE_UINT:   fprintf(strm, "%u",       ct_slot->as.value.ui); break;
-        case CT_TYPE_ULONG:  fprintf(strm, "%lu",      ct_slot->as.value.ul); break;
-        case CT_TYPE_FLOAT:  fprintf(strm, "%f",       ct_slot->as.value.f);  break;
-        case CT_TYPE_DOUBLE: fprintf(strm, "%lf",      ct_slot->as.value.d);  break;
-        default:          fprintf(strm, "%p",       ct_slot->as.value.p);  break;
+        switch (slot->ty->tyty) {
+        case CT_TYPE_CHAR:   fprintf(strm, "'%c'",     slot->as.value.c);  break;
+        case CT_TYPE_UCHAR:  fprintf(strm, "0x%02hhx", slot->as.value.uc); break;
+        case CT_TYPE_SCHAR:  fprintf(strm, "%hhi",     slot->as.value.sc); break;
+        case CT_TYPE_SHORT:  fprintf(strm, "%hi",      slot->as.value.ss); break;
+        case CT_TYPE_INT:    fprintf(strm, "%i",       slot->as.value.si); break;
+        case CT_TYPE_LONG:   fprintf(strm, "%li",      slot->as.value.sl); break;
+        case CT_TYPE_USHORT: fprintf(strm, "%hu",      slot->as.value.us); break;
+        case CT_TYPE_UINT:   fprintf(strm, "%u",       slot->as.value.ui); break;
+        case CT_TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
+        case CT_TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
+        case CT_TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
+        default:             fprintf(strm, "%p",       slot->as.value.p);  break;
         }
         break;
 
@@ -554,7 +563,7 @@ void ct_print_slot(FILE ref strm, struct ct_slot cref ct_slot)
         break;
 
     case _slot_variable:
-        fprintf(strm, " \x1b[36mvariable\x1b[m @ %zu", ct_slot->as.variable);
+        fprintf(strm, " \x1b[36mvariable\x1b[m @ %zu", slot->as.variable);
         break;
     }
 }

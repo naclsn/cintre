@@ -149,9 +149,11 @@ struct ct_adpt_type const* _ct_cast_type(ct_compile_state ref cs, struct ct_decl
 #       undef nameis
 
         struct ct_adpt_item cref it = cs->lookup(cs->usr, ty->name);
-        if (it && CT_ITEM_TYPEDEF == it->kind &&
-                CT_TYPE_VOID <= it->type->tyty && it->type->tyty <= CT_TYPE_DOUBLE)
-            return it->type;
+        if (it && CT_ITEM_TYPEDEF == it->kind) {
+            struct ct_adpt_type cref ty = _ct_truetype(it->type);
+            if (CT_TYPE_VOID <= ty->tyty && ty->tyty <= CT_TYPE_DOUBLE)
+                return it->type;
+        }
         return NULL;
 
     case CT_KIND_ENUM: return &ct_adptb_int_type;
@@ -190,6 +192,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
 #   define atindir(__ty)  (isptr(__ty) ? (__ty)->info.ptr : (__ty)->info.arr.item)
 
     struct ct_adpt_type const *opr, *lhs, *rhs, *base, *off;
+    struct ct_adpt_type const *topr, *tlhs, *trhs;
 
     switch (expr->kind) {
     case CT_ATOM:;
@@ -299,12 +302,15 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_SUBSCR:
         failforward(base, expr->info.subscr.base);
         failforward(off, expr->info.subscr.off);
+        base = _ct_truetype(base);
+        off = _ct_truetype(off);
         if (!isindir(base)) fail("Base of subscript expression is not of a pointer type");
         if (!isint(off)) fail("Offset of subscript expression is not of an integral type");
         return expr->usr = (void*)atindir(base);
 
     case CT_BINOP_CALL:
         failforward(base, expr->info.call.base);
+        base = _ct_truetype(base);
         if (!isfun(base)) fail("Base of call expression is not of a function type");
         size_t k, count = base->info.fun.count;
         if (15 < count) fail("NIY: function call with more than 15 arguments");
@@ -327,20 +333,23 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_TERNCOND:
         if (CT_BINOP_TERNBRANCH != expr->info.binary.rhs->kind) fail("Broken tree with dangling ternary condition");
         failforward(opr, expr->info.binary.lhs); // condition
+        opr = _ct_truetype(opr);
         if (!isint(opr)) fail("Condition is not of an integral type");
         failforward(lhs, expr->info.binary.rhs->info.binary.lhs); // consequence
         failforward(rhs, expr->info.binary.rhs->info.binary.rhs); // alternative
-        if (isnum(lhs) && isnum(rhs)) {
-            bool const lf = isflt(lhs), rf = isflt(rhs);
+        tlhs = _ct_truetype(lhs);
+        trhs = _ct_truetype(rhs);
+        if (isnum(tlhs) && isnum(trhs)) {
+            bool const lf = isflt(tlhs), rf = isflt(trhs);
             // (yyy: approximation of implicit conversions' "common real type")
             return expr->usr = (void*)( lf == rf ? (
-                                            lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
-                                            lhs->size < rhs->size ? rhs : lhs )
+                                            tlhs->size == trhs->size ? (issgn(tlhs) ? rhs : lhs) :
+                                            tlhs->size < trhs->size ? rhs : lhs )
                                       : lf ? lhs : rhs
                                       );
         }
         // xxx: this is quite incorrect but whatever for now
-        if (_ct_are_types_compatible(lhs, rhs)) return expr->usr = (void*)lhs;
+        if (_ct_are_types_compatible(tlhs, trhs)) return expr->usr = (void*)lhs;
         fail("Branches are not of compatible types");
 
     case CT_BINOP_COMMA:
@@ -359,9 +368,11 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_ASGN_REM:
     case CT_BINOP_ASGN_DIV:
     case CT_BINOP_ASGN_MUL:
+        if (!_ct_is_expr_lvalue(expr->info.binary.lhs)) fail("Expression is not assignable");
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
-        if (!_ct_is_expr_lvalue(expr->info.binary.lhs)) fail("Expression is not assignable");
+        tlhs = _ct_truetype(lhs);
+        trhs = _ct_truetype(rhs);
         switch (expr->kind) {
         case CT_BINOP_ASGN_ADD:
         case CT_BINOP_ASGN_SUB:
@@ -394,6 +405,8 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_GE:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
+        lhs = _ct_truetype(lhs);
+        rhs = _ct_truetype(rhs);
         if ((isnum(lhs) && isnum(rhs)) ||
                 ( (isint(lhs) || isindir(lhs)) &&
                   (isint(rhs) || isindir(rhs)) ))
@@ -408,10 +421,12 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_REM:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
+        tlhs = _ct_truetype(lhs);
+        trhs = _ct_truetype(rhs);
         // (yyy: approximation of implicit conversions' "common real type")
-        if (isint(lhs) && isint(rhs)) return expr->usr = (void*)(
-                lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
-                lhs->size < rhs->size ? rhs : lhs );
+        if (isint(tlhs) && isint(trhs)) return expr->usr = (void*)(
+                tlhs->size == trhs->size ? (issgn(tlhs) ? rhs : lhs) :
+                tlhs->size < trhs->size ? rhs : lhs );
         fail("Both operands are not of an integral type");
 
     case CT_BINOP_SUB:
@@ -420,32 +435,34 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_MUL:
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
+        tlhs = _ct_truetype(lhs);
+        trhs = _ct_truetype(rhs);
         if (CT_BINOP_SUB == expr->kind || CT_BINOP_ADD == expr->kind) {
-            if (isint(lhs)) {
-                if (isptr(rhs)) return expr->usr = (void*)rhs;
-                if (isarr(rhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
+            if (isint(tlhs)) {
+                if (isptr(trhs)) return expr->usr = (void*)rhs;
+                if (isarr(trhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= CT_TYPE_PTR,
-                            .info.ptr= rhs->info.arr.item,
+                            .info.ptr= trhs->info.arr.item,
                         }, sizeof(struct ct_adpt_type));
             }
-            if (isint(rhs)) {
-                if (isptr(lhs)) return expr->usr = (void*)lhs;
-                if (isarr(lhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
+            if (isint(trhs)) {
+                if (isptr(tlhs)) return expr->usr = (void*)tlhs;
+                if (isarr(tlhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= CT_TYPE_PTR,
-                            .info.ptr= lhs->info.arr.item,
+                            .info.ptr= tlhs->info.arr.item,
                         }, sizeof(struct ct_adpt_type));
             }
         } // ptr arith
-        if (isnum(lhs) && isnum(rhs)) {
-            bool const lf = isflt(lhs), rf = isflt(rhs);
+        if (isnum(tlhs) && isnum(trhs)) {
+            bool const lf = isflt(tlhs), rf = isflt(trhs);
             // (yyy: approximation of implicit conversions' "common real type")
             return expr->usr = (void*)( lf == rf ? (
-                                            lhs->size == rhs->size ? (issgn(lhs) ? rhs : lhs) :
-                                            lhs->size < rhs->size ? rhs : lhs )
+                                            tlhs->size == trhs->size ? (issgn(tlhs) ? rhs : lhs) :
+                                            tlhs->size < trhs->size ? rhs : lhs )
                                       : lf ? lhs : rhs
                                       );
         }
@@ -464,6 +481,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         fail("Cannot take the address of expression");
     case CT_UNOP_DEREF:
         failforward(opr, expr->info.unary.opr);
+        opr = _ct_truetype(opr);
         if (isindir(opr)) return expr->usr = (void*)atindir(opr);
         fail("Operand is not of a pointer type");
 
@@ -471,22 +489,25 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         failforward(opr, expr->info.cast.opr);
         struct ct_adpt_type cref tyto = _ct_cast_type(cs, expr->info.cast.type);
         if (!tyto) fail("Type invalid in cast expression");
+        opr = _ct_truetype(opr);
+        struct ct_adpt_type cref ttyto = _ct_truetype(tyto);
         // allowed:
         // - void
         // - int <-> ptr
         // - int <-> flt
         // - ptr[obj] <-> ptr[obj]
         // - ptr[fun] <-> ptr[fun]
-        if (&ct_adptb_void_type == tyto ||
-                (isnum(tyto) && isnum(opr)) ||
-                (isint(tyto) && isindir(opr)) || (isptr(tyto) && isint(opr)) ||
-                (isptr(tyto) && isindir(opr) && isfun(tyto->info.ptr) == isfun(atindir(opr)))
+        if (&ct_adptb_void_type == ttyto ||
+                (isnum(ttyto) && isnum(opr)) ||
+                (isint(ttyto) && isindir(opr)) || (isptr(ttyto) && isint(opr)) ||
+                (isptr(ttyto) && isindir(opr) && isfun(ttyto->info.ptr) == isfun(atindir(opr)))
            ) return expr->usr = (void*)tyto;
         fail("Operand cannot be casted to this type");
 
     case CT_UNOP_PMEMBER:
     case CT_UNOP_MEMBER:
         failforward(opr, expr->info.member.base);
+        opr = _ct_truetype(opr);
         if (CT_UNOP_MEMBER != expr->kind && !isindir(opr)) fail("Operand is not of a pointer type");
         struct ct_adpt_type cref comp = CT_UNOP_MEMBER == expr->kind ? opr : isptr(opr) ? opr->info.ptr : opr->info.arr.item;
         if (CT_TYPE_STRUCT != comp->tyty && CT_TYPE_UNION != comp->tyty) fail("Base of member expression is not a of a structure or union type");
@@ -498,22 +519,25 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_UNOP_BNOT:
     case CT_UNOP_LNOT:
         failforward(opr, expr->info.unary.opr);
-        if (isint(opr)) return expr->usr = (void*)opr;
+        topr = _ct_truetype(opr);
+        if (isint(topr)) return expr->usr = (void*)(CT_UNOP_LNOT == expr->kind ? &ct_adptb_int_type : topr);
         fail("Operand is not of an integral type");
 
     case CT_UNOP_MINUS:
     case CT_UNOP_PLUS:
         failforward(opr, expr->info.unary.opr);
-        if (isnum(opr)) return expr->usr = (void*)opr;
+        topr = _ct_truetype(opr);
+        if (isnum(topr)) return expr->usr = (void*)opr;
         fail("Operand is not of an arithmetic type");
 
     case CT_UNOP_PRE_DEC:
     case CT_UNOP_PRE_INC:
     case CT_UNOP_POST_DEC:
     case CT_UNOP_POST_INC:
-        failforward(opr, expr->info.unary.opr);
         if (!_ct_is_expr_lvalue(expr->info.unary.opr)) fail("Expression is not assignable");
-        if (isnum(opr) || isptr(opr)) return expr->usr = (void*)opr;
+        failforward(opr, expr->info.unary.opr);
+        topr = _ct_truetype(opr);
+        if (isnum(topr) || isptr(topr)) return expr->usr = (void*)opr;
         fail("Operand is not of an arithmetic type");
     }
 

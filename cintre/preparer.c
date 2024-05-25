@@ -705,7 +705,7 @@ int do_merge(int argc, char** argv)
         for (char** it = first; it < past_end; it++) emitln("#include \"%s\"", *it);
         emit_empty();
 
-        indented ("static struct ct_adpt_namespace const ct_namespaces[] = {") for (char** it = first; it < past_end; it++) {
+        indented ("struct ct_adpt_namespace const ct_namespaces[] = {") for (char** it = first; it < past_end; it++) {
             ct_bufsl const itns = name_space(*it);
             emit("{.name= \"%.*s\", .count= sizeof adptns_%.*s/sizeof*adptns_%.*s, .items= adptns_%.*s}", bufmt(itns), bufmt(itns), bufmt(itns), bufmt(itns));
             if (past_end == it+1) emit(",");
@@ -714,10 +714,12 @@ int do_merge(int argc, char** argv)
         emitln("};");
         emit_empty();
 
-        emitln("#define CINTRE_NAMESPACES_DEFINED ct_namespaces");
+        emitln("struct ct_adpt_namespace const* const ct_namespaces_first = &ct_namespaces[0];");
+        emitln("unsigned long const ct_namespaces_count = sizeof ct_namespaces/sizeof*ct_namespaces;");
+    } else {
+        emitln("struct ct_adpt_namespace const* const ct_namespaces_first = NULL;");
+        emitln("unsigned long const ct_namespaces_count = 0;");
     }
-
-    emitln("#include \"cintre.c\"");
 
     return EXIT_SUCCESS;
 }

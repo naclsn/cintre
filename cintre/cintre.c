@@ -3,25 +3,17 @@
 /// ```c
 /// #include "build/a-standard.h"
 ///
-/// static struct ct_adpt_namespace const namespaces[] = {
+/// static struct ct_adpt_namespace const ct_namespaces[] = {
 ///     {.name= "standard", .count= countof(adptns_standard), .items= adptns_standard},
 /// };
 ///
-/// #define CINTRE_NAMESPACES_DEFINED namespaces
+/// extern struct ct_adpt_namespace cref ct_namespaces_first = &ct_namespaces[0];
+/// extern unsigned long const ct_namespaces_count = sizeof ct_namespaces/sizeof*ct_namespaces;
+///
 /// #include "cintre.c"
 /// ```
 ///
 /// see `$ preparer -h`
-///
-/// if `CINTRE_NAMESPACES_DEFINED` is defined, then the following should hold:
-/// - `sizeof(CINTRE_NAMESPACES_DEFINED)/sizeof*(CINTRE_NAMESPACES_DEFINED)`
-///   is the number of namespaces
-/// - `CINTRE_NAMESPACES_DEFINED` can be cohersed to a `struct ct_adpt_namespace*`
-///
-/// eg:
-/// ```c
-/// static struct ct_adpt_namespace const CINTRE_NAMESPACES_DEFINED[] = { /*-*/ };
-/// ```
 ///
 /// if `USE_READLINE` is defined, readline will be used
 
@@ -41,8 +33,8 @@ typedef struct ct_cintre_state {
 
     ct_dyarr(struct ct_adpt_item) locs;
     struct {
-        size_t const count;
-        struct ct_adpt_namespace cref spaces;
+        size_t count;
+        struct ct_adpt_namespace const* spaces;
     } nsps;
 
     FILE* save;
@@ -750,10 +742,13 @@ int main(int argc, char cref* argv)
         .expr= {.ls= &_gs.lexr, .usr= &_gs, .on= ct_accept_expr},
         .comp= {.usr= &_gs, .lookup= ct_cintre_lookup},
         .runr= {.sp= sizeof _gs.runr.stack}, // (xxx: sizeof stack)
-#ifdef CINTRE_NAMESPACES_DEFINED
-        .nsps= {.count= countof(CINTRE_NAMESPACES_DEFINED), .spaces= CINTRE_NAMESPACES_DEFINED},
-#endif
     };
+    {
+        extern struct ct_adpt_namespace cref ct_namespaces_first;
+        extern unsigned long const ct_namespaces_count;
+        _gs.nsps.spaces = ct_namespaces_first;
+        _gs.nsps.count = ct_namespaces_count;
+    }
     ct_cintre_state ref gs = &_gs;
 
     char cref prog = (argc--, *argv++);

@@ -105,7 +105,8 @@ int ct_unescape(char cref ptr, size_t const len, size_t* const k)
 
         case 'u':
         case 'U':
-            exitf("NIY: 'Universal character names' (Unicode)");
+            notif("NIY: 'Universal character names' (Unicode)");
+            return 0;
             break;
 
         default:
@@ -123,13 +124,12 @@ ct_buf _ct_lex_read_all(FILE ref f)
 {
     ct_buf r = {0};
     if (!fseek(f, 0, SEEK_END)) {
-        r.ptr = malloc(r.len = r.cap = ftell(f));
-        if (!r.ptr) exitf("OOM");
+        r.ptr = ct_mallox(r.len = r.cap = ftell(f));
         fseek(f, 0, SEEK_SET);
         fread(r.ptr, 1, r.len, f);
     } else do {
         size_t const a = r.len ? r.len*2 : 1024;
-        if (!dyarr_resize(&r, a)) exitf("OOM");
+        dyarr_resize(&r, a);
         r.len+= fread(r.ptr+r.len, 1, a-r.len, f);
     } while (!feof(f) && !ferror(f));
     return r;
@@ -138,7 +138,6 @@ ct_buf _ct_lex_read_all(FILE ref f)
 void ct_ldef(ct_lex_state ref ls, char cref name, char cref value)
 {
     struct _ct_lex_state_macro* it = dyarr_push(&ls->macros);
-    if (!it) exitf("OOM");
     *it = (struct _ct_lex_state_macro){0};
     it->name.len = strlen(it->name.ptr = name);
     it->repl.len = strlen(it->repl.ptr = value);
@@ -147,7 +146,6 @@ void ct_ldef(ct_lex_state ref ls, char cref name, char cref value)
 void ct_linc(ct_lex_state ref ls, char cref path)
 {
     ct_bufsl* it = dyarr_push(&ls->include_paths);
-    if (!it) exitf("OOM");
     it->ptr = path;
     it->len = strlen(path);
 }
@@ -157,10 +155,9 @@ void ct_lini(ct_lex_state ref ls, char cref entry)
     FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
     if (!f) exitf("Could not open entry file %s", entry);
     struct _ct_lex_state_source* src = dyarr_push(&ls->sources);
-    if (src) src->file = src->text.ptr = NULL;
+    src->file = src->text.ptr = NULL;
     size_t n = strlen(entry);
-    char* dup = malloc(n+1);
-    if (!src || !dup) exitf("OOM");
+    char* dup = ct_mallox(n+1);
     memcpy(dup, entry, n);
     dup[n] = '\0';
     src->file = dup;
@@ -447,8 +444,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
             if (!s) {
                 struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
                 struct _ct_lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
-                if (src) src->file = src->text.ptr = NULL;
-                if (!hold || !src) exitf("OOM");
+                src->file = src->text.ptr = NULL;
                 char const* dirend = strrchr(ls->file, '/');
                 ct_bufsl* it = dirend ? &(ct_bufsl){.ptr= ls->file, .len= dirend-ls->file} : &(ct_bufsl){0};
                 size_t k = -1;
@@ -468,8 +464,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                         src->text = _ct_lex_read_all(f);
                         fclose(f);
                         if (src->text.len) {
-                            char* dup = malloc(n+1);
-                            if (!dup) exitf("OOM");
+                            char* dup = ct_mallox(n+1);
                             memcpy(dup, file, n);
                             dup[n] = '\0';
                             src->file = dup;
@@ -506,8 +501,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                 ls->file = NULL;
                 ct_bufsl path;
                 accu(path) skip(!is('"'));
-                char* dup = malloc(--path.len);
-                if (!dup) exitf("OOM");
+                char* dup = ct_mallox(--path.len);
                 dup[path.len] = '\0';
                 memcpy(dup, path.ptr, path.len);
                 ls->file = dup;
@@ -521,15 +515,14 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
             accu(name) skip(isid());
             struct _ct_lex_state_macro* it = NULL;
             search_namespace(name, ls->macros) { it = ls->macros.ptr+k; break; }
-            if (!it && !(it = dyarr_push(&ls->macros))) exitf("OOM");
+            if (!it) it = dyarr_push(&ls->macros);
             *it = (struct _ct_lex_state_macro){0};
             it->name = name;
             if (is('(')) {
                 nx();
                 skip(strchr(" \t", at()));
                 while (!is(')')) {
-                    ct_bufsl* arg = (ct_bufsl*)dyarr_push(&it->params);
-                    if (!arg) exitf("OOM");
+                    ct_bufsl* arg = dyarr_push(&it->params);
                     accu(*arg) skip(isid() || is('.'));
                     skip(strchr(" \t", at()));
                     if (is(',')) {
@@ -562,7 +555,6 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
             ct_bufsl name;
             accu(name) skip(isid());
             char* top = dyarr_push(&ls->ifdef_stack);
-            if (!top) exitf("OOM");
             if (!(*top = disab*2)) {
                 *top = 1;
                 search_namespace(name, ls->macros) { *top = 0; break; }
@@ -580,7 +572,6 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
             }
             bool e = 'e' == dir.ptr[0];
             char* top = e ? dyarr_top(&ls->ifdef_stack) : dyarr_push(&ls->ifdef_stack);
-            if (!top) exitf("OOM");
             *top = (e ? 1 != *top : disab) ? 2 : !ct_lxpr(ls, &expr);
         }
 
@@ -697,8 +688,8 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                 }
                 struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
                 ct_buf* work = dyarr_push(&ls->workbufs);
-                if (work) *work = (ct_buf){0};
-                if (macro->repl.len && (!hold || !work || !dyarr_replace(work, 0, 0, &macro->repl))) exitf("OOM");
+                *work = (ct_buf){0};
+                if (macro->repl.len) dyarr_replace(work, 0, 0, &macro->repl);
                 k = 0;
                 while (k < work->len) {
 #                   define nameis(li) (strlen(li) == name.len && !memcmp(li, name.ptr, strlen(li)))
@@ -759,7 +750,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                             // needs less
                             if (esc_repl_len+2 < being_repl_len) dyarr_remove(work, st+1, being_repl_len-esc_repl_len-2);
                             // needs more
-                            else if (!dyarr_insert(work, st+1, esc_repl_len+2-being_repl_len)) exitf("OOM");
+                            else dyarr_insert(work, st+1, esc_repl_len+2-being_repl_len);
                             memset(work->ptr+st, '?', esc_repl_len+2);
                             k = st;
                             work->ptr[k++] = '"';
@@ -799,7 +790,7 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                             else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
                             else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));
                             else search_namespace(name, macro->params) { repl = argv[k]; break; }
-                            if (name.ptr != repl.ptr && !dyarr_replace(work, name.ptr-work->ptr, name.len, &repl)) exitf("OOM");
+                            if (name.ptr != repl.ptr) dyarr_replace(work, name.ptr-work->ptr, name.len, &repl);
                             k = k-name.len+repl.len;
                         } else k++;
                     }

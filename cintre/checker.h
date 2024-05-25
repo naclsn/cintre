@@ -129,8 +129,8 @@ struct ct_adpt_type const* _ct_cast_type(ct_compile_state ref cs, struct ct_decl
             case CT_QUAL_UNSIGNED:  _unsigned = true;        break;
             case CT_QUAL_SHORT:     _short = true;           break;
             case CT_QUAL_LONG:      _long = true;            break;
-            case CT_QUAL_COMPLEX:   exitf("NIY: complex");   break;
-            case CT_QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            case CT_QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
+            case CT_QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
             default:;
         }
 
@@ -160,14 +160,12 @@ struct ct_adpt_type const* _ct_cast_type(ct_compile_state ref cs, struct ct_decl
         struct ct_adpt_type cref ptr = _ct_cast_type(cs, &ty->info.ptr->type);
         if (!ptr) return NULL;
 
-        struct ct_adpt_type* r;
-        if (!(r = dyarr_push(&cs->chk_work))) exitf("OOM");
-        return memcpy(r, &(struct ct_adpt_type){
+        return memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                 .size= sizeof(void*),
                 .align= sizeof(void*),
                 .tyty= CT_TYPE_PTR,
                 .info.ptr= ptr,
-            }, sizeof*r);
+            }, sizeof(struct ct_adpt_type));
 
     default: return NULL;
     }
@@ -197,12 +195,9 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_ATOM:;
         char const c = *expr->info.atom.ptr;
         if ('"' == c) {
-            struct ct_adpt_type ref pty = dyarr_push(&cs->chk_work);
-            if (!pty) exitf("OOM");
             size_t const len = expr->info.atom.len;
             char cref ptr = expr->info.atom.ptr;
-            ct_buf data = {0};
-            if (!(data.ptr = malloc(data.cap = len))) exitf("OOM");
+            ct_buf data = {.ptr= ct_mallox(data.cap = len)};
             for (size_t k = 1; k < len-1;)
                 data.ptr[data.len++] = '\\' == ptr[k] ? ct_unescape(ptr, len, &k) : ptr[k++];
             data.ptr[data.len++] = '\0';
@@ -233,7 +228,6 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
                 for (size_t it = data.len; it; count++) it>>= 7;
 
                 unsigned char* op = dyarr_insert(&cs->res, cs->res.len, count);
-                if (!op) exitf("OOM");
                 *op = 0x0f;
                 size_t it = data.len;
                 do {
@@ -253,16 +247,15 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
                 expr->info.atom.len = cs->vsp;
 
                 ct_buf ref intern = dyarr_push(&cs->chk_interned);
-                if (!intern) exitf("OOM");
                 *intern = data;
-                // yyy: stor the location of the array here, it is retrived
+                // yyy: store the location of the array here, it is retrived
                 // when matching a new string literal at some other call. 2:
                 // - buffers in `chk_interned` should not be changed
                 // - `cs->vsp` should not be 0 so it won't mess with frry
                 intern->cap = cs->vsp;
             }
 
-            return expr->usr = memcpy(pty, &(struct ct_adpt_type){
+            return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                     .size= sizeof(char*),
                     .align= sizeof(char*),
                     .tyty= CT_TYPE_ARR,
@@ -270,7 +263,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
                         .item= &ct_adptb_char_type,
                         .count= data.len,
                     },
-                }, sizeof *pty);
+                }, sizeof(struct ct_adpt_type));
         }
 
         // xxx: not supposed to be of type `char` but `int`
@@ -428,26 +421,23 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
         if (CT_BINOP_SUB == expr->kind || CT_BINOP_ADD == expr->kind) {
-            struct ct_adpt_type* pty;
             if (isint(lhs)) {
                 if (isptr(rhs)) return expr->usr = (void*)rhs;
-                if (isarr(rhs)) return expr->usr = !(pty = dyarr_push(&cs->chk_work)) ? exitf("OOM"), NULL
-                    : memcpy(pty, &(struct ct_adpt_type){
+                if (isarr(rhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= CT_TYPE_PTR,
                             .info.ptr= rhs->info.arr.item,
-                        }, sizeof *pty);
+                        }, sizeof(struct ct_adpt_type));
             }
             if (isint(rhs)) {
                 if (isptr(lhs)) return expr->usr = (void*)lhs;
-                if (isarr(lhs)) return expr->usr = !(pty = dyarr_push(&cs->chk_work)) ? exitf("OOM"), NULL
-                    : memcpy(pty, &(struct ct_adpt_type){
+                if (isarr(lhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= CT_TYPE_PTR,
                             .info.ptr= lhs->info.arr.item,
-                        }, sizeof *pty);
+                        }, sizeof(struct ct_adpt_type));
             }
         } // ptr arith
         if (isnum(lhs) && isnum(rhs)) {
@@ -464,14 +454,12 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_UNOP_ADDR:
         if (_ct_is_expr_lvalue(expr->info.unary.opr)) {
             failforward(opr, expr->info.unary.opr);
-            struct ct_adpt_type ref pty = dyarr_push(&cs->chk_work);
-            if (!pty) exitf("OOM");
-            return expr->usr = memcpy(pty, &(struct ct_adpt_type){
+            return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                     .size= sizeof(void*),
                     .align= sizeof(void*),
                     .tyty= CT_TYPE_PTR,
                     .info.ptr= opr,
-                }, sizeof *pty);
+                }, sizeof(struct ct_adpt_type));
         }
         fail("Cannot take the address of expression");
     case CT_UNOP_DEREF:

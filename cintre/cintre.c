@@ -312,8 +312,8 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
             case CT_QUAL_UNSIGNED:  _unsigned = true;        break;
             case CT_QUAL_SHORT:     _short = true;           break;
             case CT_QUAL_LONG:      _long = true;            break;
-            case CT_QUAL_COMPLEX:   exitf("NIY: complex");   break;
-            case CT_QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+            case CT_QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
+            case CT_QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
             default:;
         }
 
@@ -355,7 +355,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
         // functions and such; they only live in the REPL and forcing them
         // outside is just "UB, idc, you did this"
 
-        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        r = dyarr_push(&gs->ty_work);
         return memcpy(r, &(struct ct_adpt_type){
                 .size= 0,
                 .align= 0,
@@ -372,7 +372,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
         struct ct_adpt_type cref ptr = _ct_decl_to_adpt_type(gs, &ty->info.ptr->type);
         if (!ptr) return NULL;
 
-        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        r = dyarr_push(&gs->ty_work);
         return memcpy(r, &(struct ct_adpt_type){
                 .size= sizeof(void*),
                 .align= sizeof(void*),
@@ -386,8 +386,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
         struct ct_adpt_type cref ret = _ct_decl_to_adpt_type(gs, &ty->info.fun.ret->type);
         if (!ret) return NULL;
 
-        struct ct_adpt_fun_param* const params = malloc(ty->info.fun.count*sizeof*params);
-        if (!params) exitf("OOM");
+        struct ct_adpt_fun_param* const params = ct_mallox(ty->info.fun.count*sizeof*params);
 
         size_t k = 0;
         for (struct ct_decl_type_param const* curr = ty->info.fun.first; curr; curr = curr->next, k++) {
@@ -400,8 +399,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
 
             char* name = NULL;
             if (curr->decl->name.len) {
-                name = malloc(curr->decl->name.len+1);
-                if (!name) exitf("OOM");
+                name = ct_mallox(curr->decl->name.len+1);
                 name[curr->decl->name.len] = '\0';
                 memcpy(name, curr->decl->name.ptr, curr->decl->name.len);
             }
@@ -409,7 +407,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
             memcpy(params+k, &(struct ct_adpt_fun_param){.name= name, .type= type}, sizeof*params);
         }
 
-        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        r = dyarr_push(&gs->ty_work);
         return memcpy(r, &(struct ct_adpt_type){
                 .size= sizeof(void(*)()),
                 .align= sizeof(void(*)()),
@@ -461,9 +459,12 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
                 gs->runr.sp = psp;
                 break;
             }
-        } else exitf("NIY: inferred length (or it's a function param, but those are not handled correctly at many more level anyways)");
+        } else {
+            notif("NIY: inferred length (or it's a function param, but those are not handled correctly at many more level anyways)");
+            return NULL;
+        }
 
-        if (!(r = dyarr_push(&gs->ty_work))) exitf("OOM");
+        r = dyarr_push(&gs->ty_work);
         return memcpy(r, &(struct ct_adpt_type){
                 .size= item->size*count,
                 .align= item->align,
@@ -526,9 +527,7 @@ void ct_accept_decl(void ref usr, ct_declaration cref decl, ct_bufsl ref tok)
     }
 
     struct ct_adpt_item ref it = dyarr_push(&gs->locs);
-    if (!it) exitf("OOM");
-    char* name = malloc(decl->name.len+1);
-    if (!name) free(it), exitf("OOM");
+    char* name = ct_mallox(decl->name.len+1);
     name[decl->name.len] = '\0';
     memcpy(it, &(struct ct_adpt_item){
             .name= memcpy(name, decl->name.ptr, decl->name.len),
@@ -641,7 +640,6 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         if (!found) {
             if ('s' == xcmd.ptr[1]) {
                 found = dyarr_push(&gs->snaps);
-                if (!found) exitf("OOM");
                 memcpy(found->name, name.ptr, name.len);
                 found->name[name.len] = '\0';
                 found->locs.ptr = NULL, found->locs.cap = 0;
@@ -657,15 +655,15 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         free(found->chk_interned.ptr);
         if ('s' == xcmd.ptr[1]) {
             found->stack = gs->runr;
-            if (!((found->locs.len = gs->locs.len) < found->locs.cap || dyarr_resize(&found->locs, gs->locs.len))) exitf("OOM");
-            for (size_t k = 0; k < gs->locs.len; k++) *(char**)found->locs.ptr[k].name = strcpy(malloc(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
-            if (!((found->chk_interned.len = gs->comp.chk_interned.len) < found->chk_interned.cap || dyarr_resize(&found->chk_interned, gs->comp.chk_interned.len))) exitf("OOM");
+            dyarr_resize(&found->locs, gs->locs.len);
+            for (size_t k = 0; k < gs->locs.len; k++) *(char**)found->locs.ptr[k].name = strcpy(ct_mallox(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
+            dyarr_resize(&found->chk_interned, gs->comp.chk_interned.len);
             for (size_t k = 0; k < gs->comp.chk_interned.len; k++) dyarr_cpy(&found->chk_interned.ptr[k], &gs->comp.chk_interned.ptr[k]);
         } else {
             gs->runr = found->stack;
-            if (!((gs->locs.len = found->locs.len) < gs->locs.cap || dyarr_resize(&gs->locs, found->locs.len))) exitf("OOM");
-            for (size_t k = 0; k < found->locs.len; k++) *(char**)gs->locs.ptr[k].name = strcpy(malloc(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
-            if (!((gs->comp.chk_interned.len = found->chk_interned.len) < gs->comp.chk_interned.cap || dyarr_resize(&gs->comp.chk_interned, found->chk_interned.len))) exitf("OOM");
+            dyarr_resize(&gs->locs, found->locs.len);
+            for (size_t k = 0; k < found->locs.len; k++) *(char**)gs->locs.ptr[k].name = strcpy(ct_mallox(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
+            dyarr_resize(&gs->comp.chk_interned, found->chk_interned.len);
             for (size_t k = 0; k < found->chk_interned.len; k++) dyarr_cpy(&gs->comp.chk_interned.ptr[k], &found->chk_interned.ptr[k]);
         }
     }

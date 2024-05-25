@@ -101,7 +101,6 @@ unsigned _ct_l2(size_t n)
     }                                                                \
                                                                      \
     unsigned char* op = dyarr_insert(&cs->res, cs->res.len, count);  \
-    if (!op) exitf("OOM");                                           \
     *op = __code;                                                    \
                                                                      \
     for (size_t k = 0; k < countof(arr); k++) {                      \
@@ -140,9 +139,7 @@ void _ct_rewind_slot(ct_compile_state ref cs, struct ct_slot cref slot)
 void _ct_emit_data(ct_compile_state ref cs, size_t const dst, size_t const width, unsigned char const* data)
 {
     _emit_instr_w_opr(0x1d, dst, width);
-    unsigned char* dt = dyarr_insert(&cs->res, cs->res.len, width);
-    if (!dt) exitf("OOM");
-    memcpy(dt, data, width);
+    memcpy(dyarr_insert(&cs->res, cs->res.len, width), data, width);
 }
 
 void _ct_emit_move(ct_compile_state ref cs, size_t const dst, size_t const width, size_t const src)
@@ -181,7 +178,6 @@ void _ct_emit_call_arg(ct_compile_state ref cs, size_t argv)
     else count = 1;
 
     unsigned char* w = dyarr_insert(&cs->res, cs->res.len, count);
-    if (!w) exitf("OOM");
 
     do {
         unsigned char l = argv&127;
@@ -339,7 +335,7 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
         struct ct_slot tmp = {.ty= expr_ty};
         ct_compile_expression(cs, expr, &tmp);
 
-        if (_slot_variable != tmp.usage) exitf("unreachable: array should have usage _slot_variable");
+        if (_slot_variable != tmp.usage) notif("IDK: array should have usage _slot_variable");
 
         _ct_emit_lea(cs, at(slot), atv(&tmp));
         slot->usage = _slot_used;
@@ -614,7 +610,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             if (CT_TYPE_ARR == base.ty->tyty) {
                 ct_compile_expression(cs, expr->info.subscr.base, &base);
 
-                if (_slot_variable != base.usage) exitf("unreachable: array should have usage _slot_variable");
+                if (_slot_variable != base.usage) {
+                    notif("IDK: array should have usage _slot_variable");
+                    slot->usage = _slot_used;
+                    return;
+                }
 
                 struct ct_slot off = {.ty= &ct_adptb_long_type};
                 _ct_alloc_slot(cs, &off);
@@ -658,7 +658,12 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 _ct_alloc_slot(cs, &base);
                 ct_compile_expression(cs, expr->info.subscr.base, &base);
 
-                if (_slot_value == base.usage) exitf("subscr on a compile time - this is surely very wrong");
+                if (_slot_value == base.usage) {
+                    notif("IDK: subscr on a compile time - this is surely very wrong");
+                    _ct_cancel_slot(cs, &base);
+                    slot->usage = _slot_used;
+                    return;
+                }
 
                 if (_slot_variable == base.usage) _ct_emit_move(cs, at(&base), base.ty->size, atv(&base));
 
@@ -820,7 +825,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 ct_compile_expression(cs, dst_ex, &dst);
                 // can be stack variable or static global object;
                 // for now only support stack variable
-                if (_slot_variable != dst.usage) exitf("NIY: only supports stack variables for now");
+                if (_slot_variable != dst.usage) {
+                    notif("NIY: only supports stack variables for now");
+                    slot->usage = _slot_used;
+                    return;
+                }
 
                 if (op) {
                     tmp = dst;
@@ -843,7 +852,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_BINOP_SUBSCR:
             case CT_UNOP_DEREF:
             case CT_UNOP_PMEMBER:
-                exitf("NIY: assigning to this kind of lvalue");
+                notif("NIY: assigning to this kind of lvalue");
+                slot->usage = _slot_used;
                 break;
 
             default:;
@@ -877,7 +887,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
 
                 lhs = *slot;
                 _ct_fit_expr_to_slot(cs, ptr, &lhs);
-                if (_slot_value == lhs.usage) exitf("ptr arith on a compile time - this is surely very wrong");
+                if (_slot_value == lhs.usage) {
+                    notif("IKD: ptr arith on a compile time - this is surely very wrong");
+                    slot->usage = _slot_used;
+                    return;
+                }
                 if (_slot_variable == lhs.usage) {
                     _ct_emit_move(cs, at(&lhs), slot->ty->size, atv(&lhs));
                     lhs.usage = _slot_used;
@@ -1012,7 +1026,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             struct ct_slot obj = {.ty= expr->info.unary.opr->usr};
             //if (..FUN..) slot->usage = _slot_var.. idk;
             ct_compile_expression(cs, expr->info.unary.opr, &obj);
-            if (_slot_variable != obj.usage) exitf("NIY: only supports stack variables for now");
+            if (_slot_variable != obj.usage) {
+                notif("NIY: only supports stack variables for now");
+                slot->usage = _slot_used;
+                return;
+            }
             _ct_emit_lea(cs, at(slot), atv(&obj));
             slot->usage = _slot_used;
         }
@@ -1025,7 +1043,9 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
 
             switch (ptr.usage) {
             case _slot_value:
-                exitf("deref on a compile time - this is surely very wrong");
+                notif("IDK: deref on a compile time - this is surely very wrong");
+                slot->usage = _slot_used;
+                return;
 
             case _slot_used:
                 _ct_emit_read(cs, at(&ptr), slot);
@@ -1052,7 +1072,9 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_UNOP_PMEMBER:
-        exitf("NIY: pmember");
+        notif("NIY: pmember");
+        slot->usage = _slot_used;
+        return;
     case CT_UNOP_MEMBER: {
             ct_expression cref base_ex = expr->info.member.base;
             ct_bufsl const name = *expr->info.member.name;
@@ -1068,7 +1090,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             ct_compile_expression(cs, base_ex, &base);
             // can be stack variable or static global object or a function's return;
             // for now only support stack variable
-            if (_slot_variable != base.usage) exitf("NIY: only supports stack variables for now");
+            if (_slot_variable != base.usage) {
+                notif("NIY: only supports stack variables for now");
+                slot->usage = _slot_used;
+                return;
+            }
 
             slot->as.variable = base.as.variable+off;
             slot->usage = _slot_variable;
@@ -1077,7 +1103,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
 
     case CT_BINOP_LOR:
     case CT_BINOP_LAND:
-        exitf("NIY: branches");
+        notif("NIY: branches");
+        slot->usage = _slot_used;
         return;
 
     case CT_BINOP_EQ:
@@ -1086,7 +1113,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
     case CT_BINOP_GT:
     case CT_BINOP_LE:
     case CT_BINOP_GE:
-        exitf("NIY: comparisons");
+        notif("NIY: comparisons");
+        slot->usage = _slot_used;
         return;
 
     case CT_UNOP_BNOT:
@@ -1111,7 +1139,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         case _slot_variable: at_slot = atv(slot);
             switch (expr->kind) {
             case CT_UNOP_BNOT: _ct_emit_arith(cs, _ops_bxori, _ct_slot_arith_w(slot), at(slot), -1/* xxx: should be of the type's size, this is larger */, at_slot); break;
-            case CT_UNOP_LNOT: exitf("NIY emit lnot"); break;
+            case CT_UNOP_LNOT: notif("NIY: emit lnot"); break;
             case CT_UNOP_MINUS: _ct_emit_arith(cs, _ops_subi, _ct_slot_arith_w(slot), at(slot), 0, at_slot); break;
             case CT_UNOP_PLUS: _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
             default:;
@@ -1134,7 +1162,11 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 ct_compile_expression(cs, expr->info.unary.opr, slot);
                 // can be stack variable or static global object;
                 // for now only support stack variable
-                if (_slot_variable != slot->usage) exitf("NIY: only supports stack variables for now");
+                if (_slot_variable != slot->usage) {
+                    notif("NIY: only supports stack variables for now");
+                    slot->usage = _slot_used;
+                    return;
+                }
 
                 if (post) {
                     _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot));
@@ -1148,7 +1180,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_BINOP_SUBSCR:
             case CT_UNOP_DEREF:
             case CT_UNOP_PMEMBER:
-                exitf("NIY: assigning to this kind of lvalue");
+                notif("NIY: assigning to this kind of lvalue");
+                slot->usage = _slot_used;
                 break;
 
             default:;

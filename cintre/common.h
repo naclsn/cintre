@@ -12,12 +12,6 @@
 #define ref * const
 #define cref const* const
 
-#include "dyarr.h"
-typedef ct_dyarr(char) ct_buf;
-typedef struct { char const* ptr; size_t len; } ct_bufsl;
-#define bufmt(x) (unsigned)(x).len, (x).ptr
-#define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
-
 #ifdef LOC_NOTIF
 # define _HERE_STR(__ln) #__ln
 # define _HERE_XSTR(__ln) _HERE_STR(__ln)
@@ -38,11 +32,25 @@ static bool _try_jmp_flg = false;
 #endif
 #define notif(...) (fflush(stdout), fprintf(stderr, HERE __VA_ARGS__), fputc(10, stderr))
 
+#define _dyarr_allocfail  (exitf("OOM"), NULL)
+#include "dyarr.h"
+typedef ct_dyarr(char) ct_buf;
+typedef struct { char const* ptr; size_t len; } ct_bufsl;
+#define bufmt(x) (unsigned)(x).len, (x).ptr
+#define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
+
 #define report_lex_locate(ls, ...) (                                \
     fflush(stdout),                                                 \
     fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %.*s \x1b[1m##\x1b[m ",  \
             (ls)->file, (ls)->line, bufmt(ct_llne((ls)))),             \
     notif(__VA_ARGS__))
+
+static inline void* ct_mallox(size_t n)
+{
+    void ref r = malloc(n);
+    if (!r) exitf("OOM");
+    return r;
+}
 
 // used in lexer and preparer
 // TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push

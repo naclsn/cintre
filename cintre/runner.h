@@ -105,14 +105,14 @@ void ct_run(ct_run_state ref rs, ct_bytecode const code)
         cvt(0x25, float, double)
 #       undef cvt
 
-    case 0x04: exitf("NIY: (run) not");
-    case 0x14: exitf("NIY: (run) cmp1");
-    case 0x24: exitf("NIY: (run) cmp2");
-    case 0x0a: exitf("NIY: (run) jmp");
-    case 0x1a: exitf("NIY: (run) jmb");
-    case 0x0b: exitf("NIY: (run) breq");
-    case 0x1b: exitf("NIY: (run) brlt");
-    case 0x2b: exitf("NIY: (run) brle");
+    case 0x04: notif("NIY: (run) not");  return;
+    case 0x14: notif("NIY: (run) cmp1"); return;
+    case 0x24: notif("NIY: (run) cmp2"); return;
+    case 0x0a: notif("NIY: (run) jmp");  return;
+    case 0x1a: notif("NIY: (run) jmb");  return;
+    case 0x0b: notif("NIY: (run) breq"); return;
+    case 0x1b: notif("NIY: (run) brlt"); return;
+    case 0x2b: notif("NIY: (run) brle"); return;
         continue;
 
     default:;

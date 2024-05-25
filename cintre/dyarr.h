@@ -5,6 +5,10 @@
 #define _dyarr_emptyresize 8
 #endif
 
+#ifndef _dyarr_allocfail
+#define _dyarr_allocfail NULL
+#endif
+
 #if __STDC_VERSION__ < 199901L
 #define inline
 #endif
@@ -30,7 +34,7 @@ static inline int   _ct_dyarr_cmp(void** s1, size_t z1, void** s2, size_t z2);
 #define dyarr_resize(__da, __rsz)  _ct_dyarr_resize((void**)&(__da)->ptr, sizeof*(__da)->ptr, &(__da)->cap, (__rsz))
 
 /* doubles the capacity if more memory is needed */
-#define dyarr_push(__da)  ((__da)->len < (__da)->cap || dyarr_resize((__da), (__da)->cap ? (__da)->cap*2 : (_dyarr_emptyresize)) ? &(__da)->ptr[(__da)->len++] : NULL)
+#define dyarr_push(__da)  ((__da)->len < (__da)->cap || dyarr_resize((__da), (__da)->cap ? (__da)->cap*2 : (_dyarr_emptyresize)) ? &(__da)->ptr[(__da)->len++] : (_dyarr_allocfail))
 /* NULL if empty */
 #define dyarr_pop(__da)  ((__da)->len ? &(__da)->ptr[--(__da)->len] : NULL)
 /* NULL if empty */
@@ -47,19 +51,20 @@ static inline int   _ct_dyarr_cmp(void** s1, size_t z1, void** s2, size_t z2);
 
 /* same as memcmp as for value sign, also compares lengths first in same way */
 #define dyarr_cmp(__s1, __s2)  _ct_dyarr_cmp((void**)(__s1)->ptr, (__s1)->len*sizeof*(__s1)->ptr, (void**)(__s2)->ptr, (__s2)->len*sizeof*(__s2)->ptr)
-/* assumes dest is in a correct state (eg. zeroed out) */
-#define dyarr_cpy(__dest, __src)  (((__dest)->len = (__src)->len) < (__dest)->cap || dyarr_resize((__dest), (__src)->len) ? memcpy((__dest)->ptr, (__src)->ptr, (__src)->len*sizeof*(__src)->ptr), true : false)
+/* returns dest->ptr, assumes dest is in a correct state (eg. zeroed out) */
+#define dyarr_cpy(__dest, __src)  (((__dest)->len = (__src)->len) < (__dest)->cap || dyarr_resize((__dest), (__src)->len) ? memcpy((__dest)->ptr, (__src)->ptr, (__src)->len*sizeof*(__src)->ptr), (__dest)->ptr : (_dyarr_allocfail))
 
 bool _ct_dyarr_resize(void** ptr, size_t isz, size_t* cap, size_t rsz)
 {
     void* niw = realloc(*ptr, rsz * isz);
-    return niw ? *ptr = niw, *cap = rsz, true : false;
+    if (!niw) return !!(_dyarr_allocfail);
+    return *ptr = niw, *cap = rsz, true;
 }
 
 void* _ct_dyarr_insert(void** ptr, size_t isz, size_t* cap, size_t* len, size_t k, size_t n)
 {
     size_t nln = *len+n;
-    if (*cap < nln && !_ct_dyarr_resize(ptr, isz, cap, nln)) return NULL;
+    if (*cap < nln && !_ct_dyarr_resize(ptr, isz, cap, nln)) return (_dyarr_allocfail);
     memmove(*(char**)ptr+(k+n)*isz, *(char**)ptr+k*isz, (*len-k)*isz);
     *len = nln;
     return *(char**)ptr+k*isz;
@@ -73,7 +78,7 @@ void _ct_dyarr_remove(void** ptr, size_t isz, size_t* len, size_t k, size_t n)
 void* _ct_dyarr_replace(void** ptr, size_t isz, size_t* cap, size_t* len, size_t k, size_t n, void* spt, size_t sln)
 {
     size_t nln = *len+sln-n;
-    if (n < sln && *cap < nln && !_ct_dyarr_resize(ptr, isz, cap, nln)) return NULL;
+    if (n < sln && *cap < nln && !_ct_dyarr_resize(ptr, isz, cap, nln)) return (_dyarr_allocfail);
     memmove(*(char**)ptr+(k+sln)*isz, *(char**)ptr+(k+n)*isz, (*len-n-k)*isz);
     memcpy(*(char**)ptr+k*isz, spt, sln*isz);
     *len = nln;

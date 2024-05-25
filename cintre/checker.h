@@ -96,7 +96,8 @@ bool _ct_are_types_compatible(struct ct_adpt_type cref dst, struct ct_adpt_type 
         return _are_types_same(dst->info.ptr, src_under) ||
                 CT_TYPE_VOID == dst->info.ptr->tyty ||
                 CT_TYPE_VOID == src_under->tyty;
-    default:;
+    case CT_TYPE_VOID: case CT_TYPE_CHAR: case CT_TYPE_UCHAR: case CT_TYPE_SCHAR: case CT_TYPE_SHORT: case CT_TYPE_INT: case CT_TYPE_LONG: case CT_TYPE_USHORT: case CT_TYPE_UINT: case CT_TYPE_ULONG: case CT_TYPE_FLOAT: case CT_TYPE_DOUBLE: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_NAMED:
+        return false;
     }
 
     return false;
@@ -114,7 +115,7 @@ bool _ct_is_expr_lvalue(ct_expression cref expr)
     case CT_UNOP_PMEMBER:
     case CT_UNOP_MEMBER:
         return true;
-    default:
+    default: // (43 cases ><'')
         return false;
     }
 }
@@ -131,8 +132,9 @@ struct ct_adpt_type const* _ct_cast_type(ct_compile_state ref cs, struct ct_decl
             case CT_QUAL_LONG:      _long = true;            break;
             case CT_QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
             case CT_QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
-            default:;
-        }
+                // noop cases
+            case CT_QUAL_END: case CT_QUAL_CONST: case CT_QUAL_RESTRICT: case CT_QUAL_VOLATILE:;
+            }
 
 #       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
         if (nameis("char"))
@@ -169,8 +171,14 @@ struct ct_adpt_type const* _ct_cast_type(ct_compile_state ref cs, struct ct_decl
                 .info.ptr= ptr,
             }, sizeof(struct ct_adpt_type));
 
-    default: return NULL;
+    case CT_KIND_STRUCT:
+    case CT_KIND_UNION:
+    case CT_KIND_FUN:
+    case CT_KIND_ARR:
+        return NULL;
     }
+    // unreachable
+    return NULL;
 }
 // }}}
 
@@ -390,7 +398,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         case CT_BINOP_ASGN_REM:
             if (!isint(rhs) || !isint(lhs)) fail("Both operands are not of an integral type");
             break;
-        default:
+        default: // (38 cases ><'')
             if (!_ct_are_types_compatible(lhs, rhs)) fail("Value type cannot be assigned to destination");
         }
         return expr->usr = (void*)lhs;

@@ -307,8 +307,10 @@ static inline long _ct_lex_exexpr(long const lhs, enum _ct_lex_operator const op
     case _lex_opmul:  return lhs *  rhs;
     case _lex_opdiv:  return lhs /  rhs;
     case _lex_oprem:  return lhs %  rhs;
-    default: return 0;
+        // unreachable case (i suppose)
+    case _lex_opnone:;
     }
+    return 0;
 }
 static long _ct_lex_oprxpr(ct_lex_state cref ls, ct_bufsl ref xpr, long lhs, enum _ct_lex_operator lop)
 {

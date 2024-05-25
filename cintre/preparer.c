@@ -90,8 +90,9 @@ void emit_adpt_type_val(struct ct_decl_type cref ty, bool const in_decl)
             case CT_QUAL_LONG:      _long = true;            break;
             case CT_QUAL_COMPLEX:   exitf("NIY: complex");   break;
             case CT_QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
-            default:;
-        }
+                // noop cases
+            case CT_QUAL_END: case CT_QUAL_CONST: case CT_QUAL_RESTRICT: case CT_QUAL_VOLATILE:;
+            }
 
         char const* adptb = NULL;
 #       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
@@ -391,7 +392,7 @@ void emit_named_comps_adpt_type_def(struct ct_decl_type cref ty)
     case CT_KIND_STRUCT:
     case CT_KIND_UNION:
         if (-1ul == ty->info.comp.count)
-    default:
+    case CT_KIND_NOTAG:
             return;
     }
 
@@ -449,9 +450,13 @@ bool adpt_type_val_needs_define(struct ct_decl_type cref ty) {
     case CT_KIND_UNION:
     case CT_KIND_ENUM:
         return true;
-    default:
+    case CT_KIND_PTR:
+    case CT_KIND_FUN:
+    case CT_KIND_ARR:
         return false;
     }
+    // unreachable
+    return false;
 }
 
 void emit_extern(ct_declaration cref decl)
@@ -467,7 +472,8 @@ void emit_extern(ct_declaration cref decl)
         case CT_KIND_ENUM:
             emit_forward(&decl->type, NULL, false);
             emitln(";");
-        default:;
+            // unreachable cases
+        case CT_KIND_NOTAG: case CT_KIND_PTR: case CT_KIND_FUN: case CT_KIND_ARR:;
         }
     }
     emit_named_comps_adpt_type_def(&decl->type);
@@ -579,7 +585,9 @@ void emit_top(void* _, ct_declaration cref decl, ct_bufsl ref tok)
     }
 
     switch (decl->spec) {
-    default: // others are unreachable
+        // unreachable cases
+    case CT_SPEC_AUTO:
+    case CT_SPEC_REGISTER:
         return;
 
     case CT_SPEC_STATIC: // internal linkage (not visible)

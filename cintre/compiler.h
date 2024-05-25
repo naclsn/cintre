@@ -230,8 +230,10 @@ enum _ct_arith_w _ct_slot_arith_w(struct ct_slot cref slot)
     case CT_TYPE_ULONG:  return _oprw_64;
     case CT_TYPE_FLOAT:  return _oprw_f;
     case CT_TYPE_DOUBLE: return _oprw_d;
-    default: return 0;
+        // unreachable cases
+    case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:;
     }
+    return 0;
 }
 
 size_t _ct_slot_arith_v(struct ct_slot cref slot)
@@ -248,8 +250,10 @@ size_t _ct_slot_arith_v(struct ct_slot cref slot)
     case CT_TYPE_ULONG:  return slot->as.value.ul;
     case CT_TYPE_FLOAT:  return slot->as.value.f;
     case CT_TYPE_DOUBLE: return slot->as.value.d;
-    default: return 0;
+        // unreachable cases
+    case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:;
     }
+    return 0;
 }
 
 void _ct_emit_extend(ct_compile_state ref cs, struct ct_slot cref big_dst, struct ct_slot cref small_src)
@@ -281,7 +285,8 @@ void _ct_emit_extend(ct_compile_state ref cs, struct ct_slot cref big_dst, struc
     case CT_TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
     case CT_TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
     case CT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
-    default:;  \
+        /* unreachable cases */  \
+    case CT_TYPE_VOID: case CT_TYPE_FLOAT: case CT_TYPE_DOUBLE: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:;  \
     } while (0)
 
 #define _cfold_arith(dst, lhs, op, rhs)  \
@@ -297,7 +302,8 @@ void _ct_emit_extend(ct_compile_state ref cs, struct ct_slot cref big_dst, struc
     case CT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
     case CT_TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
     case CT_TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
-    default:;  \
+        /* unreachable cases */  \
+    case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:;  \
     } while (0)
 
 /// makes a slot "pysical", ie if it was a value, it will be inserted as data
@@ -576,7 +582,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 else slot->as.value.d = r;
                 break;
 
-            default:;
+            default:; // (12 cases ><'')
             }
 
             slot->usage = _slot_value;
@@ -858,7 +864,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 slot->usage = _slot_used;
                 break;
 
-            default:;
+            default:; // (43 cases ><'')
             }
         }
         return;
@@ -957,7 +963,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_remi:  _cfold_arith_ints(slot, &lhs, %,  &rhs); break;
                 case _ops_divi:  _cfold_arith     (slot, &lhs, /,  &rhs); break;
                 case _ops_muli:  _cfold_arith     (slot, &lhs, *,  &rhs); break;
-                default:;
+                default:; // (15 cases ><'')
                 }
                 slot->usage = _slot_value;
                 break;
@@ -974,7 +980,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_subi:  op = _ops_rsubi;  break;
                 case _ops_remi:  op = _ops_rremi;  break;
                 case _ops_divi:  op = _ops_rdivi;  break;
-                default:;
+                default:; // (20 cases ><'')
                 }
                 if (0)
             case _slot_value    <<8| _slot_used:
@@ -1004,7 +1010,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_remi:  op = _ops_rem;  break;
                 case _ops_divi:  op = _ops_div;  break;
                 case _ops_muli:  op = _ops_mul;  break;
-                default:;
+                default:; // (15 cases ><'')
                 }
                 _ct_emit_arith(cs, op, _ct_slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
                         _slot_variable == slot->usage ? atv(slot) : at(slot),
@@ -1133,7 +1139,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_UNOP_LNOT: _cfold_arith(slot, &(struct ct_slot){0}, ||!, slot); break;
             case CT_UNOP_MINUS: _cfold_arith(slot, &(struct ct_slot){0}, -, slot); break;
             case CT_UNOP_PLUS: break;
-            default:;
+            default:; // (44 cases ><'')
             }
             break;
 
@@ -1145,7 +1151,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_UNOP_LNOT: notif("NIY: emit lnot"); break;
             case CT_UNOP_MINUS: _ct_emit_arith(cs, _ops_subi, _ct_slot_arith_w(slot), at(slot), 0, at_slot); break;
             case CT_UNOP_PLUS: _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
-            default:;
+            default:; // (44 cases ><'')
             }
             slot->usage = _slot_used;
         }
@@ -1187,7 +1193,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 slot->usage = _slot_used;
                 break;
 
-            default:;
+            default:; // (43 cases ><'')
             }
             return;
         }

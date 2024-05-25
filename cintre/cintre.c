@@ -244,7 +244,8 @@ void ct_cintre_cleanup(ct_cintre_state ref gs)
         for (size_t kk = 0; kk < fun->count; kk++) free((void*)fun->params[kk].name);
         free((void*)fun->params);
         break;
-    default:;
+        // noop cases
+    case CT_TYPE_VOID: case CT_TYPE_CHAR: case CT_TYPE_UCHAR: case CT_TYPE_SCHAR: case CT_TYPE_SHORT: case CT_TYPE_INT: case CT_TYPE_LONG: case CT_TYPE_USHORT: case CT_TYPE_UINT: case CT_TYPE_ULONG: case CT_TYPE_FLOAT: case CT_TYPE_DOUBLE: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:;
     }
     free(gs->ty_work.ptr);
 
@@ -314,8 +315,10 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
             case CT_QUAL_LONG:      _long = true;            break;
             case CT_QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
             case CT_QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
-            default:;
-        }
+
+                // noop cases
+            case CT_QUAL_END: case CT_QUAL_CONST: case CT_QUAL_RESTRICT: case CT_QUAL_VOLATILE:;
+            }
 
 #       define nameis(s)  (strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
         if (nameis("char"))
@@ -599,7 +602,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
                 case CT_ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
                 case CT_ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
                 case CT_ITEM_TYPEDEF: printf("   [typedef] %-8s\t", it->name);            break;
-                default: printf("   ??? %-8s\t", it->name);
+                    // unreachable case
+                case CT_ITEM_VARIABLE:;
                 }
                 ct_print_type(stdout, it->type, true);
                 printf("\n");

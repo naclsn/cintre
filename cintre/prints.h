@@ -190,7 +190,7 @@ void ct_print_expr(FILE ref strm, ct_expression cref expr, unsigned const depth)
         ct_print_expr(strm, expr->info.subscr.off, depth+1);
         break;
 
-    default:
+    default: // (33 cases ><'')
         ct_print_expr(strm, expr->info.binary.lhs, depth+1);
         ct_print_expr(strm, expr->info.binary.rhs, depth+1);
         break;
@@ -554,7 +554,12 @@ void ct_print_slot(FILE ref strm, struct ct_slot cref slot)
         case CT_TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
         case CT_TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
         case CT_TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
-        default:             fprintf(strm, "%p",       slot->as.value.p);  break;
+        case CT_TYPE_FUN:
+        case CT_TYPE_PTR:
+        case CT_TYPE_ARR:    fprintf(strm, "%p",       slot->as.value.p);  break;
+
+            // unreachable cases
+        case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_NAMED:;
         }
         break;
 

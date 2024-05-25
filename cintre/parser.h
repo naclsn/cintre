@@ -385,8 +385,10 @@ void _ct_parse_decl_fixup(ct_parse_decl_state ref ps, struct _ct_parse_decl_capt
         case CT_KIND_PTR: it = (ct_declaration**)&(*it)->type.info.ptr;      break;
         case CT_KIND_FUN: it = (ct_declaration**)&(*it)->type.info.fun.ret;  break;
         case CT_KIND_ARR: it = (ct_declaration**)&(*it)->type.info.arr.item; break;
-        default:;
-    } while (before != *it);
+            // unreachable cases
+        case CT_KIND_NOTAG: case CT_KIND_STRUCT: case CT_KIND_UNION: case CT_KIND_ENUM:;
+        }
+    while (before != *it);
     *it = after;
 
     capt->then(ps, capt->next, hold);

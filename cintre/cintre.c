@@ -224,6 +224,17 @@ void ct_cintre_cleanup(ct_cintre_state ref gs)
         free((void*)gs->locs.ptr[k].name);
     free(gs->locs.ptr);
 
+    if (gs->save) fclose(gs->save);
+
+    for (size_t k = 0; k < gs->snaps.len; k++) {
+        for (size_t kk = 0; kk < gs->snaps.ptr[k].locs.len; kk++)
+            free((void*)gs->snaps.ptr[k].locs.ptr[kk].name);
+        free(gs->snaps.ptr[k].locs.ptr);
+        for (size_t kk = 0; kk < gs->snaps.ptr[k].chk_interned.len; kk++)
+            free((void*)gs->snaps.ptr[k].chk_interned.ptr[kk].ptr);
+        free(gs->snaps.ptr[k].chk_interned.ptr);
+    }
+
     for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
     case CT_TYPE_STRUCT:
     case CT_TYPE_UNION:;
@@ -557,8 +568,8 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
         printf("   save \"file\"           -  save each next lines to the file\n");
         printf("   load \"file\"           -  load the file, running each lines\n");
-        printf("   qs[ave]                 -  save a snapshot of the state\n");
-        printf("   ql[oad]                 -  load a snapshot of the state\n");
+        printf("   qs[ave]                 -  save a snapshot of the state (list with qq)\n");
+        printf("   ql[oad]                 -  load a snapshot of the state (list with qq)\n");
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
@@ -625,13 +636,19 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
         return;
     }
 
-    // XXX: i hate it and it doesn't even work
+    if (xcmdis("qq")) {
+        printf("Saved states:");
+        for (size_t k = 0; k < gs->snaps.len; k++) printf(" %s", gs->snaps.ptr[k].name);
+        printf("\n");
+        return;
+    }
+
     if (xcmdis("qs") || xcmdis("ql")) {
         ct_bufsl name = ct_lext(&gs->lexr);
-        if (!name.len) name.len = 1, name.ptr = "_";
-        else if (7 < name.len) name.len = 7;
         struct snap* found = NULL;
-        for (size_t k = 0; k < gs->snaps.len; k++) if (memcmp(gs->snaps.ptr[k].name, name.ptr, name.len)) {
+        if (!name.len) name.len = 1, name.ptr = "_";
+        else if (sizeof(found->name)-1 < name.len) name.len = sizeof(found->name)-1;
+        for (size_t k = 0; k < gs->snaps.len; k++) if (!memcmp(gs->snaps.ptr[k].name, name.ptr, name.len)) {
             found = gs->snaps.ptr+k;
             break;
         }
@@ -639,30 +656,60 @@ void ct_accept_expr(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             if ('s' == xcmd.ptr[1]) {
                 found = dyarr_push(&gs->snaps);
                 memcpy(found->name, name.ptr, name.len);
-                found->name[name.len] = '\0';
+                found->name[name.len+1] = '\0';
                 found->locs.ptr = NULL, found->locs.cap = 0;
                 found->chk_interned.ptr = NULL, found->chk_interned.cap = 0;
+                printf("New state: '%s'\n", found->name);
             } else {
                 printf("No state named '%.*s'\n", bufmt(name));
                 return;
             }
         }
-        for (size_t k = 0; k < found->locs.len; k++) free((void*)found->locs.ptr[k].name); // yyy: cast const
-        free(found->locs.ptr);
-        for (size_t k = 0; k < found->chk_interned.len; k++) free(found->chk_interned.ptr[k].ptr);
-        free(found->chk_interned.ptr);
+
+        // XXX: i oh so truly hate it
+
         if ('s' == xcmd.ptr[1]) {
             found->stack = gs->runr;
-            dyarr_resize(&found->locs, gs->locs.len);
-            for (size_t k = 0; k < gs->locs.len; k++) *(char**)found->locs.ptr[k].name = strcpy(ct_mallox(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
-            dyarr_resize(&found->chk_interned, gs->comp.chk_interned.len);
-            for (size_t k = 0; k < gs->comp.chk_interned.len; k++) dyarr_cpy(&found->chk_interned.ptr[k], &gs->comp.chk_interned.ptr[k]);
-        } else {
+
+            for (size_t k = 0; k < found->locs.len; k++) free((void*)found->locs.ptr[k].name); // yyy: cast const
+            found->locs.len = 0;
+            if (gs->locs.len) {
+                dyarr_cpy(&found->locs, &gs->locs);
+                for (size_t k = 0; k < gs->locs.len; k++)
+                    *(char**)&found->locs.ptr[k].name = strcpy(ct_mallox(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
+            }
+
+            for (size_t k = 0; k < found->chk_interned.len; k++) free(found->chk_interned.ptr[k].ptr);
+            found->chk_interned.len = 0;
+            if (gs->comp.chk_interned.len) {
+                dyarr_resize(&found->chk_interned, found->chk_interned.len = gs->comp.chk_interned.len);
+                for (size_t k = 0; k < gs->comp.chk_interned.len; k++) {
+                    found->chk_interned.ptr[k] = (ct_buf){0};
+                    dyarr_cpy(&found->chk_interned.ptr[k], &gs->comp.chk_interned.ptr[k]);
+                }
+            }
+        }
+
+        else {
             gs->runr = found->stack;
-            dyarr_resize(&gs->locs, found->locs.len);
-            for (size_t k = 0; k < found->locs.len; k++) *(char**)gs->locs.ptr[k].name = strcpy(ct_mallox(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
-            dyarr_resize(&gs->comp.chk_interned, found->chk_interned.len);
-            for (size_t k = 0; k < found->chk_interned.len; k++) dyarr_cpy(&gs->comp.chk_interned.ptr[k], &found->chk_interned.ptr[k]);
+
+            for (size_t k = 0; k < gs->locs.len; k++) free((void*)gs->locs.ptr[k].name); // yyy: cast const
+            gs->locs.len = 0;
+            if (found->locs.len) {
+                dyarr_cpy(&gs->locs, &found->locs);
+                for (size_t k = 0; k < found->locs.len; k++)
+                    *(char**)&gs->locs.ptr[k].name = strcpy(ct_mallox(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
+            }
+
+            for (size_t k = 0; k < gs->comp.chk_interned.len; k++) free(gs->comp.chk_interned.ptr[k].ptr);
+            gs->comp.chk_interned.len = 0;
+            if (found->chk_interned.len) {
+                dyarr_resize(&gs->comp.chk_interned, gs->comp.chk_interned.len = found->chk_interned.len);
+                for (size_t k = 0; k < found->chk_interned.len; k++) {
+                    gs->comp.chk_interned.ptr[k] = (ct_buf){0};
+                    dyarr_cpy(&gs->comp.chk_interned.ptr[k], &found->chk_interned.ptr[k]);
+                }
+            }
         }
     }
 

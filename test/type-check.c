@@ -10,8 +10,8 @@ struct ct_adpt_item const* test_lookup(void* _, ct_bufsl const name)
     typedef int (*pu_fpty)(char*, unsigned long);
     static ct_bufsl ar[3] = {0};
 
-    static struct ct_adpt_item const si_it = {.name= "si", .type= &ct_adptb_int_type, .kind= CT_ITEM_VALUE, .as.object= &si};
-    static struct ct_adpt_item const ui_it = {.name= "ui", .type= &ct_adptb_uint_type, .kind= CT_ITEM_VALUE, .as.object= &ui};
+    static struct ct_adpt_item const si_it = {.name= "si", .type= &ct_adptb_int_type, .kind= CT_ITEM_OBJECT, .as.object= &si};
+    static struct ct_adpt_item const ui_it = {.name= "ui", .type= &ct_adptb_uint_type, .kind= CT_ITEM_OBJECT, .as.object= &ui};
 
     static struct ct_adpt_type const cp_ty = {
         .size= sizeof(char*), .align= alignof(char*),
@@ -34,7 +34,7 @@ struct ct_adpt_item const* test_lookup(void* _, ct_bufsl const name)
     static struct ct_adpt_item const ab_it = {
         .name= "abuf",
         .type= &ab_ty,
-        .kind= CT_ITEM_VALUE,
+        .kind= CT_ITEM_OBJECT,
         .as.object= &ab,
     };
 
@@ -54,7 +54,7 @@ struct ct_adpt_item const* test_lookup(void* _, ct_bufsl const name)
     static struct ct_adpt_item const pu_it = {
         .name= "put",
         .type= &pu_ty,
-        .kind= CT_ITEM_VALUE,
+        .kind= CT_ITEM_OBJECT,
         .as.function= NULL,
     };
 
@@ -69,7 +69,7 @@ struct ct_adpt_item const* test_lookup(void* _, ct_bufsl const name)
     static struct ct_adpt_item const ar_it = {
         .name= "arry",
         .type= &ar_ty,
-        .kind= CT_ITEM_VALUE,
+        .kind= CT_ITEM_OBJECT,
         .as.object= &ar,
     };
 

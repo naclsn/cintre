@@ -67,7 +67,7 @@ struct ct_slot {
           unsigned long ul;
           float f;
           double d;
-          void* p;
+          char const* p;
           unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
       } value;
       size_t variable;
@@ -150,12 +150,14 @@ void _ct_emit_move(ct_compile_state ref cs, size_t const dst, size_t const width
 
 void _ct_emit_write(ct_compile_state ref cs, size_t const ptr_dst_slt, struct ct_slot cref slot_src)
 {
-    _emit_instr_w_opr(0x2f, ptr_dst_slt, slot_src->ty->size, at(slot_src));
+    //_emit_instr_w_opr(0x2d, ptr_dst_slt, slot_src->ty->size, at(slot_src));
+    _emit_instr_w_opr(0x2d, ptr_dst_slt, slot_src->ty->size, _slot_variable == slot_src->usage ? atv(slot_src) : at(slot_src));
 }
 
 void _ct_emit_read(ct_compile_state ref cs, size_t const ptr_src_slt, struct ct_slot cref slot_dst)
 {
-    _emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, at(slot_dst));
+    //_emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, at(slot_dst));
+    _emit_instr_w_opr(0x2f, ptr_src_slt, slot_dst->ty->size, _slot_variable == slot_dst->usage ? atv(slot_dst) : at(slot_dst));
 }
 
 void _ct_emit_lea(ct_compile_state ref cs, size_t const dst, size_t const off)
@@ -271,7 +273,9 @@ void _ct_emit_extend(ct_compile_state ref cs, struct ct_slot cref big_dst, struc
         CT_TYPE_LONG  == small_src->ty->tyty;
 
     _emit_instr_w_opr(_ct_l2(small_src->ty->size)<<4 | _ct_l2(big_dst->ty->size) | !is_src_signed<<2,
-            at(big_dst), at(small_src));
+            //at(big_dst), at(small_src));
+            _slot_variable == big_dst->usage ? atv(big_dst) : at(big_dst),
+            _slot_variable == small_src->usage ? atv(small_src) : at(small_src));
 }
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)  \
@@ -316,6 +320,62 @@ void _ct_materialize_slot(ct_compile_state ref cs, struct ct_slot ref slot)
     }
 }
 
+//void _ct_write_object_from_stack(ct_compile_state ref cs, struct ct_slot cref from, void cref as_object)
+
+void _ct_read_object_to_stack(ct_compile_state ref cs, struct ct_slot cref into, void cref as_object)
+{
+    struct ct_slot ptr = {.ty= &(struct ct_adpt_type){
+        .size= sizeof(void*), .align= sizeof(void*),
+        .tyty= CT_TYPE_PTR, // xxx: USL
+        .info.ptr= into->ty, // xxx: USL
+    }};
+    _ct_alloc_slot(cs, &ptr);
+    _ct_emit_data(cs, at(&ptr), ptr.ty->size, (unsigned char*)&as_object); // (yyy: endianness)
+    _ct_emit_read(cs, at(&ptr), into);
+    _ct_rewind_slot(cs, &ptr);
+}
+
+void _ct_value_cvt_matrix(struct ct_slot ref dst, struct ct_slot cref src)
+{
+#   define _as_CHAR(__s)    ((__s)->as.value.c)
+#   define _as_UCHAR(__s)   ((__s)->as.value.uc)
+#   define _as_SCHAR(__s)   ((__s)->as.value.sc)
+#   define _as_SHORT(__s)   ((__s)->as.value.ss)
+#   define _as_INT(__s)     ((__s)->as.value.si)
+#   define _as_LONG(__s)    ((__s)->as.value.sl)
+#   define _as_USHORT(__s)  ((__s)->as.value.us)
+#   define _as_UINT(__s)    ((__s)->as.value.ui)
+#   define _as_ULONG(__s)   ((__s)->as.value.ul)
+#   define _as_FLOAT(__s)   ((__s)->as.value.f)
+#   define _as_DOUBLE(__s)  ((__s)->as.value.d)
+#   define _as(__t, __s) _as_##__t(__s)
+
+#   define _list1(__do     ) __do(CHAR     ) __do(UCHAR     ) __do(SCHAR     ) __do(SHORT     ) __do(INT     ) __do(LONG     ) __do(USHORT     ) __do(UINT     ) __do(ULONG     ) __do(FLOAT     ) __do(DOUBLE     )
+#   define _list2(__do, __x) __do(__x, CHAR) __do(__x, UCHAR) __do(__x, SCHAR) __do(__x, SHORT) __do(__x, INT) __do(__x, LONG) __do(__x, USHORT) __do(__x, UINT) __do(__x, ULONG) __do(__x, FLOAT) __do(__x, DOUBLE)
+
+#   define _do1(__tdst        ) case CT_TYPE_##__tdst: switch (src->ty->tyty) { _list2(_do2, __tdst) /* unreachable cases */ case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:; } break;
+#   define _do2(__tdst, __tsrc) case CT_TYPE_##__tsrc: _as(__tdst, dst) = _as(__tsrc, src); break;
+                                                       switch (dst->ty->tyty) { _list1(_do1        ) /* unreachable cases */ case CT_TYPE_VOID: case CT_TYPE_STRUCT: case CT_TYPE_UNION: case CT_TYPE_FUN: case CT_TYPE_PTR: case CT_TYPE_ARR: case CT_TYPE_NAMED:; }
+#   undef _do2
+#   undef _do1
+
+#   undef _list2
+#   undef _list1
+
+#   undef _as
+#   undef _as_DOUBLE
+#   undef _as_FLOAT
+#   undef _as_ULONG
+#   undef _as_UINT
+#   undef _as_USHORT
+#   undef _as_LONG
+#   undef _as_INT
+#   undef _as_SHORT
+#   undef _as_SCHAR
+#   undef _as_UCHAR
+#   undef _as_CHAR
+}
+
 /// fits an expression to a slot by compiling into it with any necessary
 /// conversion step (allocates and de-allocates a slot if needed)
 void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, struct ct_slot ref slot)
@@ -352,6 +412,8 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
     bool const is_to_int = CT_TYPE_CHAR <= slot->ty->tyty && slot->ty->tyty <= CT_TYPE_ULONG;
     bool const is_to_flt = CT_TYPE_FLOAT <= slot->ty->tyty && slot->ty->tyty <= CT_TYPE_DOUBLE;
 
+    // TODO: more properly handle ptr <-> int
+
     // not a number, nothing to do about it, all should be already type-sound
     if (!is_to_int && !is_to_flt) {
         ct_compile_expression(cs, expr, slot);
@@ -370,7 +432,7 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
     //bool const is_to_signed = CT_TYPE_SCHAR == ct_slot->ty->tyty || CT_TYPE_SHORT == ct_slot->ty->tyty || CT_TYPE_INT == ct_slot->ty->tyty || CT_TYPE_LONG == ct_slot->ty->tyty;
     //bool const is_to_unsigned = CT_TYPE_UCHAR == ct_slot->ty->tyty || CT_TYPE_USHORT == ct_slot->ty->tyty || CT_TYPE_UINT == ct_slot->ty->tyty || CT_TYPE_ULONG == ct_slot->ty->tyty;
     //bool const is_from_signed = CT_TYPE_SCHAR == expr_ty->tyty || CT_TYPE_SHORT == expr_ty->tyty || CT_TYPE_INT == expr_ty->tyty || CT_TYPE_LONG == expr_ty->tyty;
-    bool const is_from_unsigned = CT_TYPE_UCHAR == expr_ty->tyty || CT_TYPE_USHORT == expr_ty->tyty || CT_TYPE_UINT == expr_ty->tyty || CT_TYPE_ULONG == expr_ty->tyty;
+    //bool const is_from_unsigned = CT_TYPE_UCHAR == expr_ty->tyty || CT_TYPE_USHORT == expr_ty->tyty || CT_TYPE_UINT == expr_ty->tyty || CT_TYPE_ULONG == expr_ty->tyty;
 
     struct ct_slot tmp = {.ty= expr_ty};
 
@@ -381,40 +443,23 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
 
         switch (tmp.usage) {
         case _slot_value:
-            slot->usage = _slot_value;
             _ct_cancel_slot(cs, &tmp);
-            switch (expr_ty->tyty <<8| slot->ty->tyty) {
-            case CT_TYPE_LONG <<8| CT_TYPE_FLOAT:  slot->as.value.f = tmp.as.value.sl; break;
-            case CT_TYPE_ULONG <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.ul; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_CHAR:   slot->as.value.c = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_UCHAR:  slot->as.value.uc = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_SCHAR:  slot->as.value.sc = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_SHORT:  slot->as.value.ss = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_USHORT: slot->as.value.us = tmp.as.value.f; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_CHAR:   slot->as.value.c = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_UCHAR:  slot->as.value.uc = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_SCHAR:  slot->as.value.sc = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_SHORT:  slot->as.value.ss = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_INT:    slot->as.value.si = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_USHORT: slot->as.value.us = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_UINT:   slot->as.value.ui = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.d; break;
-            default: memcpy(slot->as.value.bytes, tmp.as.value.bytes, slot->ty->size); // (yyy: endianness)
-            }
+            _ct_value_cvt_matrix(slot, &tmp);
+            slot->usage = _slot_value;
             break;
 
         case _slot_used:
-            slot->usage = _slot_used;
             // TODO: this is the int case
             _ct_emit_move(cs, at(slot), slot->ty->size, at(&tmp)); // (yyy: endianness)
             _ct_rewind_slot(cs, &tmp);
+            slot->usage = _slot_used;
             break;
 
         case _slot_variable:
-            slot->usage = _slot_variable;
             // TODO: this is the int case
             slot->as.variable = tmp.as.variable; // (yyy: endianness)
             _ct_cancel_slot(cs, &tmp);
+            slot->usage = _slot_variable;
             break;
         }
     }
@@ -426,64 +471,117 @@ void _ct_fit_expr_to_slot(ct_compile_state ref cs, ct_expression cref expr, stru
 
         switch (tmp.usage) {
         case _slot_value:
+            _ct_value_cvt_matrix(slot, &tmp);
             slot->usage = _slot_value;
-            switch (expr_ty->tyty <<8| slot->ty->tyty) {
-            case CT_TYPE_CHAR   <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.c; break;
-            case CT_TYPE_UCHAR  <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.uc; break;
-            case CT_TYPE_SCHAR  <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.sc; break;
-            case CT_TYPE_SHORT  <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.ss; break;
-            case CT_TYPE_INT    <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.si; break;
-            case CT_TYPE_USHORT <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.us; break;
-            case CT_TYPE_UINT   <<8| CT_TYPE_FLOAT: slot->as.value.f = tmp.as.value.ui; break;
-            case CT_TYPE_CHAR   <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.c; break;
-            case CT_TYPE_UCHAR  <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.uc; break;
-            case CT_TYPE_SCHAR  <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.sc; break;
-            case CT_TYPE_SHORT  <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ss; break;
-            case CT_TYPE_INT    <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.si; break;
-            case CT_TYPE_LONG   <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.sl; break;
-            case CT_TYPE_USHORT <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.us; break;
-            case CT_TYPE_UINT   <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ui; break;
-            case CT_TYPE_ULONG  <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.ul; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_INT:   slot->as.value.si = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_UINT:  slot->as.value.ui = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_LONG:  slot->as.value.sl = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_ULONG: slot->as.value.ul = tmp.as.value.f; break;
-            case CT_TYPE_FLOAT <<8| CT_TYPE_DOUBLE: slot->as.value.d = tmp.as.value.f; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_LONG:  slot->as.value.sl = tmp.as.value.d; break;
-            case CT_TYPE_DOUBLE <<8| CT_TYPE_ULONG: slot->as.value.ul = tmp.as.value.d; break;
-            default:
-                if (is_from_unsigned)
-                    memcpy(slot->as.value.bytes, memcpy((unsigned char[sizeof slot->as.value.bytes]){0}, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
-                else {
-                    unsigned char x[sizeof slot->as.value.bytes] = {0};
-                    bool const sign_bit = tmp.as.value.bytes[expr_ty->size-1] & 0x80; // (yyy: endianness)
-                    if (sign_bit) memset(x, 0xff, sizeof x);
-                    memcpy(slot->as.value.bytes, memcpy(x, tmp.as.value.bytes, expr_ty->size), slot->ty->size);
-                }
-            }
             break;
 
         case _slot_used:
-            slot->usage = _slot_used;
             // TODO: this is the int case
             _ct_emit_extend(cs, slot, &(struct ct_slot){
                 .ty= expr_ty,
                 .loc= tmp.loc,
                 .usage= _slot_used,
             });
+            slot->usage = _slot_used;
             break;
 
         case _slot_variable:
-            slot->usage = _slot_used;
             // TODO: this is the int case
             _ct_emit_extend(cs, slot, &(struct ct_slot){
                 .ty= expr_ty,
                 .loc= tmp.as.variable,
                 .usage= _slot_used,
             });
+            slot->usage = _slot_used;
             break;
         }
     }
+} // _ct_fit_expr_to_slot
+
+/// returned slot should be
+/// - value, and it's an object (C pointer in as.value.p) (don't cancel)
+/// - used, and it's a pointer put on the stack; slot's ty is not correct (as in it is not the pointer type)! (slot should be rewinded afterward)
+/// - variable (don't cancel)
+struct ct_slot _ct_compile_lvalue(ct_compile_state ref cs, ct_expression cref expr)
+{
+    struct ct_slot r = {.ty= _ct_truetype(expr->usr)};
+
+    switch (expr->kind) {
+    case CT_ATOM: {
+            // can only be ident
+            struct ct_adpt_item cref found = cs->lookup(cs->usr, expr->info.atom);
+            switch (found->kind) {
+            case CT_ITEM_OBJECT:
+                r.as.value.p = found->as.object;
+                r.usage = _slot_value;
+                break;
+
+            case CT_ITEM_VARIABLE:
+                r.as.variable = found->as.variable;
+                r.usage = _slot_variable;
+                break;
+
+                // unreachable cases
+            case CT_ITEM_VALUE: case CT_ITEM_TYPEDEF:;
+            }
+        }
+        break;
+
+    case CT_UNOP_MEMBER: {
+            ct_expression cref base_ex = expr->info.member.base;
+
+            ct_bufsl const name = *expr->info.member.name;
+            struct ct_adpt_type cref base_ty = _ct_truetype(base_ex->usr);
+            struct ct_adpt_comp_desc cref comp = &base_ty->info.comp;
+            size_t off = 0;
+            for (size_t k = 0; k < comp->count; k++) if (bufis(name, comp->fields[k].name)) {
+                off = comp->fields[k].offset;
+                break;
+            }
+
+            struct ct_slot base = {.ty= base_ty};
+            _ct_alloc_slot(cs, &base);
+            ct_compile_expression(cs, base_ex, &base);
+
+            switch (base.usage) {
+            case _slot_value:
+                _ct_cancel_slot(cs, &base);
+                r.as.value.p = base.as.value.p+off;
+                r.usage = _slot_value;
+                break;
+
+            case _slot_used:
+                r.as.variable = base.loc+off;
+                r.usage = _slot_variable;
+                // caller doesn't know about `base` being on the stack
+                // but it works out because:
+                // - if caller allocs another one, it will be correctly put atop `base`
+                // - when caller rewind/cancel its own, it will encompase `base`
+                // this is not great, quite hackish even, and I will not be
+                // surprised when this eventually generates unexpected things
+                break;
+
+            case _slot_variable:
+                _ct_cancel_slot(cs, &base);
+                r.as.variable = base.as.variable+off;
+                r.usage = _slot_variable;
+                break;
+            }
+        }
+        break;
+
+    case CT_BINOP_SUBSCR:
+    case CT_UNOP_DEREF:
+    case CT_UNOP_PMEMBER:
+        notif("NIY: this kind of lvalue");
+        r.usage = _slot_value;
+        break;
+
+        // unreachable cases
+    default:; // (43 cases ><'')
+    }
+
+    return r;
 }
 // }}}
 
@@ -589,7 +687,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             return;
         }
 
-        struct ct_adpt_item const* found = cs->lookup(cs->usr, expr->info.atom);
+        struct ct_adpt_item cref found = cs->lookup(cs->usr, expr->info.atom);
         switch (found->kind) {
         case CT_ITEM_VALUE:
             slot->as.value.sl = found->as.value;
@@ -597,8 +695,8 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             break;
 
         case CT_ITEM_OBJECT:
-            slot->as.value.ul = (size_t)found->as.object; // xxx: is a C pointer
-            slot->usage = _slot_value;
+            _ct_read_object_to_stack(cs, slot, found->as.object);
+            slot->usage = _slot_used;
             break;
 
         case CT_ITEM_TYPEDEF:
@@ -642,10 +740,10 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                     } else if (_slot_variable == off.usage) _ct_cancel_slot(cs, &off);
 
                     struct ct_slot ptr = {.ty= &(struct ct_adpt_type){
-                            .size= sizeof(void*), .align= sizeof(void*),
-                            .tyty= CT_TYPE_PTR, // xxx: USL
-                            .info.ptr= base.ty, // xxx: USL
-                        }};
+                        .size= sizeof(void*), .align= sizeof(void*),
+                        .tyty= CT_TYPE_PTR, // xxx: USL
+                        .info.ptr= base.ty, // xxx: USL
+                    }};
                     _ct_alloc_slot(cs, &ptr);
                     _ct_emit_lea(cs, at(&ptr), atv(&base));
 
@@ -826,46 +924,47 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
 
             _ct_fit_expr_to_slot(cs, src_ex, slot);
 
-            struct ct_slot dst = {.ty= _ct_truetype(dst_ex->usr)};
-            switch (dst_ex->kind) {
-            case CT_ATOM:
-            case CT_UNOP_MEMBER:
-                ct_compile_expression(cs, dst_ex, &dst);
-                // can be stack variable or static global object;
-                // for now only support stack variable
-                if (_slot_variable != dst.usage) {
-                    notif("NIY: only supports stack variables for now");
-                    slot->usage = _slot_used;
-                    return;
-                }
+            struct ct_slot dst = _ct_compile_lvalue(cs, dst_ex);
 
+            switch (dst.usage) {
+            case _slot_value:;
+                void cref as_object = dst.as.value.p;
+                dst.ty = &(struct ct_adpt_type){
+                    .size= sizeof(void*), .align= sizeof(void*),
+                    .tyty= CT_TYPE_PTR, // xxx: USL
+                    .info.ptr= dst.ty, // xxx: USL
+                };
+                _ct_alloc_slot(cs, &dst);
+                _ct_emit_data(cs, at(&dst), dst.ty->size, (unsigned char*)&as_object); // (yyy: endianness)
+                break;
+
+            case _slot_used:
+                break;
+
+            case _slot_variable:
                 if (op) {
                     tmp = dst;
                     goto sw_asgn_binop;
                 }
 
                 switch (slot->usage) {
-                case _slot_value:
-                    _ct_emit_data(cs, atv(&dst), dst.ty->size, slot->as.value.bytes); // (yyy: endianness)
-                    break;
-                case _slot_used:
-                    _ct_emit_move(cs, atv(&dst), dst.ty->size, at(slot));
-                    break;
-                case _slot_variable:
-                    _ct_emit_move(cs, atv(&dst), dst.ty->size, atv(slot));
-                    break;
+                case _slot_value:    _ct_emit_data(cs, atv(&dst), dst.ty->size, slot->as.value.bytes); break; // (yyy: endianness)
+                case _slot_used:     _ct_emit_move(cs, atv(&dst), dst.ty->size, at(slot));             break;
+                case _slot_variable: _ct_emit_move(cs, atv(&dst), dst.ty->size, atv(slot));            break;
                 }
-                break; // return;
-
-            case CT_BINOP_SUBSCR:
-            case CT_UNOP_DEREF:
-            case CT_UNOP_PMEMBER:
-                notif("NIY: assigning to this kind of lvalue");
-                slot->usage = _slot_used;
-                break;
-
-            default:; // (43 cases ><'')
+                return;
             }
+            // if falling out: dst is a pointer to far, put on the stack
+
+            if (op) {
+                notif("NIY: using this kind of lvalue here (compound assignment through pointer or to global variable)");
+                slot->usage = _slot_used;
+                return;
+            }
+
+            _ct_materialize_slot(cs, slot);
+            _ct_emit_write(cs, at(&dst), slot);
+            _ct_rewind_slot(cs, &dst);
         }
         return;
 
@@ -896,7 +995,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 lhs = *slot;
                 _ct_fit_expr_to_slot(cs, ptr, &lhs);
                 if (_slot_value == lhs.usage) {
-                    notif("IKD: ptr arith on a compile time - this is surely very wrong");
+                    notif("IDK: ptr arith on a compile time - this is surely very wrong");
                     slot->usage = _slot_used;
                     return;
                 }
@@ -963,6 +1062,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_remi:  _cfold_arith_ints(slot, &lhs, %,  &rhs); break;
                 case _ops_divi:  _cfold_arith     (slot, &lhs, /,  &rhs); break;
                 case _ops_muli:  _cfold_arith     (slot, &lhs, *,  &rhs); break;
+                    // unreachable cases
                 default:; // (15 cases ><'')
                 }
                 slot->usage = _slot_value;
@@ -980,6 +1080,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_subi:  op = _ops_rsubi;  break;
                 case _ops_remi:  op = _ops_rremi;  break;
                 case _ops_divi:  op = _ops_rdivi;  break;
+                    // unreachable or noop cases
                 default:; // (20 cases ><'')
                 }
                 if (0)
@@ -1010,6 +1111,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
                 case _ops_remi:  op = _ops_rem;  break;
                 case _ops_divi:  op = _ops_div;  break;
                 case _ops_muli:  op = _ops_mul;  break;
+                    // unreachable cases
                 default:; // (15 cases ><'')
                 }
                 _ct_emit_arith(cs, op, _ct_slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
@@ -1031,16 +1133,30 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
         return;
 
     case CT_UNOP_ADDR: {
-            struct ct_slot obj = {.ty= _ct_truetype(expr->info.unary.opr->usr)};
             //if (..FUN..) slot->usage = _slot_var.. idk;
-            ct_compile_expression(cs, expr->info.unary.opr, &obj);
-            if (_slot_variable != obj.usage) {
-                notif("NIY: only supports stack variables for now");
-                slot->usage = _slot_used;
+
+            struct ct_slot obj = _ct_compile_lvalue(cs, expr->info.unary.opr);
+
+            switch (obj.usage) {
+            case _slot_value:
+                slot->as.value.p = obj.as.value.p;
+                slot->usage = _slot_value;
+                break;
+
+            case _slot_used:
+                //notif("NIY: only supports stack variables for now");
+                //slot->usage = _slot_used;
+                //_ct_rewind_slot(cs, &obj);
+                // XXX: hackish atop hackish
+                slot->as.variable = obj.loc;
+                slot->usage = _slot_variable;
                 return;
+
+            case _slot_variable:
+                _ct_emit_lea(cs, at(slot), atv(&obj));
+                slot->usage = _slot_used;
+                break;
             }
-            _ct_emit_lea(cs, at(slot), atv(&obj));
-            slot->usage = _slot_used;
         }
         return;
 
@@ -1139,6 +1255,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_UNOP_LNOT: _cfold_arith(slot, &(struct ct_slot){0}, ||!, slot); break;
             case CT_UNOP_MINUS: _cfold_arith(slot, &(struct ct_slot){0}, -, slot); break;
             case CT_UNOP_PLUS: break;
+                // unreachable cases
             default:; // (44 cases ><'')
             }
             break;
@@ -1151,6 +1268,7 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
             case CT_UNOP_LNOT: notif("NIY: emit lnot"); break;
             case CT_UNOP_MINUS: _ct_emit_arith(cs, _ops_subi, _ct_slot_arith_w(slot), at(slot), 0, at_slot); break;
             case CT_UNOP_PLUS: _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
+                // unreachable cases
             default:; // (44 cases ><'')
             }
             slot->usage = _slot_used;
@@ -1163,38 +1281,33 @@ void ct_compile_expression(ct_compile_state ref cs, ct_expression cref expr, str
     case CT_UNOP_PRE_INC: post = false; op = _ops_addi;  goto sw_crement;
     case CT_UNOP_POST_DEC: post = true; op = _ops_rsubi; goto sw_crement;
     case CT_UNOP_POST_INC: post = true; op = _ops_addi;  goto sw_crement;
-        sw_crement:
+        sw_crement:;
 
-            switch (expr->info.unary.opr->kind) {
-            case CT_ATOM:
-            case CT_UNOP_MEMBER:
-                ct_compile_expression(cs, expr->info.unary.opr, slot);
-                // can be stack variable or static global object;
-                // for now only support stack variable
-                if (_slot_variable != slot->usage) {
-                    notif("NIY: only supports stack variables for now");
-                    slot->usage = _slot_used;
-                    return;
-                }
-
-                if (post) {
-                    _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot));
-                    slot->usage = _slot_used;
-                }
-                _ct_emit_arith(cs, op, _ct_slot_arith_w(slot), atv(slot),
-                        CT_TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
-                        atv(slot));
-                break;
-
-            case CT_BINOP_SUBSCR:
-            case CT_UNOP_DEREF:
-            case CT_UNOP_PMEMBER:
-                notif("NIY: assigning to this kind of lvalue");
+            struct ct_slot dst = _ct_compile_lvalue(cs, expr->info.unary.opr);
+            switch (dst.usage) {
+            case _slot_value:
+                notif("NIY: using this kind of lvalue here (increment/decrement global variable)");
                 slot->usage = _slot_used;
-                break;
+                return;
 
-            default:; // (43 cases ><'')
+            case _slot_used:
+                notif("NIY: using this kind of lvalue here (increment/decrement through pointer or global variable)");
+                slot->usage = _slot_used;
+                _ct_rewind_slot(cs, &dst);
+                return;
+
+            case _slot_variable:
+                break;
             }
+
+            if (post) {
+                _ct_emit_move(cs, at(slot), slot->ty->size, atv(slot));
+                slot->usage = _slot_used;
+            }
+            _ct_emit_arith(cs, op, _ct_slot_arith_w(slot), atv(slot),
+                    CT_TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
+                    atv(slot));
+
             return;
         }
     }

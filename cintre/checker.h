@@ -104,17 +104,20 @@ bool _ct_are_types_compatible(struct ct_adpt_type cref dst, struct ct_adpt_type 
 #   undef _are_types_same
 }
 
-bool _ct_is_expr_lvalue(ct_expression cref expr)
+bool _ct_is_expr_lvalue(ct_compile_state cref cs, ct_expression cref expr)
 {
-    // yeah no idea either that'll do for now until it actually shows too much
     switch (expr->kind) {
-    case CT_ATOM:;
-        return isidstart(*expr->info.atom.ptr);
+    case CT_ATOM:
+        if (!isidstart(*expr->info.atom.ptr)) return false;
+        struct ct_adpt_item const* found = cs->lookup(cs->usr, expr->info.atom);
+        return CT_ITEM_OBJECT == found->kind || CT_ITEM_VARIABLE == found->kind;
+
     case CT_BINOP_SUBSCR:
     case CT_UNOP_DEREF:
     case CT_UNOP_PMEMBER:
     case CT_UNOP_MEMBER:
         return true;
+
     default: // (43 cases ><'')
         return false;
     }
@@ -391,7 +394,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_BINOP_ASGN_REM:
     case CT_BINOP_ASGN_DIV:
     case CT_BINOP_ASGN_MUL:
-        if (!_ct_is_expr_lvalue(expr->info.binary.lhs)) fail("Expression is not assignable");
+        if (!_ct_is_expr_lvalue(cs, expr->info.binary.lhs)) fail("Expression is not assignable");
         failforward(lhs, expr->info.binary.lhs);
         failforward(rhs, expr->info.binary.rhs);
         tlhs = _ct_truetype(lhs);
@@ -492,7 +495,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
         fail_got_2types(lhs, rhs, "Both operands are not of an arithmetic type");
 
     case CT_UNOP_ADDR:
-        if (_ct_is_expr_lvalue(expr->info.unary.opr)) {
+        if (_ct_is_expr_lvalue(cs, expr->info.unary.opr)) {
             failforward(opr, expr->info.unary.opr);
             return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct ct_adpt_type){
                     .size= sizeof(void*),
@@ -557,7 +560,7 @@ struct ct_adpt_type const* ct_check_expression(ct_compile_state ref cs, ct_expre
     case CT_UNOP_PRE_INC:
     case CT_UNOP_POST_DEC:
     case CT_UNOP_POST_INC:
-        if (!_ct_is_expr_lvalue(expr->info.unary.opr)) fail("Expression is not assignable");
+        if (!_ct_is_expr_lvalue(cs, expr->info.unary.opr)) fail("Expression is not assignable");
         failforward(opr, expr->info.unary.opr);
         topr = _ct_truetype(opr);
         if (isnum(topr) || isptr(topr)) return expr->usr = (void*)opr;

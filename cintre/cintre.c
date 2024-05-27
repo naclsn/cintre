@@ -438,7 +438,7 @@ struct ct_adpt_type const* _ct_decl_to_adpt_type(ct_cintre_state ref gs, struct 
                 .kind= CT_UNOP_CAST,
                 .info.cast= {
                     .opr= ty->info.arr.count,
-                    .type= &(struct ct_decl_type){.quals= {CT_QUAL_UNSIGNED, CT_QUAL_LONG}},
+                    .type= &(struct ct_decl_type){.quals= {CT_QUAL_LONG}},
                 },
             };
             if (!ct_check_expression(&gs->comp, &cast)) return NULL;

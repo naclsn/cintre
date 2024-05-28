@@ -791,7 +791,12 @@ ct_bufsl ct_lext(ct_lex_state ref ls)
                             else if (nameis("__LINE__")) repl.len = snprintf((void*)(repl.ptr = tmp), sizeof tmp, "%zu", ls->line);
                             else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
                             else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));
-                            else search_namespace(name, macro->params) { repl = argv[k]; break; }
+                            else search_namespace(name, macro->params) {
+                                // FIXME: needs to do a complete expansion
+                                // (https://gcc.gnu.org/onlinedocs/cpp/Argument-Prescan.html)
+                                repl = argv[k];
+                                break;
+                            }
                             if (name.ptr != repl.ptr) dyarr_replace(work, name.ptr-work->ptr, name.len, &repl);
                             k = k-name.len+repl.len;
                         } else k++;

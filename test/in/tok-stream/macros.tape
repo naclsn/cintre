@@ -44,4 +44,18 @@
 [test/in/tok-stream/macros: 32]	-
 [test/in/tok-stream/macros: 32]	#
 [test/in/tok-stream/macros: 32]	three
-[test/in/tok-stream/macros: 51]	
+[test/in/tok-stream/macros: 36]	42
+[test/in/tok-stream/macros: 36]	:
+[test/in/tok-stream/macros: 36]	42
+[test/in/tok-stream/macros: 36]	,
+[test/in/tok-stream/macros: 36]	"obj_like42"
+[test/in/tok-stream/macros: 42]	43
+[test/in/tok-stream/macros: 42]	:
+[test/in/tok-stream/macros: 42]	_A
+[test/in/tok-stream/macros: 48]	44
+[test/in/tok-stream/macros: 48]	:
+[test/in/tok-stream/macros: 48]	X_BUFSIZE
+[test/in/tok-stream/macros: 49]	45
+[test/in/tok-stream/macros: 49]	:
+[test/in/tok-stream/macros: 49]	X_1024
+[test/in/tok-stream/macros: 67]	

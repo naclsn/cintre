@@ -31,6 +31,22 @@
 #define fun_like4(one, two) #one-#three
 4: fun_like4(no, u) // error but we'll say "no"-#three
 
+#define fun_like32(a) a , #a
+#define obj_like42 42
+42: fun_like32(obj_like42) // 42 , "obj_like42"
+
+#define _JOIN(__l, __r) __l##__r
+#define _XJOIN(__l, __r) _JOIN(__l, __r)
+#define unpar(x) x
+#define some(par_x) _XJOIN(_, unpar par_x)
+43: some((A)) // _A
+
+#define AFTERX(x) X_ ## x
+#define XAFTERX(x) AFTERX(x)
+#define TABLESIZE 1024
+#define BUFSIZE TABLESIZE
+44: AFTERX(BUFSIZE) // X_BUFSIZE
+45: XAFTERX(BUFSIZE) // X_1024
 
 /*
   - if function-like,

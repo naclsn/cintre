@@ -1,861 +1,1190 @@
 /// C lexer with inbuilt preprocessor; example:
 /// ```c
-/// ct_lex_state ls = {0};              // cpp
-/// ct_ldef(&ls, "_XOPEN_SOURCE", "1"); //  -D_XOPEN_SOURCE=1
-/// ct_linc(&ls, "./lib/include");      //  -I./lib/include
-/// ct_lini(&ls, "./main.c");           //  ./main.c
+/// lex_state ls = {0};                    // $ cpp
+/// lex_define(&ls, "_XOPEN_SOURCE", "1"); //     -D_XOPEN_SOURCE=1
+/// lex_include(&ls, "lib/include");       //     -Ilib/include
+/// lex_entry(&ls, "./main.c");            //     ./main.c
 ///
-/// while (!lend(&ls)) {
-///     ct_bufsl const token = ct_lext(&ls);
-///     // note: the last ("EOF") token has `token.len == 0`
-///     printf("[%s:%zu] %.*s\n", ls.file, ls.line, (int)token.len, token.ptr);
+/// size_t k;
+/// // EOF is an empty token ("", so starts with '\0')
+/// while (k = lext(ls), ls.tokens.ptr[k]) {
+///     printf("[%s:%3zu]\t%s\n",
+///             // current file name as C-string
+///             ls.work.ptr+ls.sources.ptr[ls.sources.len-1].file,
+///             // current line number, 1-based
+///             ls.sources.ptr[ls.sources.len-1].line,
+///             // returned token `k` as C-string
+///             ls.tokens.ptr+k);
 /// }
 ///
-/// ct_ldel(&ls);
+/// lex_free(&ls);
 /// ```
 ///
-/// comments can also be obtained by defining `on_lcom`,
-/// unrecognised preprocessor directives (such as pragmas) with `on_lunr`
-/// and "system includes" (angle bracket syntax) with `on_lsys`:
-/// ```c
-/// #define on_lcom(com) printf("%.*s\n", (unsigned)com.len, com.ptr);
-/// #define on_lunr(dir) printf("%.*s\n", (unsigned)dir.len, dir.ptr);
-/// #define on_lsys(pth) printf("%.*s\n", (unsigned)pth.len, pth.ptr);
-/// ```
+/// Recognised 'user config' macros are the following:
+/// - on_lex_comment
+/// - on_lex_sysinclude
+/// - on_lex_missinclude
+/// - on_lex_unknowndir
+/// - on_lex_preprocerr
 
-// TODO: rewrite
-// - use C streams rather than buffers
-// - allocate tokens in a single pool
-// - proper way to recycle a single token
+// (yyy: modified for cintre)
 
 #ifndef CINTRE_LEXER_H
 #define CINTRE_LEXER_H
 
-#include "common.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-typedef struct ct_lex_state {
-    ct_bufsl slice;
-    char const* file;
-    size_t line;
-    size_t sidx;
-    unsigned macro_depth;
-    ct_dyarr(struct _ct_lex_state_source {
-        char const* file;
-        ct_buf text;
-    }) sources;
-    ct_dyarr(ct_bufsl) include_paths;
-    ct_dyarr(struct _ct_lex_state_macro {
-        ct_bufsl name;
-        ct_bufsl repl;
-        ct_dyarr(struct { ct_bufsl name; }) params;
-    }) macros;
-    ct_dyarr(struct _ct_lex_state_hold {
-        ct_bufsl slice;
-        char const* file;
-        size_t line;
-        size_t sidx;
-    }) include_stack;
-    ct_dyarr(char) ifdef_stack; // 0 if enabled, 1 if disabled, 2 if locked
-    ct_dyarr(ct_buf) workbufs;
-} ct_lex_state;
+typedef struct lex_state lex_state;
 
-/// add to defined macros
-void ct_ldef(ct_lex_state ref ls, char cref name, char cref value);
-/// add to include paths
-void ct_linc(ct_lex_state ref ls, char cref path);
+/// add to defined macros (-D)
+void lex_define(lex_state* const ls, char const* const name, char const* const value);
+/// remove from defined macros (-U)
+void lex_undef(lex_state* const ls, char const* const name);
+/// add to include paths (-I)
+void lex_incdir(lex_state* const ls, char const* const path);
 /// set the entry file, lexer ready to go
-void ct_lini(ct_lex_state ref ls, char cref entry);
-/// clear and delete everything (do not hold on to ct_bufsl tokens!)
-void ct_ldel(ct_lex_state ref ls);
-/// true if no more token (also last token is empty)
-#define lend(__ls) (!(__ls)->slice.len && !(__ls)->include_stack.len)
-/// current line (at the end of last token) or empty if end of input
-ct_bufsl ct_llne(ct_lex_state cref ls);
+void lex_entry(lex_state* const ls, FILE* const stream, char const* const file);
+/// go back (at most) `count` tokens (only reason it'd do less is if it found the begining since last `lex_entry`)
+void lex_rewind(lex_state* const ls, size_t const count);
+/// clear and delete everything (do not hold on to tokens!)
+void lex_free(lex_state* const ls);
 /// compute a preprocessor expression
-long ct_lxpr(ct_lex_state cref ls, ct_bufsl ref xpr);
-/// next token, move forward
-ct_bufsl ct_lext(ct_lex_state ref ls);
+long lex_eval(lex_state* const ls, char const* const expr);
+/// next token, move forward (your char* is at `ls->tokens.ptr+return`, don't hold on to the ptr but to the offset)
+size_t lext(lex_state* const ls);
 
-/// uint c = '\\' == ptr[k]
-///        ? ct_unescape(ptr, len, &k)
-///        : ptr[k++];
-int ct_unescape(char cref ptr, size_t const len, size_t* const k)
-{
-    int r = 0;
-    switch (ptr[++*k]) {
-        case'\'': ++*k; return '\''; break;
-        case '"': ++*k; return '\"'; break;
-        case '?': ++*k; return '\?'; break;
-        case'\\': ++*k; return '\\'; break;
-        case 'a': ++*k; return '\a'; break;
-        case 'b': ++*k; return '\b'; break;
-        case 'f': ++*k; return '\f'; break;
-        case 'n': ++*k; return '\n'; break;
-        case 'r': ++*k; return '\r'; break;
-        case 't': ++*k; return '\t'; break;
-        case 'v': ++*k; return '\v'; break;
+/// make `"a\nb"` (including the quotes and the backslash) from `{0x61, 0x0a, 0x62}`
+size_t lex_strquo(char* const quoted, size_t const size, char const* const unquoted, size_t const length);
+/// make `{0x61, 0x0a, 0x62}` from `"a\nb"` (including the quotes and the backslash)
+size_t lex_struqo(char* const unquoted, size_t const size, char const* const quoted);
 
-        case 'x':
-            r = 0;
-            static char const dgts[] = "0123456789abcdef";
-            char const* v = strchr(dgts, ptr[++*k]|32);
-            do r = (r<<4) + (v-dgts);
-            while (++*k < len && (v = strchr(dgts, ptr[*k]|32)));
-            break;
+#define arry(...) struct { __VA_ARGS__* ptr; size_t len, cap; }
 
-        case 'u':
-        case 'U':
-            notif("NIY: 'Universal character names' (Unicode)");
-            return 0;
-            break;
+struct lex_state {
+    arry(struct lex_macro {
+        size_t name; // in ls->work
+        size_t value; // in ls->work
+        size_t length; // of value (can be multiple \0-separated tokens)
+        int params; // -1 if object-like
+        int marked; // 0 if can expand
+    }) macros;
+    arry(char const*) paths;
 
-        default:
-            if ('0' <= ptr[*k] && ptr[*k] <= '7')
-                do r = (r<<3) + (ptr[*k]-'0');
-                while ('0' <= ptr[++*k] && ptr[*k] <= '7');
-            else ++*k;
-    }
-    return r;
-}
+    arry(struct lex_source {
+        FILE* stream;
+        size_t file; // in ls->work
+        size_t line; // 1 based
+    }) sources;
+    char gotc; // private
+    short nlend, noxid, nomrg; // private
+    char const* cstream; // (essentially) private
 
-// ---
+    arry(char) work; // (mostly) private
 
-ct_buf _ct_lex_read_all(FILE ref f)
-{
-    ct_buf r = {0};
-    if (!fseek(f, 0, SEEK_END)) {
-        r.ptr = ct_mallox(r.len = r.cap = ftell(f));
-        fseek(f, 0, SEEK_SET);
-        fread(r.ptr, 1, r.len, f);
-    } else do {
-        size_t const a = r.len ? r.len*2 : 1024;
-        dyarr_resize(&r, a);
-        r.len+= fread(r.ptr+r.len, 1, a-r.len, f);
-    } while (!feof(f) && !ferror(f));
-    return r;
-}
-
-void ct_ldef(ct_lex_state ref ls, char cref name, char cref value)
-{
-    struct _ct_lex_state_macro* it = dyarr_push(&ls->macros);
-    *it = (struct _ct_lex_state_macro){0};
-    it->name.len = strlen(it->name.ptr = name);
-    it->repl.len = strlen(it->repl.ptr = value);
-}
-
-void ct_linc(ct_lex_state ref ls, char cref path)
-{
-    ct_bufsl* it = dyarr_push(&ls->include_paths);
-    it->ptr = path;
-    it->len = strlen(path);
-}
-
-void ct_lini(ct_lex_state ref ls, char cref entry)
-{
-    FILE* f = !strcmp("-", entry) ? stdin : fopen(entry, "rb");
-    if (!f) exitf("Could not open entry file %s", entry);
-    struct _ct_lex_state_source* src = dyarr_push(&ls->sources);
-    src->file = src->text.ptr = NULL;
-    size_t n = strlen(entry);
-    char* dup = ct_mallox(n+1);
-    memcpy(dup, entry, n);
-    dup[n] = '\0';
-    src->file = dup;
-    src->text = _ct_lex_read_all(f);
-    if (stdin != f) fclose(f);
-    if (!src->text.len) exitf("Could not read entry file %s", entry);
-    ls->slice.ptr = src->text.ptr;
-    ls->slice.len = src->text.len;
-    ls->file = src->file;
-    ls->line = 1;
-    ls->sidx = 0;
-}
-
-void ct_ldel(ct_lex_state ref ls)
-{
-    for (size_t k = 0; k < ls->sources.len; k++) {
-        free((void*)ls->sources.ptr[k].file);
-        dyarr_clear(&ls->sources.ptr[k].text);
-    }
-    dyarr_clear(&ls->sources);
-    dyarr_clear(&ls->include_paths);
-    for (size_t k = 0; k < ls->macros.len; k++) dyarr_clear(&ls->macros.ptr[k].params);
-    dyarr_clear(&ls->macros);
-    dyarr_clear(&ls->ifdef_stack);
-    for (size_t k = 0; k < ls->workbufs.len; k++) dyarr_clear(&ls->workbufs.ptr[k]);
-    dyarr_clear(&ls->workbufs);
-}
-
-ct_bufsl ct_llne(ct_lex_state cref ls)
-{
-    ct_bufsl r = {.ptr= ls->slice.ptr};
-    if (!ls->slice.len) return r;
-    ct_buf cref ins = &ls->sources.ptr[ls->sidx].text;
-    while (ins->ptr < r.ptr && '\n' != r.ptr[-1]) r.ptr--, r.len++;
-    char cref end = memchr(ls->slice.ptr, '\n', ins->len-(ls->slice.ptr-ins->ptr));
-    r.len = end ? (size_t)(end-r.ptr) : ins->len-(r.ptr-ins->ptr);
-    return r;
-}
-
-// preproc expression helpers {{{
-static long _ct_lex_atmxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
-{
-#   define nx() (++xpr->ptr, --xpr->len)
-#   define at() (*xpr->ptr)
-    long r = 0;
-    if (!xpr->len) return 0;
-    while (strchr(" \t\n\\", at()) && nx());
-    if ('0' <= at() && at() <= '9') {
-        unsigned shft = 0;
-        char const* dgts = "0123456789";
-        if ('0' == at() && nx()) switch (at()) {
-        case 'x':
-        case 'X': nx(); shft = 4; dgts = "0123456789abcdef"; break;
-        default:        shft = 3; dgts = "01234567";         break;
-        }
-        if (!xpr->len) return 0;
-        char const* v = strchr(dgts, at()|32);
-        if (!v) return 0;
-        do r = (!shft ? r*10 : r<<shft) + (v-dgts);
-        while (nx() && (v = strchr(dgts, at()|32)));
-        if (xpr->len && strchr("ulUL", at())) nx();
-    } else if ('\'' == at()) {
-        //r = '\\' == at() ? ct_unescape(...) : at();
-        while (nx() && '\'' != at()) {
-            if ('\\' == at()) switch (nx() ? at() : 0) {
-            case '0': r = r<<8 | '\0'; break;
-            case'\'': r = r<<8 | '\''; break;
-            case '"': r = r<<8 | '\"'; break;
-            case '?': r = r<<8 | '\?'; break;
-            case'\\': r = r<<8 | '\\'; break;
-            case 'a': r = r<<8 | '\a'; break;
-            case 'b': r = r<<8 | '\b'; break;
-            case 'f': r = r<<8 | '\f'; break;
-            case 'n': r = r<<8 | '\n'; break;
-            case 'r': r = r<<8 | '\r'; break;
-            case 't': r = r<<8 | '\t'; break;
-            case 'v': r = r<<8 | '\v'; break;
-            default: return 0;
-            } else r = r<<8 | at();
-        }
-        nx();
-    } else if ('(' == at() && nx()) {
-        r = ct_lxpr(ls, xpr);
-        if (xpr->len && ')' == at()) nx();
-    } else if (isidstart(at())) {
-        bool defd = strlen("defined") < xpr->len && !memcmp("defined", xpr->ptr, strlen("defined"));
-        bool pars = false;
-        if (defd) {
-            xpr->ptr+= strlen("defined");
-            xpr->len-= strlen("defined");
-            if (!xpr->len) return 0;
-            while (strchr(" \t\n\\", at()) && nx());
-            pars = xpr->len && '(' == at();
-            if (pars && nx()) while (strchr(" \t\n\\", at()) && nx());
-        }
-        ct_bufsl name = {.ptr= xpr->ptr};
-        while (nx() && isidcont(at()));
-        name.len = xpr->ptr - name.ptr;
-        search_namespace(name, ls->macros) {
-            ct_bufsl w = ls->macros.ptr[k].repl;
-            r = defd ? 1 : ct_lxpr(ls, &w);
-            break;
-        }
-        if (pars && xpr->len) {
-            while (strchr(" \t\n\\", at()) && nx());
-            if (xpr->len && ')' == at()) nx();
-        }
-    } else switch (at()) {
-    case '-': nx(); r = -ct_lxpr(ls, xpr); break;
-    case '+': nx(); r = +ct_lxpr(ls, xpr); break;
-    case '~': nx(); r = ~ct_lxpr(ls, xpr); break;
-    case '!': nx(); r = !ct_lxpr(ls, xpr); break;
-    }
-    return r;
-}
-enum _ct_lex_operator {
-    _lex_opnone,
-    _lex_oplor,
-    _lex_opland,
-    _lex_opbor,
-    _lex_opbxor,
-    _lex_opband,
-    _lex_opeq, _lex_opne,
-    _lex_oplt, _lex_opgt, _lex_ople, _lex_opge,
-    _lex_opbshl, _lex_opbshr,
-    _lex_opadd, _lex_opsub,
-    _lex_opmul, _lex_opdiv, _lex_oprem,
+    size_t ahead; // (preferably) private
+    arry(char) tokens; // \0 \0 <token1> \0 <token2> \0 ... you can look back all you want, but do not interpret anything that's ahead
 };
-static inline long _ct_lex_exexpr(long const lhs, enum _ct_lex_operator const op, long const rhs)
-{
-    switch (op) {
-    case _lex_oplor:  return lhs || rhs;
-    case _lex_opland: return lhs && rhs;
-    case _lex_opbor:  return lhs |  rhs;
-    case _lex_opbxor: return lhs ^  rhs;
-    case _lex_opband: return lhs &  rhs;
-    case _lex_opeq:   return lhs == rhs;
-    case _lex_opne:   return lhs != rhs;
-    case _lex_oplt:   return lhs <  rhs;
-    case _lex_opgt:   return lhs >  rhs;
-    case _lex_ople:   return lhs <= rhs;
-    case _lex_opge:   return lhs >= rhs;
-    case _lex_opbshl: return lhs << rhs;
-    case _lex_opbshr: return lhs >> rhs;
-    case _lex_opadd:  return lhs +  rhs;
-    case _lex_opsub:  return lhs -  rhs;
-    case _lex_opmul:  return lhs *  rhs;
-    case _lex_opdiv:  return lhs /  rhs;
-    case _lex_oprem:  return lhs %  rhs;
-        // unreachable case (i suppose)
-    case _lex_opnone:;
-    }
-    return 0;
+
+#define frry(__a) (free((__a)->cap ? (__a)->ptr : NULL), (__a)->ptr = NULL, (__a)->len = (__a)->cap = 0)
+#define push(__a) ((__a)->len < (__a)->cap || (((__a)->cap || !(__a)->ptr) && ((__a)->ptr = realloc((__a)->ptr, ((__a)->cap+= (__a)->cap+8)*sizeof*(__a)->ptr))) ? (__a)->ptr+(__a)->len++ : (exit(EXIT_FAILURE), (__a)->ptr))
+#define grow(__a, __k, __n) _lex_arrygrow((char**)&(__a)->ptr, &(__a)->len, &(__a)->cap, sizeof*(__a)->ptr, (__k), (__n))
+#define last(__a) ((__a)->ptr+(__a)->len-1)
+#define each(__a) for (void* const _ptr = (__a)->ptr,* const _end = (__a)->ptr+(__a)->len; _end == (__a)->ptr ? (__a)->ptr = _ptr, 0 : 1; ++(__a)->ptr)
+static char* _lex_arrygrow(char** const ptr, size_t* const len, size_t* const cap, size_t const s, size_t const k, size_t const n) {
+    if (!n) return *ptr+k*s;
+    size_t const nlen = *len+n;
+    if (*cap < nlen && !(cap && (*ptr = realloc(*ptr, (*cap = nlen)*s)))) exit(EXIT_FAILURE);
+    if (k < *len) memmove(*ptr+(k+n)*s, *ptr+k*s, (*len-k)*s);
+    return *len = nlen, *ptr+k*s;
 }
-static long _ct_lex_oprxpr(ct_lex_state cref ls, ct_bufsl ref xpr, long lhs, enum _ct_lex_operator lop)
-{
-    long rhs = 0;
-    enum _ct_lex_operator nop;
-again:
-    if (lop) {
-        rhs = ct_lxpr(ls, xpr);
-        if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
+
+// everything between / * and * / or // and newline, 0-terminated, no newline
+#ifndef on_lex_comment
+#define on_lex_comment(ls, cstr) (void)cstr
+#endif
+// the text given in <>, 0-terminated
+#ifndef on_lex_sysinclude
+#define on_lex_sysinclude(ls, cstr) (void)cstr
+#endif
+// the text given in "", 0-terminated
+#ifndef on_lex_missinclude
+#define on_lex_missinclude(ls, cstr) (void)cstr
+#endif
+// everything after the '#' exclusive, 0-terminated, no newline
+#ifndef on_lex_unknowndir
+#define on_lex_unknowndir(ls, cstr) (void)cstr
+#endif
+// everything after the 'error' exclusive, 0-terminated, no newline
+#ifndef on_lex_preprocerr
+#define on_lex_preprocerr(ls, cstr) (void)cstr
+#endif
+
+/*
+static void _lex_dump(lex_state* const ls, FILE* const strm) {
+    fprintf(strm, "lex_state {\n");
+    fprintf(strm, "    macros [\n");
+    each (&ls->macros) {
+        fprintf(strm, "        {   name= \"%s\"\n", ls->work.ptr+ls->macros.ptr->name);
+        fprintf(strm, "            value= ");
+        for (size_t k = 0; k < ls->macros.ptr->length; k+= strlen(ls->work.ptr+ls->macros.ptr->value+k)+1)
+            fprintf(strm, "%s@", ls->work.ptr+ls->macros.ptr->value+k);
+        fprintf(strm, "\n");
+        fprintf(strm, "            length= %zu\n", ls->macros.ptr->length);
+        fprintf(strm, "            params= %d\n", ls->macros.ptr->params);
+        fprintf(strm, "            marked= %s\n", ls->macros.ptr->marked ? "true" : "false");
+        fprintf(strm, "        }\n");
     }
-    nop = _lex_opnone;
+    fprintf(strm, "    ]\n");
+    fprintf(strm, "    paths [\n");
+    each (&ls->paths) fprintf(strm, "        %s\n", *ls->paths.ptr);
+    fprintf(strm, "    ]\n");
+    fprintf(strm, "    sources [\n");
+    each (&ls->sources) fprintf(strm, "        %s:%zu\n", ls->work.ptr+ls->sources.ptr->file, ls->sources.ptr->line);
+    fprintf(strm, "    ]\n");
+    fprintf(strm, "    gotc= 0x%02hhX '%c'\n", ls->gotc, ' ' <= ls->gotc && ls->gotc <= '~' ? ls->gotc : '.');
+    fprintf(strm, "    nlend= %s\n", ls->nlend ? "true" : "false");
+    fprintf(strm, "    noxid= %s\n", ls->noxid ? "true" : "false");
+    fprintf(strm, "    nomrg= %s\n", ls->nomrg ? "true" : "false");
+    fprintf(strm, "    cstream= %s\n", ls->cstream ? ls->cstream : "(null)");
+    fprintf(strm, "    work= ");
+    for (size_t k = 0; k < ls->work.len; k+= strlen(ls->work.ptr+k)+1)
+        fprintf(strm, "%s@", ls->work.ptr+k);
+    fprintf(strm, "\n");
+    fprintf(strm, "    ahead= %zu\n", ls->ahead);
+    fprintf(strm, "    tokens= ");
+    for (size_t k = 0; k < ls->tokens.len; k+= strlen(ls->tokens.ptr+k)+1)
+        fprintf(strm, "%s@", ls->tokens.ptr+k);
+    fprintf(strm, "\n            %*s^\n", (unsigned)(ls->tokens.len - ls->ahead), "");
+    fprintf(strm, "}\n");
+}
+*/
+
+#define curr  (ls->sources.ptr+ls->sources.len-1)
+#define endd  (ls->cstream?! *ls->cstream : feof(curr->stream) || ferror(curr->stream))
+
+#define isnum(__c) ('0' <= (__c) && (__c) <= '9')
+#define isidh(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || '_' == (__c))
+#define isidt(__c) (isidh((__c)) || isnum((__c)))
+
+#define blankchrs " \t\v\f"
+#define nlchrs "\r\n"
+
+static char _lex_getc(lex_state* const ls);
+
+static void _lex_getdelim(lex_state* const ls, char const d) {
     char c;
-    if (xpr->len) switch (c = at()) {
-    case '+': nx(); nop = _lex_opadd;  break;
-    case '-': nx(); nop = _lex_opsub;  break;
-    case '*': nx(); nop = _lex_opmul;  break;
-    case '/': nx(); nop = _lex_opdiv;  break;
-    case '%': nx(); nop = _lex_oprem;  break;
-    case '^': nx(); nop = _lex_opbxor; break;
-    case '=': case '!':
-        if (nx() && '=' == at()) nx();
-        else return 0;
-        nop = '=' == c ? _lex_opeq : _lex_opne;
-    case ':':
+    while (d != (c = _lex_getc(ls)) && !endd) *push(&ls->work) = c;
+}
+
+static void _lex_comment(lex_state* const ls) {
+    do {
+        _lex_getdelim(ls, '*');
+        char const c = _lex_getc(ls);
+        if ('/' == c) break;
+        *push(&ls->work) = '*';
+        *push(&ls->work) = c;
+    } while (!endd);
+}
+
+static char _lex_getc(lex_state* const ls) {
+    if (ls->cstream) {
+        char const c = *ls->cstream++;
+        return c ? c : EOF;
+    }
+
+    char c = ls->gotc ? ls->gotc : fgetc(curr->stream);
+    ls->gotc = '\0';
+    curr->line+= '\n' == c;
+#   define case2(c1, c2, ret) if (c1 == c) { if (c2 == (c = fgetc(curr->stream))) return ret; else ungetc(c, curr->stream), c = c1; }
+    case2('\\', '\n', (++curr->line, _lex_getc(ls)));
+    case2('<', '%', '{');
+    case2('%', '>', '}');
+    case2('<', ':', '[');
+    case2(':', '>', ']');
+    case2('%', ':', '#');
+    size_t const comment_at = ls->work.len;
+    case2('/', '*', (
+        _lex_comment(ls),
+        *push(&ls->work) = '\0',
+        ls->work.len = comment_at,
+        (on_lex_comment(ls, (ls->work.ptr+comment_at))),
+        ' '
+    ));
+    case2('/', '/', (
+        _lex_getdelim(ls, '\n'),
+        *push(&ls->work) = '\0',
+        ls->work.len = comment_at,
+        (on_lex_comment(ls, (ls->work.ptr+comment_at))),
+        '\n'
+    ));
+#   undef case2
+    return c;
+}
+
+static void _lex_ungetc(lex_state* const ls, char const c) {
+    if (ls->cstream) {
+        --ls->cstream;
+        return;
+    }
+
+    ls->gotc = c;
+    curr->line-= '\n' == c;
+}
+
+static void _lex_fclose(lex_state* const ls) {
+    ls->gotc = '\0';
+    if (stdin != curr->stream) fclose(curr->stream);
+    curr->stream = NULL;
+    if (1 < ls->sources.len) --ls->sources.len;
+}
+
+static size_t _lex_simple(lex_state* const ls) {
+    char c;
+#   define next() (c = _lex_getc(ls))
+#   define accu() (*push(&ls->tokens) = next())
+#   define undo() (_lex_ungetc(ls, ls->tokens.ptr[ls->tokens.len-1]), ls->tokens.ptr[ls->tokens.len-1] = '\0')
+
+    size_t const token_at = ls->tokens.len;
+    char const c0 = accu();
+
+    switch (c0) {
+    case '"':
+    case '\'':
+        do if ('\\' == accu()) accu(), accu();
+        while (c0 != c && !endd);
         break;
-    case '<': case '>':
-        if (1 < xpr->len && '=' == xpr->ptr[1]) nx(), nop = '<' == c ? _lex_ople : _lex_opge;
-        else
-        // fall through
-    case '&': case '|':
-        if (1 < xpr->len && c == xpr->ptr[1]) nx(), nop = '&' == c ? _lex_opland : '|' == c ? _lex_oplor : '<' == c ? _lex_opbshl : _lex_opbshr;
-        else nop = '&' == c ? _lex_opband : '|' == c ? _lex_opbor : '<' == c ? _lex_oplt : _lex_opgt;
-        // fall through
-    default: nx();
-    }
-    if (!lop && nop) { lop = nop; goto again; }
-    if (lop < nop) {
-        rhs = _ct_lex_exexpr(lhs, nop, _ct_lex_oprxpr(ls, xpr, rhs, nop));
-        nop = lop;
-    } else {
-        lhs = _ct_lex_exexpr(lhs, lop, rhs);
-        if (nop) lhs = _ct_lex_oprxpr(ls, xpr, lhs, nop);
-    }
-    return nop ? _ct_lex_exexpr(lhs, nop, rhs) : lhs;
-}
-// }}}
-long ct_lxpr(ct_lex_state cref ls, ct_bufsl ref xpr)
-{
-    long first = _ct_lex_atmxpr(ls, xpr);
-    if (xpr->len) while (strchr(" \t\n\\", at()) && nx());
-    if ('?' == at() && nx()) {
-        long maybe = ct_lxpr(ls, xpr);
-        if (xpr->len && ':' == at()) nx();
-        else return 0;
-        return first ? maybe : ct_lxpr(ls, xpr);
-    }
-    return xpr->len && !strchr(":)", at()) ? _ct_lex_oprxpr(ls, xpr, first, _lex_opnone) : first;
-#   undef at
-#   undef nx
-}
 
-ct_bufsl ct_lext(ct_lex_state ref ls)
-{
-#   define nx() (ls->line+= --ls->slice.len && '\n' == *ls->slice.ptr && !ls->macro_depth, ++ls->slice.ptr)
-#   define at() (*ls->slice.ptr)
-#   define has(n) ((n) <= ls->slice.len)
-#   define is(c) ((c) == at())
-#   define isin(lo, hi) ((lo) <= at() && at() <= (hi))
-#   define isid() isidcont(at())
-#   define skip(cx) while (has(1) && (cx)) nx()
-#   define accu(wh) for (                                               \
-        bool accuini = ((wh).len = 0, (wh).ptr = ls->slice.ptr, true);  \
-        accuini;                                                        \
-        accuini = ((wh).len = ls->slice.ptr-(wh).ptr, false)            \
-    )
-
-    skip(strchr(" \t\n\r", at()));
-    if (has(2) && is('\\')) return nx(), ct_lext(ls);
-    if (has(2) && is('/') && strchr("*/", (&at())[1])) {
-#       ifdef on_lcom
-        ct_bufsl comtxt;
-        accu(comtxt)
-#       endif
-        {
-            nx();
-            if ('*' == at()) while (nx(), has(1)) {
-                if (is('*') && '/' == (&at())[1]) {
-                    nx();
-                    nx();
-                    break;
-                }
-            } else do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is('\n'));
-        }
-#       ifdef on_lcom
-        on_lcom(comtxt);
-#       endif
-        return ct_lext(ls);
-    }
-
-    bool const disab = ls->ifdef_stack.len && *dyarr_top(&ls->ifdef_stack);
-
-    if (!ls->macro_depth && has(1) && is('#')) {
-        // preproc directive {{{
-        nx();
-        skip(strchr(" \t", at()));
-        ct_bufsl dir;
-        accu(dir) skip(isid());
-#       define diris(wo) (!memcmp(wo, dir.ptr, dir.len < strlen(wo) ? strlen(wo) : dir.len))
-
-        if (!disab && diris("error")) {
-            skip(strchr(" \t", at()));
-            ct_bufsl err;
-            accu(err) {
-                do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is('\n'));
-            }
-            report_lex_locate(ls, "Error: %.*s", bufmt(err));
-            exitf("Stopping at preprocessor error");
-        }
-
-        else if (!disab && diris("include")) {
-            skip(strchr(" \t", at()));
-            char c = at();
-            nx();
-            bool s;
-            ct_bufsl path;
-            accu(path) {
-                if ((s = '<' == c)) skip(!is('>'));
-                else if ('"' == c) skip(!is('"'));
-            }
-            nx();
-            if (!s) {
-                struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
-                struct _ct_lex_state_source* src = dyarr_push(&ls->sources); // xxx: should avoid re-reading
-                src->file = src->text.ptr = NULL;
-                char const* dirend = strrchr(ls->file, '/');
-                ct_bufsl* it = dirend ? &(ct_bufsl){.ptr= ls->file, .len= dirend-ls->file} : &(ct_bufsl){0};
-                size_t k = -1;
-                do {
-                    char file[2048];
-                    size_t n = 0;
-                    if (it->len+1+path.len < sizeof file) {
-                        if (it->len) {
-                            memcpy(file+n, it->ptr, it->len); n+= it->len;
-                            if ('/' != it->ptr[it->len-1]) file[n++] = '/';
-                        }
-                        memcpy(file+n, path.ptr, path.len); n+= path.len;
-                    }
-                    file[n] = '\0';
-                    FILE* f = fopen(file, "rb");
-                    if (f) {
-                        src->text = _ct_lex_read_all(f);
-                        fclose(f);
-                        if (src->text.len) {
-                            char* dup = ct_mallox(n+1);
-                            memcpy(dup, file, n);
-                            dup[n] = '\0';
-                            src->file = dup;
-                            break;
-                        }
-                    }
-                    it = ls->include_paths.ptr + ++k;
-                } while (k < ls->include_paths.len);
-                //if (!src->text.len) ; // xxx: file not found
-                hold->slice = ls->slice;
-                hold->file = ls->file;
-                hold->line = ls->line;
-                hold->sidx = ls->sidx;
-                ls->slice.ptr = src->text.ptr;
-                ls->slice.len = src->text.len;
-                ls->file = src->file;
-                ls->line = 1;
-                ls->sidx++;
-                return ct_lext(ls);
-            }
-#           ifdef on_lsys
-            else on_lsys(path);
-#           endif
-        }
-
-        else if (!disab && diris("line")) { // xxx: (<backslash><newline>)+ not handled in directive
-            skip(strchr(" \t", at()));
-            ls->line = 0;
-            while (has(1) && isin('0', '9')) ls->line = ls->line*10 + at()-'0', nx();
-            skip(strchr(" \t", at()));
-            if (has(1) && is('"')) {
-                nx();
-                free((void*)ls->file);
-                ls->file = NULL;
-                ct_bufsl path;
-                accu(path) skip(!is('"'));
-                char* dup = ct_mallox(--path.len);
-                dup[path.len] = '\0';
-                memcpy(dup, path.ptr, path.len);
-                ls->file = dup;
-                ls->sources.ptr[ls->sidx].file = dup;
-            }
-        }
-
-        else if (!disab && diris("define")) {
-            skip(strchr(" \t", at()));
-            ct_bufsl name;
-            accu(name) skip(isid());
-            struct _ct_lex_state_macro* it = NULL;
-            search_namespace(name, ls->macros) { it = ls->macros.ptr+k; break; }
-            if (!it) it = dyarr_push(&ls->macros);
-            *it = (struct _ct_lex_state_macro){0};
-            it->name = name;
-            if (is('(')) {
-                nx();
-                skip(strchr(" \t", at()));
-                while (!is(')')) {
-                    ct_bufsl* arg = dyarr_push(&it->params);
-                    accu(*arg) skip(isid() || is('.'));
-                    skip(strchr(" \t", at()));
-                    if (is(',')) {
-                        nx();
-                        skip(strchr(" \t", at()));
-                    }
-                }
-                nx();
-            }
-            skip(strchr(" \t", at()));
-            accu(it->repl) {
-                if (!has(1) || is('\n')) break;
-                do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is('\n'));
-            }
-        }
-
-        else if (!disab && diris("undef")) {
-            skip(strchr(" \t", at()));
-            ct_bufsl name;
-            accu(name) skip(isid());
-            search_namespace(name, ls->macros) {
-                dyarr_remove(&ls->macros, k, 1);
-                break;
-            }
-        }
-
-        else if (diris("ifdef") || diris("ifndef")) {
-            skip(strchr(" \t", at()));
-            ct_bufsl name;
-            accu(name) skip(isid());
-            char* top = dyarr_push(&ls->ifdef_stack);
-            if (!(*top = disab*2)) {
-                *top = 1;
-                search_namespace(name, ls->macros) { *top = 0; break; }
-                if ('n' == dir.ptr[2]) *top^= 1;
-            }
-        }
-
-        else if (diris("if") || diris("elif")) {
-            skip(strchr(" \t", at()));
-            ct_bufsl expr;
-            accu(expr) {
-                if (!has(1) || is('\n')) break;
-                do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is('\n'));
-            }
-            bool e = 'e' == dir.ptr[0];
-            char* top = e ? dyarr_top(&ls->ifdef_stack) : dyarr_push(&ls->ifdef_stack);
-            *top = (e ? 1 != *top : disab) ? 2 : !ct_lxpr(ls, &expr);
-        }
-
-        else if (diris("else")) {
-            char* top = dyarr_top(&ls->ifdef_stack);
-            if (top) *top^= 1;
-        }
-
-        else if (diris("endif")) {
-            dyarr_pop(&ls->ifdef_stack);
-        }
-
-#       ifdef on_lunr
-        else if (!disab) {
-            ct_bufsl dirlne;
-            accu(dirlne) {
-                if (!has(1) || is('\n')) break;
-                do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is('\n'));
-            }
-            dirlne.len+= dirlne.ptr-dir.ptr;
-            dirlne.ptr = dir.ptr;
-            on_lunr(dirlne);
-        }
-#       endif
-
-#       undef diris
-        if (has(1) && !is('\n')) do if (has(1) && is('\\')) nx(); while (nx(), has(1) && !is('\n'));
-        return ct_lext(ls);
-        // }}}
-    } // if is '#'
-
-    if (disab) {
-        skip(!is('\n'));
-        if (has(1)) return ct_lext(ls);
-    }
-
-    // xxx: (<backslash><newline>)+ in a token other than string literal not handled
-    ct_bufsl r;
-    accu(r) {
-        if (!has(1)) {
-            if (!ls->include_stack.len) return r;
-            struct _ct_lex_state_hold ref hold = dyarr_pop(&ls->include_stack);
-            ls->slice = hold->slice;
-            ls->file = hold->file;
-            ls->line = hold->line;
-            ls->sidx = hold->sidx;
-            if (ls->macro_depth) ls->macro_depth--;
-            return ct_lext(ls);
-        }
-
-        if (isin('0', '9') || (is('.') && has(1) && '0' <= (&at())[1] && (&at())[1] <= '9')) {
-            bool const fp = is('.');
-            bool inte = false;
-            char const* dgts = "'0123456789";
-            if (has(2) && is('0')) switch (nx(), at()) {
-            case 'B': case 'b': nx(); dgts = "'01";        inte = true; break;
-            case 'O': case 'o': nx(); dgts = "'01234567";  inte = true; break;
-            case 'X': case 'x': nx(); dgts = "'0123456789ABCDEFabcdef"; break;
-            }
-            skip(strchr(dgts, at()));
-            if (!inte) {
-                if (fp || (has(1) && is('.'))) {
-                    nx();
-                    skip(strchr(dgts, at()));
-                }
-                if (has(2) && strchr("EPep", at())) {
-                    nx();
-                    if (is('-') || is('+')) nx();
-                    skip(strchr("'0123456789", at()));
-                }
-            }
-            skip(strchr("FLUflu", at()));
-        }
-
-        else if (isid()) {
-            ct_bufsl name;
-            accu(name) skip(isid());
-            search_namespace(name, ls->macros) {
-                // expand preproc macro {{{
-                struct _ct_lex_state_macro* macro = ls->macros.ptr+k;
-                size_t argc = 0;
-                ct_bufsl argv[128];
-                bool isva = false;
-                if ('(' == dyarr_top(&macro->name)[1]) { // xxx: 1-char read overrun
-                    isva = macro->params.len && !memcmp("...", dyarr_top(&macro->params)->name.ptr, 3);
-                    skip('(' != at());
-                    do {
-                        nx();
-                        skip(strchr(" \t\n", at()));
-                        if (countof(argv) == argc) continue;
-                        accu(argv[argc]) {
-                            char const* pat = &at();
-                            for (unsigned depth = 0; has(1); nx()) {
-                                if (is('\'') || is('"')) { // xxx: will not handle <backslash><backslash><newline> correctly
-                                    char const c = at();
-                                    if (nx(), has(1)) {
-                                        if (!is(c)) do if (has(1) && is('\\')) nx();
-                                        while (nx(), has(1) && !is(c) && !is('\n'));
-                                    }
-                                } else {
-                                    bool const c = is(')');
-                                    if (!depth && (is(',') || c)) break;
-                                    depth+= is('(')-c;
-                                }
-                            }
-                            if (&at() == pat) break;
-                        }
-                        while (argv[argc].len && strchr(" \t\n\\", argv[argc].ptr[argv[argc].len-1])) argv[argc].len--;
-                        argc++;
-                    } while (!is(')'));
-                    nx();
-                    while (argc < macro->params.len) argv[argc++].len = 0;
-                }
-                struct _ct_lex_state_hold* hold = dyarr_push(&ls->include_stack);
-                ct_buf* work = dyarr_push(&ls->workbufs);
-                *work = (ct_buf){0};
-                if (macro->repl.len) dyarr_replace(work, 0, 0, &macro->repl);
-                k = 0;
-                while (k < work->len) {
-#                   define nameis(li) (strlen(li) == name.len && !memcmp(li, name.ptr, strlen(li)))
-                    char const c = work->ptr[k];
-                    switch (c) {
-                    case '/':
-                        k++;
-                        if (k < work->len) {
-                            if ('*' == work->ptr[k]) {
-                                while (++k < work->len) if ('*' == work->ptr[k] && k < work->len && '/' == work->ptr[k+1]) {
-                                    k+= 2;
-                                    break;
-                                }
-                            } else if ('/' == work->ptr[k]) k = work->len;
-                        }
-                        break;
-                    case '\'':
-                    case '"':
-                        k++;
-                        do if (k < work->len && '\\' == work->ptr[k]) k++;
-                        while (++k < work->len && c != work->ptr[k]);
-                        k++;
-                        break;
-                    case '#':
-                        if (work->len == ++k) break;
-                        // xxx: <numsign> (<backslash><newline>)+ <numsign> not handled
-                        if ('#' == work->ptr[k]) {
-                            size_t st = k-1, ed = k;
-                            while (st && strchr(" \t\n\\", work->ptr[st-1])) st--;
-                            while (++ed < work->len && strchr(" \r\n\\", work->ptr[ed]));
-                            dyarr_remove(work, k = st, ed-st);
-                        } else {
-                            size_t st = k-1;
-                            while (k < work->len && strchr(" \r\n\\", work->ptr[k])) k++;
-                            if (work->len == k) break;
-                            ct_bufsl name = {.ptr= work->ptr+k};
-                            char c = work->ptr[k];
-                            while (k < work->len && isidcont(c)) c = work->ptr[++k];
-                            name.len = work->ptr+k-name.ptr;
-                            ct_bufsl repl;
-                            bool f = false;
-                            if (nameis("__VA_ARGS__") && isva) {
-                                repl.ptr = argv[macro->params.len-1].ptr;
-                                repl.len = argv[argc-1].ptr - repl.ptr + argv[argc-1].len;
-                                f = true;
-                            } else search_namespace(name, macro->params) {
-                                f = true;
-                                repl = argv[k];
-                                break;
-                            }
-                            if (!f) break;
-                            size_t const being_repl_len = (name.ptr+name.len-work->ptr)-st;
-                            size_t esc_repl_len = repl.len;
-                            for (size_t kk = 0; kk < repl.len; kk++) {
-                                if (strchr("\"'", repl.ptr[kk])) esc_repl_len++;
-                                else if ('\\' == repl.ptr[kk] && kk+1 < repl.len && '\n' == repl.ptr[kk+1]) esc_repl_len--;
-                            }
-                            // needs less
-                            if (esc_repl_len+2 < being_repl_len) dyarr_remove(work, st+1, being_repl_len-esc_repl_len-2);
-                            // needs more
-                            else dyarr_insert(work, st+1, esc_repl_len+2-being_repl_len);
-                            memset(work->ptr+st, '?', esc_repl_len+2);
-                            k = st;
-                            work->ptr[k++] = '"';
-                            while (repl.len) switch (*repl.ptr) {
-                            case '\\':
-                                if (1 == repl.len || '\n' == repl.ptr[1]) {
-                            case '\n':
-                                    work->ptr[k++] = ' ';
-                                    ++repl.ptr, --repl.len;
-                                    break;
-                                }
-                                // fall through
-                            case '"':
-                                work->ptr[k++] = '\\';
-                                // fall through
-                            default:
-                                work->ptr[k++] = *repl.ptr;
-                                ++repl.ptr, --repl.len;
-                            } // for inserting characters
-                            work->ptr[k++] = '"';
-                        } // '#name'
-                        break;
-                    default:
-                        if (isidstart(c)) {
-                            ct_bufsl name = {.ptr= work->ptr+k++};
-                            if (k < work->len) {
-                                char c = work->ptr[k];
-                                while (k < work->len && isidcont(c)) c = work->ptr[++k];
-                            }
-                            name.len = work->ptr+k-name.ptr;
-                            ct_bufsl repl = name;
-                            char tmp[32];
-                            time_t tt;
-                            if (nameis("__VA_ARGS__") && isva) repl.len = argv[argc-1].ptr - (repl.ptr = argv[macro->params.len-1].ptr) + argv[argc-1].len;
-                            else if (nameis("__FILE__")) repl.len = strlen(repl.ptr = ls->file), work->ptr[name.ptr-work->ptr] = work->ptr[name.ptr-work->ptr+7] = '"', name.ptr++, name.len-= 2;
-                            else if (nameis("__LINE__")) repl.len = snprintf((void*)(repl.ptr = tmp), sizeof tmp, "%zu", ls->line);
-                            else if (nameis("__DATE__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
-                            else if (nameis("__TIME__")) repl.len = strftime((void*)(repl.ptr = tmp), sizeof tmp, "\"%T\"", localtime((time(&tt), &tt)));
-                            else search_namespace(name, macro->params) {
-                                // FIXME: needs to do a complete expansion
-                                // (https://gcc.gnu.org/onlinedocs/cpp/Argument-Prescan.html)
-                                repl = argv[k];
-                                break;
-                            }
-                            if (name.ptr != repl.ptr) dyarr_replace(work, name.ptr-work->ptr, name.len, &repl);
-                            k = k-name.len+repl.len;
-                        } else k++;
-                    }
-#                   undef nameis
-                } // for k in work
-                hold->slice = ls->slice;
-                hold->file = ls->file;
-                hold->line = ls->line;
-                hold->sidx = ls->sidx;
-                ls->slice.ptr = work->ptr;
-                ls->slice.len = work->len;
-                ls->macro_depth++;
-                return ct_lext(ls);
-                // }}}
-            } // found name in macros
-        }
-
-        else if (is('\'') || is('"')) { // xxx: will not handle <backslash><backslash><newline> correctly
-            char const c = at();
-            if (nx(), has(1)) {
-                if (!is(c)) do if (has(1) && is('\\')) nx();
-                while (nx(), has(1) && !is(c) && !is('\n'));
-                if (has(1)) nx();
-            }
-        }
-
-        else switch (has(2) ? at() : 0) {
+    case '-':
+    case '+': case '&': case '|': case '<': case '>': case '#':
+    case '*': case '/': case '%': case '^': case '=': case '!':
+        accu();
+        switch (c0) {
         case '-':
-            if ('>' == (&at())[1]) nx();
+            if ('>' == c) break;
             else
             // fall through
-        case '+': case '&': case '|': case '<': case '>':
-            if (at() == (&at())[1]) {
-                nx();
-                if (has(2) && ('<' == at() || '>' == at()) && '=' == (&at())[1]) nx();
+        case '+': case '&': case '|': case '<': case '>': case '#':
+            if (c0 == c) {
+                if ('<' == c || '>' == c) {
+                    if ('=' == next()) *push(&ls->tokens) = '=';
+                    else _lex_ungetc(ls, c);
+                }
+                break;
             } else
             // fall through
         case '*': case '/': case '%': case '^': case '=': case '!':
-            if ('=' == (&at())[1]) nx();
+            if ('=' == c) break;
             else
             // fall through
-        case '.':
-            if (has(3) && '.' == (&at())[1] && '.' == (&at())[2]) nx(), nx();
-            // fall through
-        default: nx();
+        default:
+            undo();
+            return token_at;
         }
-    } // accu r
+        break;
 
+    default:
+        if (isidh(c0)) {
+            do accu();
+            while (isidt(c));
+            undo();
+            return token_at;
+        }
+
+        if (isnum(c0) || '.' == c0) {
+            if ('.' == c0 && (accu(), !isnum(c))) {
+                if ('.' == c && '.' == accu()) break;
+                undo();
+                return token_at;
+            }
+
+            char const* dgts = "0123456789";
+            int fp = 1;
+            if ('.' != c0 && '0' == c) switch (accu()|32) {
+            case 'b': dgts = "01";       fp = 0; accu(); break;
+            case 'o': dgts = "01234567"; fp = 0; accu(); break;
+            case 'x': dgts = "0123456789abcdef"; accu(); break;
+            }
+
+            while (strchr(dgts, c|32) || '\'' == c) accu();
+            if (fp) {
+                if ('.' != c0 && '.' == c) {
+                    do accu();
+                    while (strchr(dgts, c|32) || '\'' == c);
+                }
+                if ('e' == (c|32) || 'p' == (c|32)) {
+                    accu();
+                    if ('-' == c || '+' == c) c = '\'';
+                    do accu();
+                    while (strchr("0123456789", c|32) || '\'' == c);
+                }
+            }
+            while ('f' == c || 'l' == c || 'u' == c) accu();
+
+            undo();
+            return token_at;
+        }
+
+        if (c0 < ' ' || '~' < c0) {
+            ls->tokens.ptr[ls->tokens.len-1] = '\0';
+
+            // maybe
+            char const* const blanks = ls->nlend ? blankchrs : nlchrs blankchrs;
+            while (strchr(blanks, c = _lex_getc(ls)));
+            if ('\n' == c) return token_at;
+            _lex_ungetc(ls, c);
+
+            return endd ? token_at : _lex_simple(ls);
+        }
+    }
+
+#   undef undo
+#   undef accu
+#   undef next
+
+    *push(&ls->tokens) = '\0';
+    return token_at;
+}
+
+static size_t _lex_ahead(lex_state* const ls) {
+    size_t const token_at = ls->tokens.len - ls->ahead;
+    size_t const token_len = strlen(ls->tokens.ptr+token_at);
+
+    if (0x1a == ls->tokens.ptr[token_at]) {
+        char const* const name = ls->tokens.ptr+token_at+1;
+        ls->ahead-= token_len+1;
+        for (size_t k = 0; k < ls->macros.len; ++k) if (!strcmp(ls->work.ptr+ls->macros.ptr[k].name, name)) {
+            ls->macros.ptr[k].marked = 0;
+            grow(&ls->tokens, token_at+token_len+1, -token_len-1);
+            return lext(ls);
+        }
+
+        // should be unreachable
+        ls->ahead = 0;
+        return lext(ls);
+    }
+
+    ls->ahead-= token_len+1;
+    return token_at;
+}
+
+static long _lex_eval_top(lex_state* const ls);
+
+static long _lex_eval_one(lex_state* const ls) {
+    tokt const token_at = lext(ls);
+    char const* const token = ls->tokens.ptr+token_at;
+
+    switch (*token) {
+        union { long l; char b[sizeof(long)]; } r;
+    case'\'': return r.l = 0, lex_struqo(r.b, sizeof r.b, token), r.l; // xxx: little endian
+    case '+': return +_lex_eval_one(ls);
+    case '-': return -_lex_eval_one(ls);
+    case '(': return (_lex_eval_top(ls));
+    }
+    if (isnum(*token)) return atol(token);
+    if (!strcmp("defined", token)) {
+        tokt name_at = lext(ls);
+        int par = 0, found = 0;
+        if ('(' == ls->tokens.ptr[name_at]) name_at = lext(ls), par = 1;
+        for (size_t k = 0; k < ls->macros.len; ++k) if (!strcmp(ls->work.ptr+ls->macros.ptr[k].name, ls->tokens.ptr+name_at)) {
+            found = 1;
+            break;
+        }
+        if (par) lext(ls);
+        return found;
+    }
+
+    return 0;
+}
+
+static long _lex_eval_two(lex_state* const ls, long const lhs, size_t const op_at, int* const is_qu) {
+    long rhs = _lex_eval_one(ls);
+    tokt const nop_at = lext(ls);
+
+#   define hash2(a, b) (((a)|(b)<<8)%35)
+#   define hash1(op) (((op)[0]|(op)[1]<<8)%35)
+    int const hop = hash1(ls->tokens.ptr+op_at);
+    int then = 0;
+    if (ls->tokens.ptr[nop_at] && !strchr("?:)", ls->tokens.ptr[nop_at])) {
+        static char const prec[] = {
+            [hash2('|','|')]=   0,
+            [hash2('&','&')]=   1,
+            [hash2('|','\0')]=  2,
+            [hash2('^','\0')]=  3,
+            [hash2('&','\0')]=  4,
+            [hash2('=','=')]=   5,
+            [hash2('!','=')]=   6,
+            [hash2('<','\0')]=  7,
+            [hash2('>','\0')]=  8,
+            [hash2('<','=')]=   9,
+            [hash2('>','=')]=  10,
+            [hash2('<','<')]=  11,
+            [hash2('>','>')]=  12,
+            [hash2('+','\0')]= 13,
+            [hash2('-','\0')]= 14,
+            [hash2('*','\0')]= 15,
+            [hash2('/','\0')]= 16,
+            [hash2('%','\0')]= 17,
+        };
+        if (prec[hop] < prec[hash1(ls->tokens.ptr+nop_at)])
+            rhs = _lex_eval_two(ls, rhs, nop_at, is_qu);
+        else then = 1;
+    } else if ('?' == ls->tokens.ptr[nop_at]) *is_qu = 1;
+#   undef hash1
+
+    long r = lhs;
+    switch (hop) {
+    case hash2('|','|'):  r = lhs || rhs; break;
+    case hash2('&','&'):  r = lhs && rhs; break;
+    case hash2('|','\0'): r = lhs |  rhs; break;
+    case hash2('^','\0'): r = lhs ^  rhs; break;
+    case hash2('&','\0'): r = lhs &  rhs; break;
+    case hash2('=','='):  r = lhs == rhs; break;
+    case hash2('!','='):  r = lhs != rhs; break;
+    case hash2('<','\0'): r = lhs <  rhs; break;
+    case hash2('>','\0'): r = lhs >  rhs; break;
+    case hash2('<','='):  r = lhs <= rhs; break;
+    case hash2('>','='):  r = lhs >= rhs; break;
+    case hash2('<','<'):  r = lhs << rhs; break;
+    case hash2('>','>'):  r = lhs >> rhs; break;
+    case hash2('+','\0'): r = lhs +  rhs; break;
+    case hash2('-','\0'): r = lhs -  rhs; break;
+    case hash2('*','\0'): r = lhs *  rhs; break;
+    case hash2('/','\0'): r = lhs /  rhs; break;
+    case hash2('%','\0'): r = lhs %  rhs; break;
+    }
+#   undef hash2
+
+    return then ? _lex_eval_two(ls, r, nop_at, is_qu) : r;
+}
+
+static long _lex_eval_top(lex_state* const ls) {
+    long const lhs = _lex_eval_one(ls);
+    tokt const op_at = lext(ls);
+
+    int is_qu = '?' == ls->tokens.ptr[op_at];
+    long const r = ls->tokens.ptr[op_at] && !strchr("?:)", ls->tokens.ptr[op_at])
+        ? _lex_eval_two(ls, lhs, op_at, &is_qu)
+        : lhs;
+
+    if (is_qu) {
+        long const consequence = _lex_eval_top(ls), alternative = _lex_eval_top(ls);
+        return r ? consequence : alternative;
+    }
     return r;
+}
+
+static long _lex_eval(lex_state* const ls) {
+    // precondition: 0 == ls->ahead
+    size_t const plen = ls->tokens.len;
+    ls->nlend = 1;
+
+    long const r = _lex_eval_top(ls);
+
+    ls->nlend = 0;
+    ls->tokens.len = plen;
+    ls->ahead = 0;
+    return r;
+}
+
+static void _lex_skipblock(lex_state* const ls, int const can_else) {
+    size_t depth = 1;
+    int done = 0;
+    do {
+        size_t const dir_at = ls->work.len;
+
+        char c;
+        while (strchr(blankchrs, c = _lex_getc(ls)));
+
+        if ('#' == c) {
+            do *push(&ls->work) = c = _lex_getc(ls);
+            while (isidt(c));
+            _lex_ungetc(ls, ls->work.ptr[ls->work.len-1]);
+            ls->work.ptr[ls->work.len-1] = '\0';
+
+#           define diris(__l) (!strcmp(__l, ls->work.ptr+dir_at))
+
+            if (diris("ifdef") || diris("ifndef") || diris("if")) ++depth;
+            else if (diris("endif") && !--depth) done = 1;
+            else if (can_else && 1 == depth) {
+                if (diris("else")) done = 1;
+                else if (diris("elif") && (c = '\n', _lex_eval(ls))) done = 1;
+            }
+
+#           undef diris
+        }
+
+        if ('\n' != c) _lex_getdelim(ls, '\n');
+        ls->work.len = dir_at;
+    } while (!done && (!endd || (_lex_fclose(ls), curr->stream)));
+}
+
+static void _lex_definish(lex_state* const ls, char const maybe_nl, size_t const name_at, int const params) {
+    // precondition: 0 == ls->ahead
+    size_t const plen = ls->tokens.len;
+    ls->nlend = ls->noxid = 1;
+
+    size_t const value_at = ls->work.len;
+    size_t length = 0;
+    if ('\n' != maybe_nl) for (tokt token_at; token_at = lext(ls), ls->tokens.ptr[token_at];) {
+        size_t const token_len = strlen(ls->tokens.ptr+token_at);
+        length+= token_len+1;
+        strcpy(grow(&ls->work, ls->work.len, token_len+1), ls->tokens.ptr+token_at);
+    }
+
+    struct lex_macro* found = NULL;
+    for (size_t k = 0; k < ls->macros.len; ++k) if (!strcmp(ls->work.ptr+ls->macros.ptr[k].name, ls->work.ptr+name_at)) {
+        found = ls->macros.ptr+k;
+        break;
+    }
+    *(found ? found : push(&ls->macros)) = (struct lex_macro){
+        .name= name_at,
+        .value= value_at,
+        .length= length,
+        .params= params,
+    };
+
+    ls->nlend = ls->noxid = 0;
+    ls->tokens.len = plen;
+    ls->ahead = 0;
+}
+
+static void _lex_directive(lex_state* const ls) {
+    char c;
+#   define next() (c = _lex_getc(ls))
+#   define accu() (*push(&ls->work) = next())
+
+    size_t const dir_at = ls->work.len;
+
+    next(); // #
+    while (strchr(blankchrs, next()));
+    if ('\n' == c) return;
+    *push(&ls->work) = c;
+
+    do accu();
+    while (isidt(c));
+    _lex_ungetc(ls, ls->work.ptr[ls->work.len-1]);
+    ls->work.ptr[ls->work.len-1] = '\0';
+    ls->work.len = dir_at;
+
+    while (strchr(blankchrs, next()));
+
+#   define diris(__l) (!strcmp(__l, ls->work.ptr+dir_at))
+    if (0) ;
+
+    else if (diris("error")) {
+        size_t const message_at = ls->work.len;
+        if ('\n' != c) {
+            *push(&ls->work) = c;
+            _lex_getdelim(ls, '\n');
+        }
+        *push(&ls->work) = '\0';
+        ls->work.len = dir_at;
+        on_lex_preprocerr(ls, (ls->work.ptr+message_at));
+
+        _lex_fclose(ls);
+    }
+
+    else if (diris("include")) {
+        size_t const path_at = ls->work.len;
+        int expanded = 0;
+
+        if (isidh(c)) {
+            // precondition: 0 == ls->ahead
+            size_t const plen = ls->tokens.len;
+            ls->nlend = ls->nomrg = 1;
+
+            // xxx: don't wanna support sys-style paths in expansion properly because too janky and you shouldn't anyways
+            _lex_ungetc(ls, c);
+            tokt const res_at = lext(ls);
+            c = strcpy(ls->work.ptr+path_at, ls->tokens.ptr+res_at)[0];
+            expanded = 1;
+
+            ls->nlend = ls->nomrg = 0;
+            ls->tokens.len = plen;
+            ls->ahead = 0;
+        }
+
+        if ('"' == c) {
+            if (!expanded) {
+                while ('"' != accu() && !endd);
+                ls->work.ptr[ls->work.len-1] = '\0';
+                _lex_getdelim(ls, '\n');
+            }
+            ls->work.len = dir_at;
+
+            char file[2048];
+
+            char const* const dirname_end = strrchr(ls->work.ptr+curr->file, '/');
+            if (dirname_end) {
+                memcpy(file, ls->work.ptr+curr->file, dirname_end+1 - ls->work.ptr+curr->file);
+                file[dirname_end+1 - ls->work.ptr+curr->file] = '\0';
+            } else file[0] = '\0';
+
+            size_t k = 0;
+            do {
+                if (file[0] && '/' != file[strlen(file)-1]) file[strlen(file)] = '/';
+                strcat(file, ls->work.ptr+path_at);
+
+                FILE* const stream = fopen(file, "r");
+                if (stream) {
+                    // needs to do it manually here because `_lex_ungetc` would carry the '\n' into the new file
+                    ungetc('\n', curr->stream), --curr->line, ls->gotc = '\0';
+                    size_t const file_at = ls->work.len;
+                    strcpy(grow(&ls->work, ls->work.len, strlen(file)+1), file);
+                    *push(&ls->sources) = (struct lex_source){.stream= stream, .file= file_at, .line= 1};
+                    return;
+                }
+
+                if (k >= ls->paths.len) {
+                    on_lex_missinclude(ls, (ls->work.ptr+path_at));
+                    break;
+                }
+                strcpy(file, ls->paths.ptr[k++]);
+            } while (1);
+        }
+
+        else if ('<' == c) {
+            while ('>' != accu() && !endd);
+            ls->work.ptr[ls->work.len-1] = '\0';
+            _lex_getdelim(ls, '\n');
+            ls->work.len = dir_at;
+            on_lex_sysinclude(ls, (ls->work.ptr+path_at));
+        }
+    }
+
+    else if (diris("define")) {
+        size_t const name_at = ls->work.len;
+        *push(&ls->work) = c;
+        do accu();
+        while (isidt(c));
+        ls->work.ptr[ls->work.len-1] = '\0';
+
+        int params = -1;
+        if ('(' == c) {
+            ++params;
+            while (strchr(blankchrs, next()));
+
+            while (')' != c && !endd) {
+                *push(&ls->work) = c;
+                do accu();
+                while (isidt(c) || '.' == c);
+                ls->work.ptr[ls->work.len-1] = '\0';
+
+                ++params;
+                if (')' == c) break;
+                while (strchr(blankchrs, next()));
+                if (',' == c) while (strchr(blankchrs, next()));
+            }
+        }
+
+        _lex_definish(ls, c, name_at, params);
+    }
+
+    else if (diris("undef")) {
+        size_t const name_at = ls->work.len;
+
+        *push(&ls->work) = c;
+        do accu();
+        while (!strchr(nlchrs blankchrs, c));
+        ls->work.ptr[ls->work.len-1] = '\0';
+        ls->work.len = dir_at;
+
+        lex_undef(ls, ls->work.ptr+name_at);
+        if ('\n' != c) _lex_getdelim(ls, '\n');
+    }
+
+    else if (diris("ifdef") || diris("ifndef") || diris("if")) {
+        _lex_ungetc(ls, c);
+
+        int cond = 0;
+        if ('\0' == ls->work.ptr[dir_at+2]) cond = !!_lex_eval(ls);
+        else {
+            size_t const name_at = ls->work.len;
+            int const n = 'n' == ls->work.ptr[dir_at+2];
+
+            do accu();
+            while (!strchr(nlchrs blankchrs, c));
+            ls->work.ptr[ls->work.len-1] = '\0';
+            ls->work.len = dir_at;
+
+            for (size_t k = 0; k < ls->macros.len; ++k) if (!strcmp(ls->work.ptr+ls->macros.ptr[k].name, ls->work.ptr+name_at)) {
+                cond = 1;
+                break;
+            }
+            if (n) cond = !cond;
+        }
+
+        if (!cond) _lex_skipblock(ls, 1);
+    }
+
+    else if (diris("else") || diris("elif")) {
+        ls->work.len = dir_at;
+        _lex_skipblock(ls, 0);
+    }
+
+    else if (diris("endif")) {
+        if ('\n' != c) _lex_getdelim(ls, '\n');
+        ls->work.len = dir_at;
+    }
+
+    else {
+        ls->work.len+= strlen(ls->work.ptr+dir_at)+1;
+        if ('\n' != c) {
+            ls->work.ptr[ls->work.len-1] = ' ';
+            *push(&ls->work) = c;
+            _lex_getdelim(ls, '\n');
+            *push(&ls->work) = '\0';
+        } else ls->work.ptr[ls->work.len-1] = '\0';
+        ls->work.len = dir_at;
+        on_lex_unknowndir(ls, (ls->work.ptr+dir_at));
+    }
+
+#   undef diris
 
 #   undef accu
-#   undef skip
-#   undef isid
-#   undef isin
-#   undef is
-#   undef has
-#   undef at
-#   undef nx
+#   undef next
+    _lex_ungetc(ls, '\n');
 }
+
+static size_t _lex_expand_arg_asis(lex_state* const ls,
+        struct lex_macro const* const macro, void const* const arry_args,
+        char const* const name, size_t const name_len,
+        size_t const range_start, size_t const range_end) {
+    int const va_args = !strcmp("__VA_ARGS__", name);
+    int found = -1;
+    if (isidh(name[0])) {
+        char const* const search_name = va_args ? "..." : name;
+        char const* curr_name = ls->work.ptr+macro->name;
+        for (int k = 0; curr_name+= strlen(curr_name)+1, k < macro->params; ++k) if (!strcmp(curr_name, search_name)) {
+            found = k;
+            break;
+        }
+    }
+
+    if (!isidh(name[0]) || -1 == found) {
+        memmove(ls->tokens.ptr+range_start, name, name_len+1);
+        grow(&ls->tokens, range_end, name_len+1 - (range_end-range_start));
+        return name_len+1;
+    }
+
+    else {
+        arry(size_t) const* const args = arry_args;
+
+        size_t from_at = ls->work.len-1, repl_len = 1;
+        if (found+1u == args->len || va_args) repl_len = ls->work.len - (from_at = args->ptr[found]);
+        else if ((unsigned)found < args->len) repl_len = args->ptr[found+1]-2 - (from_at = args->ptr[found]);
+
+        grow(&ls->tokens, range_end, repl_len - (range_end-range_start));
+        memcpy(ls->tokens.ptr+range_start, ls->work.ptr+from_at, repl_len);
+        return repl_len;
+    }
+}
+
+static void _lex_expand_id_here(lex_state* const ls, size_t const token_at) {
+    time_t tt;
+    char replace[2048];
+    size_t replace_len = 0;
+
+#   define nameis(__l) (!strcmp(__l, ls->tokens.ptr+token_at))
+    if (0) ;
+
+    else if (nameis("__FILE__")) replace_len = lex_strquo(replace, sizeof replace-1, ls->work.ptr+curr->file, strlen(ls->work.ptr+curr->file));
+    else if (nameis("__LINE__")) replace_len = snprintf(replace, sizeof replace-1, "%zu", curr->line);
+    else if (nameis("__DATE__")) replace_len = strftime(replace, sizeof replace-1, "\"%b %e %Y\"", localtime((time(&tt), &tt)));
+    else if (nameis("__TIME__")) replace_len = strftime(replace, sizeof replace-1, "\"%T\"", localtime((time(&tt), &tt)));
+
+    else for (size_t k = 0; k < ls->macros.len; ++k) if (!ls->macros.ptr[k].marked && nameis(ls->work.ptr+ls->macros.ptr[k].name)) {
+        struct lex_macro* const macro = ls->macros.ptr+k;
+        arry(size_t) args = {0};
+
+        if (-1 < macro->params) {
+            ls->noxid = 1;
+            tokt const par_at = lext(ls);
+            ls->noxid = 0;
+            if ('(' != ls->tokens.ptr[par_at]) {
+                ls->ahead+= strlen(ls->tokens.ptr+par_at)+1;
+                break;
+            }
+            // ls->tokens: name @ ( @ a @ , @ b @ ) @ ...
+            //             (^r)   ^ [ doesn't exists -]
+
+            ls->noxid = 1;
+            size_t comma_at;
+            char c = 0;
+            for (size_t p = 0; ')' != c && !endd; ++p) {
+                size_t const since_at = ls->tokens.len - ls->ahead - 2; // ( @
+                *push(&args) = ls->work.len+2;
+
+                unsigned depth = 0;
+                do {
+                    comma_at = lext(ls), c = ls->tokens.ptr[comma_at];
+                    if (!depth && ')' == c) break;
+                    depth+= ('(' == c) - (')' == c);
+                } while ((depth || ',' != c) && !endd);
+                // ls->tokens: name @ ( @ a @ , @ b @ ) @ ...
+                //                            ^
+
+                size_t const length = comma_at-since_at;
+                memcpy(grow(&ls->work, ls->work.len, length), ls->tokens.ptr+since_at, length);
+                grow(&ls->tokens, comma_at, -length);
+                comma_at-= length;
+                // ls->tokens: name @ , @ b @ ) @ ...
+                //                    ^
+                // ls->work: ( @ a1 @ a2 @
+                // ...
+                // ls->work: ( @ a1 @ a2 @ , @ b1 @ b2 @
+            }
+            ls->noxid = 0;
+            // ls->tokens: name @ ) @ ...
+            grow(&ls->tokens, comma_at+2, -2);
+            // ls->tokens: name @ ...
+        }
+
+        memcpy(grow(&ls->tokens, token_at, macro->length+1), ls->work.ptr+macro->value, macro->length);
+        ls->tokens.ptr[token_at+macro->length] = 0x1a;
+
+        if (args.len) {
+            for (size_t now_at = token_at, end_at = token_at+macro->length; now_at < end_at; ++now_at) {
+                char* const token = ls->tokens.ptr+now_at;
+                size_t repl_len, range_len;
+
+                if ('#' == token[0]) {
+                    if ('#' == token[1]) {
+                        // AAA @ ## @ bbb @  ->  AAABBB @
+                        size_t const next_len = strlen(token+3);
+                        repl_len = _lex_expand_arg_asis(ls,
+                                macro, &args,
+                                token+3, next_len,
+                                now_at-1, now_at+3+next_len+1)-1;
+                        range_len = next_len+4;
+                    } else {
+                        // # @ ccc @  ->  # CCC @ @  ->  " CCC " @
+                        size_t const next_len = strlen(token+2);
+                        repl_len = _lex_expand_arg_asis(ls,
+                                macro, &args,
+                                token+2, next_len,
+                                now_at+1, now_at+2+next_len);
+                        range_len = next_len+1;
+
+                        token[0] = token[repl_len] = '"';
+                        for (size_t z = now_at+1; z < repl_len+2; ++z) {
+                            char* const c = ls->tokens.ptr+z;
+                            if ('\0' == *c) *c = ' ';
+                            else if ('"' == *c || '\\' == *c) {
+                                *grow(&ls->tokens, z++, 1) = '\\';
+                                ++repl_len;
+                            }
+                        }
+                    } // "#"
+                } // "##?"
+
+                else if (isidh(token[0])) {
+                    range_len = strlen(token);
+                    int const past = !strcmp("##", token+range_len+1);
+                    repl_len = _lex_expand_arg_asis(ls,
+                            macro, &args,
+                            token, range_len,
+                            now_at, now_at+range_len+1)-1;
+
+                    if (!past) {
+                        memcpy(grow(&ls->tokens, now_at+repl_len+1, 2), "\x18", 2);
+                        ls->ahead = ls->tokens.len - now_at;
+                        size_t indicator_at;
+                        do indicator_at = lext(ls);
+                        while ('\x18' != ls->tokens.ptr[indicator_at]);
+                        grow(&ls->tokens, indicator_at+2, -2);
+                        repl_len = indicator_at-now_at-1;
+                    } // "id"
+                } // "id" "##"?
+
+                else repl_len = range_len = strlen(token);
+
+                now_at+= repl_len;
+                end_at+= repl_len - range_len;
+            }
+
+            ls->work.len = args.ptr[0]-2;
+            frry(&args);
+        }
+
+        ls->ahead = ls->tokens.len - token_at;
+        macro->marked = 1;
+        lext(ls);
+        return;
+    }
+#   undef nameis
+
+    if (replace_len) {
+        size_t const token_len = strlen(ls->tokens.ptr+token_at);
+        grow(&ls->tokens, token_at+token_len, replace_len-token_len);
+        strcpy(ls->tokens.ptr+token_at, replace);
+    }
+}
+
+void lex_define(lex_state* const ls, char const* const name, char const* const value) {
+    size_t const name_at = ls->work.len, name_len = strcspn(name, "(");
+    memcpy(grow(&ls->work, ls->work.len, name_len+1), name, name_len);
+    ls->work.ptr[ls->work.len-1] = '\0';
+
+    int params = -1;
+    if ('(' == name[name_len]) {
+        size_t k = name_len;
+        ++params;
+        while (strchr(blankchrs, name[++k]));
+
+        while (')' != name[k] && name[k]) {
+            do *push(&ls->work) = name[k++];
+            while (isidt(name[k]) || '.' == name[k]);
+            *push(&ls->work) = '\0';
+
+            ++params;
+            if (')' == name[k]) break;
+            while (strchr(blankchrs, name[++k]));
+            if (',' == name[k]) while (strchr(blankchrs, name[++k]));
+        }
+    }
+
+    ls->cstream = value;
+    _lex_definish(ls, *value, name_at, params);
+    ls->cstream = NULL;
+}
+
+void lex_undef(lex_state* const ls, char const* const name) {
+    for (size_t k = 0; k < ls->macros.len; ++k) if (!strcmp(name, ls->work.ptr+ls->macros.ptr[k].name)) {
+        grow(&ls->macros, k+1, -1);
+        break;
+    }
+}
+
+void lex_incdir(lex_state* const ls, char const* const path) {
+    *push(&ls->paths) = path;
+}
+
+void lex_entry(lex_state* const ls, FILE* const stream, char const* const file) {
+    size_t const file_at = ls->work.len;
+    strcpy(grow(&ls->work, ls->work.len, strlen(file)+1), file);
+    *(!ls->sources.len ? push(&ls->sources) : curr) = (struct lex_source){
+        .stream= stream,
+        .file= file_at,
+        .line= 1,
+    };
+    *push(&ls->tokens) = '\0';
+    *push(&ls->tokens) = '\0';
+}
+
+void lex_rewind(lex_state* const ls, size_t const count) {
+    for (size_t k = 0; k < count; ++k) {
+        size_t n = ls->tokens.len - ls->ahead - 2;
+        if (!ls->tokens.ptr[n]) break;
+        while (--n && !ls->tokens.ptr[n]);
+    }
+}
+
+void lex_free(lex_state* const ls) {
+    frry(&ls->macros);
+    frry(&ls->paths);
+    each (&ls->sources) {
+        if (ls->sources.ptr->stream && stdin != ls->sources.ptr->stream)
+            fclose(ls->sources.ptr->stream);
+        ls->sources.ptr->stream = NULL;
+    }
+    frry(&ls->sources);
+    frry(&ls->work);
+    frry(&ls->tokens);
+}
+
+long lex_eval(lex_state* const ls, char const* const expr) {
+    ls->cstream = expr;
+    long const r = _lex_eval(ls);
+    ls->cstream = NULL;
+    return r;
+}
+
+size_t lext(lex_state* const ls) {
+#   define eof_token  (*push(&ls->tokens) = '\0', ls->tokens.len-1)
+    if (!ls->cstream && (!ls->sources.len || !curr->stream)) return eof_token;
+
+    if (!ls->ahead) {
+        size_t const pline = ls->cstream ? 0 : curr->line;
+
+        char c;
+        char const* const blanks = ls->nlend ? blankchrs : nlchrs blankchrs;
+        while (strchr(blanks, c = _lex_getc(ls)));
+        if ('\n' == c) return eof_token;
+        _lex_ungetc(ls, c);
+
+        if (endd) {
+            if (ls->cstream) return eof_token;
+            _lex_fclose(ls);
+            return lext(ls);
+        }
+
+        if (pline && '#' == c && !ls->noxid && ('\0' == ls->tokens.ptr[ls->tokens.len-2] || pline != curr->line)) {
+            _lex_directive(ls);
+            return lext(ls);
+        }
+    }
+#   undef eof_token
+
+    size_t const r = ls->ahead ? _lex_ahead(ls) : _lex_simple(ls);
+
+    if (!ls->noxid && isidh(ls->tokens.ptr[r]))
+        _lex_expand_id_here(ls, r);
+
+    if (!ls->nomrg && '"' == ls->tokens.ptr[r]) {
+        tokt const n = lext(ls);
+        if ('"' == ls->tokens.ptr[n]) grow(&ls->tokens, n+1, -3);
+        else ls->ahead+= strlen(ls->tokens.ptr+n)+1;
+    }
+
+    return r;
+}
+
+size_t lex_strquo(char* const quoted, size_t const size, char const* const unquoted, size_t const length) {
+    if (size <3 +length) return 0;
+    size_t d = 1, s = 0;
+    quoted[0] = '"';
+
+    while (d < size && s < length) {
+        char c = unquoted[s++];
+
+        if (' ' <= c && c <= '~' && !strchr("'\"?\\", c)) quoted[d++] = c;
+        else {
+            switch(c) {
+            case '\'': c ='\''; break;
+            case '\"': c = '"'; break;
+            case '\?': c = '?'; break;
+            case '\\': c ='\\'; break;
+            case '\a': c = 'a'; break;
+            case '\b': c = 'b'; break;
+            case '\f': c = 'f'; break;
+            case '\n': c = 'n'; break;
+            case '\r': c = 'r'; break;
+            case '\t': c = 't'; break;
+            case '\v': c = 'v'; break;
+
+            default:
+                if (d+4 >= size) return 0;
+                quoted[d++] = '\\';
+                quoted[d++] = (c>>6 & 3) + '0';
+                quoted[d++] = (c>>3 & 7) + '0';
+                quoted[d++] = (c & 7) + '0';
+                continue;
+            }
+
+            if (d+2 >= size) return 0;
+            quoted[d++] = '\\';
+            quoted[d++] = c;
+        }
+    }
+
+    if (d+2 >= size) return 0;
+    quoted[d++] = '"';
+    quoted[d] = '\0';
+    return d;
+}
+
+size_t lex_struqo(char* const unquoted, size_t const size, char const* const quoted) {
+    char const c0 = quoted[0];
+    size_t d = 0, s = 1;
+
+    while (d < size && c0 != quoted[s]) {
+        char c = quoted[s++];
+        if (!c) return 0;
+
+        if ('\\' != c) unquoted[d++] = c;
+        else switch (c = quoted[s++]) {
+        case'\'': unquoted[d++] = '\''; break;
+        case '"': unquoted[d++] = '\"'; break;
+        case '?': unquoted[d++] = '\?'; break;
+        case'\\': unquoted[d++] = '\\'; break;
+        case 'a': unquoted[d++] = '\a'; break;
+        case 'b': unquoted[d++] = '\b'; break;
+        case 'f': unquoted[d++] = '\f'; break;
+        case 'n': unquoted[d++] = '\n'; break;
+        case 'r': unquoted[d++] = '\r'; break;
+        case 't': unquoted[d++] = '\t'; break;
+        case 'v': unquoted[d++] = '\v'; break;
+
+            long unsigned r;
+            unsigned n;
+
+        case 'x':
+            r = 0;
+            n = -1u;
+            if (0)
+        case 'u':
+        case 'U':
+                n = 4+(1-(c>>5&1))*4;
+
+            static char const dgts[] = "0123456789abcdef";
+            char const* v = strchr(dgts, quoted[s]|32);
+            do r = (r<<4) + (v-dgts);
+            while (--n && (v = strchr(dgts, quoted[++s]|32)));
+
+            if ('x' == c) {
+                unquoted[d++] = r;
+                break;
+            }
+
+            if (r < 128) unquoted[d++] = r;
+            else {
+                if (d+2 >= size) return 0;
+                char const x = r&63;
+                r>>= 6;
+                if (r < 32) unquoted[d++] = 192|r;
+                else {
+                    if (d+3 >= size) return 0;
+                    char const y = r&63;
+                    r>>= 6;
+                    if (r < 16) unquoted[d++] = 224|r;
+                    else {
+                        if (d+4 >= size) return 0;
+                        char const z = r&63;
+                        unquoted[d++] = 240|r>>6;
+                        unquoted[d++] = 128|z;
+                    }
+                    unquoted[d++] = 128|y;
+                }
+                unquoted[d++] = 128|x;
+            }
+            break;
+
+        default:
+            if ('0' <= c && c <= '7') {
+                r = 0;
+                do r = (r<<3) + (c-'0');
+                while (c = quoted[s++], '0' <= c && c <= '7');
+                --s;
+                unquoted[d++] = r;
+            } else unquoted[d++] = c;
+        }
+    }
+
+    if (d+1 >= size) return 0;
+    unquoted[d++] = '\0';
+    return quoted[s+1] ? 0 : d;
+}
+
+#undef nlchrs
+#undef blankchrs
+
+#undef isid_t
+#undef isid_h
+#undef isnum
+
+#undef endd
+#undef curr
+
+#undef each
+#undef last
+#undef grow
+#undef push
+#undef frry
+
+#undef arry
 
 #endif // CINTRE_LEXER_H

@@ -1,11 +1,11 @@
 /// Bytecode interpreter on top of the compiler; example:
 /// ```c
-/// struct ct_slot slot = ...;
-/// ct_bytecode bc = ...;
+/// struct slot slot = ...;
+/// bytecode bc = ...;
 ///
-/// ct_run_state rs = {.sp= sizeof rs.stack};
+/// run_state rs = {.sp= sizeof rs.stack};
 ///
-/// ct_run(&rs, bc);
+/// run(&rs, bc);
 /// // result are the `slot.ty->size` bytes at `rs.stack + rs.sp`
 /// ```
 
@@ -20,17 +20,17 @@
 #define STACK_SIZE 1024*1024
 #endif
 
-typedef struct ct_run_state {
+typedef struct run_state {
     char stack[STACK_SIZE];
     size_t sp; // xxx: don't like that 0 is not sane default, it has
                //      to be explicitly initialized to `sizeof ::stack`
-} ct_run_state;
+} run_state;
 
-void ct_run(ct_run_state ref rs, ct_bytecode const code);
+void run(run_state ref rs, bytecode const code);
 
 // ---
 
-void ct_run(ct_run_state ref rs, ct_bytecode const code)
+void run(run_state ref rs, bytecode const code)
 {
     size_t a, b, c;
 #   define imm(nm) for (                        \

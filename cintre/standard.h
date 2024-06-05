@@ -354,11 +354,11 @@ extern float (fmaf)(float x, float y, float z);
 // }}}
 
 // setjmp.h {{{
-static struct ct_adpt_type const jmp_buf_adapt_type = {
+static struct adpt_type const jmp_buf_adapt_type = {
     .size= sizeof(jmp_buf), .align= alignof(jmp_buf),
-    .tyty= CT_TYPE_ARR,
+    .tyty= TYPE_ARR,
     .info.arr= {
-        .item= &ct_adptb_void_type,
+        .item= &adptb_void_type,
         .count= 1,
     },
 };
@@ -369,9 +369,9 @@ static struct ct_adpt_type const jmp_buf_adapt_type = {
 // }}}
 
 // stdbool.h {{{
-//static struct ct_adpt_type const bool_adapt_type = {
+//static struct adpt_type const bool_adapt_type = {
 //    .size= sizeof(bool), .align= 1,
-//    .tyty= CT_TYPE_CHAR,
+//    .tyty= TYPE_CHAR,
 //};
 typedef char bool;
 // }}}

@@ -34,18 +34,27 @@ static bool _try_jmp_flg = false;
 
 #define _dyarr_allocfail  (exitf("OOM"), NULL)
 #include "dyarr.h"
-typedef ct_dyarr(char) ct_buf;
-typedef struct { char const* ptr; size_t len; } ct_bufsl;
-#define bufmt(x) (unsigned)(x).len, (x).ptr
-#define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
+typedef dyarr(char) buf;
+//typedef struct { char const* ptr; size_t len; } bufsl;
+//#define bufmt(x) (unsigned)(x).len, (x).ptr
+//#define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
+
+typedef size_t tokt;
+#define tokn(__at) (ls->tokens.ptr+(__at))
+static inline char const* quoted(char cref txt)
+{
+    static char quo[2048];
+    size_t lex_strquo(char* const quoted, size_t const size, char const* const unquoted, size_t const length);
+    return lex_strquo(quo, sizeof quo, txt, strlen(txt)) ? quo : txt;
+}
 
 #define report_lex_locate(ls, ...) (                                \
     fflush(stdout),                                                 \
-    fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %.*s \x1b[1m##\x1b[m ",  \
-            (ls)->file, (ls)->line, bufmt(ct_llne((ls)))),             \
+    /*fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %.*s \x1b[1m##\x1b[m ",  \
+            (ls)->file, (ls)->line, bufmt(llne((ls)))),*/             \
     notif(__VA_ARGS__))
 
-static inline void* ct_mallox(size_t n)
+static inline void* mallox(size_t n)
 {
     void ref r = malloc(n);
     if (!r) exitf("OOM");
@@ -54,25 +63,26 @@ static inline void* ct_mallox(size_t n)
 
 // used in lexer and preparer
 // TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push
-#define search_namespace(n, ns) for (size_t k = 0; k < ns.len; k++) if (!dyarr_cmp(&ns.ptr[k].name, &n))
+#define search_namespace(n, ns) for (size_t k = 0; k < (ns).len; k++) if (!strcmp(tokn((ns).ptr[k].name), tokn((n))))
 
 #define isidstart(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || '_' == (__c))
 #define isidcont(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || ('0' <= (__c) && (__c) <= '9') || '_' == (__c))
 
-struct ct_declaration;
-struct ct_expression;
-struct ct_adpt_type;
-struct ct_adpt_item;
-struct ct_slot;
-struct ct_bytecode;
-struct ct_run_state;
+struct lex_state;
+struct declaration;
+struct expression;
+struct adpt_type;
+struct adpt_item;
+struct slot;
+struct bytecode;
+struct run_state;
 
-void ct_print_decl(FILE ref strm, struct ct_declaration cref decl);
-void ct_print_expr(FILE ref strm, struct ct_expression cref expr, unsigned const depth);
-void ct_print_type(FILE ref strm, struct ct_adpt_type cref ty, bool const top);
-void ct_print_code(FILE ref strm, struct ct_bytecode const code);
-void ct_print_item(FILE ref strm, struct ct_adpt_item cref it, char cref stack, unsigned const depth);
-void ct_print_tops(FILE ref strm, struct ct_run_state cref rs, struct ct_adpt_item cref items, size_t const count);
-void ct_print_slot(FILE ref strm, struct ct_slot cref slt);
+void print_decl(FILE ref strm, struct lex_state cref ls, struct declaration cref decl);
+void print_expr(FILE ref strm, struct lex_state cref ls, struct expression cref expr, unsigned const depth);
+void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
+void print_code(FILE ref strm, struct bytecode const code);
+void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
+void print_tops(FILE ref strm, struct run_state cref rs, struct adpt_item cref items, size_t const count);
+void print_slot(FILE ref strm, struct slot cref slt);
 
 #endif // CINTRE_COMMON_H

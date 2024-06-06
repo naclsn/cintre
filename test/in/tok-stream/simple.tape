@@ -28,11 +28,7 @@
 [test/in/tok-stream/simple: 14]	(
 [test/in/tok-stream/simple: 14]	stderr
 [test/in/tok-stream/simple: 14]	,
-[test/in/tok-stream/simple: 14]	"test/in/tok-stream/simple"
-[test/in/tok-stream/simple: 14]	":"
-[test/in/tok-stream/simple: 14]	"14"
-[test/in/tok-stream/simple: 14]	": "
-[test/in/tok-stream/simple: 14]	"hi :3"
+[test/in/tok-stream/simple: 14]	"test/in/tok-stream/simple:14: hi :3"
 [test/in/tok-stream/simple: 14]	)
 [test/in/tok-stream/simple: 14]	,
 [test/in/tok-stream/simple: 14]	fputc
@@ -50,4 +46,3 @@
 [test/in/tok-stream/simple: 14]	)
 [test/in/tok-stream/simple: 14]	;
 [test/in/tok-stream/simple: 15]	}
-[test/in/tok-stream/simple: 17]	

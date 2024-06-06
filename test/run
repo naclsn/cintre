@@ -34,5 +34,12 @@ exit $fail
 //#define LOC_NOTIF
 #include "../cintre/prints.h"
 
-void run_test(char* file);
-int main(int argc, char** argv) { run_test(1 < argc ? argv[1] : ""); }
+void run_test(FILE* stream, char* file);
+int main(int argc, char** argv)
+{
+    FILE* stream = stdin;
+    char* file = "<stdin>";
+    if (1 < argc && !(stream = fopen(file = argv[1], "r")))
+        exitf("Could not read entry file %s", file);
+    run_test(stream, file);
+}

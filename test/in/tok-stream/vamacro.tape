@@ -6,13 +6,12 @@
 [test/in/tok-stream/vamacro:  9]	.
 [test/in/tok-stream/vamacro:  9]	id
 [test/in/tok-stream/vamacro:  9]	=
-[test/in/tok-stream/vamacro:  9]	"hello~"
-[test/in/tok-stream/vamacro:  9]	"a"
+[test/in/tok-stream/vamacro:  9]	"hello~a"
 [test/in/tok-stream/vamacro:  9]	,
 [test/in/tok-stream/vamacro:  9]	.
 [test/in/tok-stream/vamacro:  9]	init_str
 [test/in/tok-stream/vamacro:  9]	=
-[test/in/tok-stream/vamacro:  9]	"(.one= 1, .two= \"two\")"
+[test/in/tok-stream/vamacro:  9]	"( . one = 1 , . two = \"two\" )"
 [test/in/tok-stream/vamacro:  9]	,
 [test/in/tok-stream/vamacro:  9]	.
 [test/in/tok-stream/vamacro:  9]	one
@@ -33,13 +32,13 @@
 [test/in/tok-stream/vamacro: 15]	.
 [test/in/tok-stream/vamacro: 15]	id
 [test/in/tok-stream/vamacro: 15]	=
-[test/in/tok-stream/vamacro: 15]	"hello~"
-[test/in/tok-stream/vamacro: 15]	"salkdfjaslkjdflasjdf"
+[test/in/tok-stream/vamacro: 15]	"hello~salkdfjaslkjdflasjdf"
 [test/in/tok-stream/vamacro: 15]	,
 [test/in/tok-stream/vamacro: 15]	.
 [test/in/tok-stream/vamacro: 15]	init_str
 [test/in/tok-stream/vamacro: 15]	=
-[test/in/tok-stream/vamacro: 15]	"(     .this= \"\\o\",     .is= \"o/\",     .a= \"o7\",     .test= \"o3o\", )"
+[test/in/tok-stream/vamacro: 15]	"( . this = \"\\o\" , . is = \"o/\" , . a = \"o7\" , . test = \"o3o\" , )"
+[test/in/tok-stream/vamacro: 15]	,
 [test/in/tok-stream/vamacro: 15]	.
 [test/in/tok-stream/vamacro: 15]	this
 [test/in/tok-stream/vamacro: 15]	=
@@ -71,8 +70,7 @@
 [test/in/tok-stream/vamacro: 25]	;
 [test/in/tok-stream/vamacro: 25]	printf
 [test/in/tok-stream/vamacro: 25]	(
-[test/in/tok-stream/vamacro: 25]	"one of "
-[test/in/tok-stream/vamacro: 25]	"\";\", \",\", \")\", \"]\", \"}\""
+[test/in/tok-stream/vamacro: 25]	"one of \";\" , \",\" , \")\" , \"]\" , \"}\""
 [test/in/tok-stream/vamacro: 25]	)
 [test/in/tok-stream/vamacro: 25]	;
 [test/in/tok-stream/vamacro: 25]	printf
@@ -94,4 +92,3 @@
 [test/in/tok-stream/vamacro: 30]	_x__
 [test/in/tok-stream/vamacro: 31]	___
 [test/in/tok-stream/vamacro: 32]	___
-[test/in/tok-stream/vamacro: 32]	

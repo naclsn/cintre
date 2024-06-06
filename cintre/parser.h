@@ -217,17 +217,17 @@ tokt parse_expression(parse_expr_state ref ps, tokt const tok);
 
 #define _expect1(_tok)                                                \
     if (!*pstokn(*(_tok)) && (                                             \
-        report_lex_locate(ls, "Unexpected end of input"), true))  \
+        report_lex_locate(ps->ls, "Unexpected end of input"), true))  \
         return
 #define _expect(_tok, ...)                                                                               \
     for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                          \
         if (*_it) if (!strcmp(*_it, pstokn(*(_tok)))) break; else continue;                                        \
         else if (                                                                                        \
-            report_lex_locate(ls, "Expected " #__VA_ARGS__ ", got %s", quoted(pstokn(*(_tok)))), true)  \
+            report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got %s", quoted(pstokn(*(_tok)))), true)  \
             return
 #define _expectid(_tok)                                                                       \
     if (!isidstart(*pstokn(*(_tok))) && (                                                         \
-        report_lex_locate(ls, "Expected identifier, got %s", quoted(pstokn(*(_tok)))), true))  \
+        report_lex_locate(ps->ls, "Expected identifier, got %s", quoted(pstokn(*(_tok)))), true))  \
         return
 
 // parse declaration {{{
@@ -516,7 +516,7 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
             if (last) {
                 info->fun.count = -1; // eg. `int a();`
                 _parse_decl_post(ps, capt, fun);
-            } else report_lex_locate(ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
+            } else report_lex_locate(ps->ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
             return;
         }
 
@@ -537,7 +537,7 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
         _expect1(&ps->tok);
     }
     if (')' == *pstokn(ps->tok)) {
-        report_lex_locate(ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
+        report_lex_locate(ps->ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
         return;
     }
 
@@ -605,7 +605,7 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
         _expect1(&ps->tok);
 
         if (!decl) {
-            report_lex_locate(ls, "Expected field declaration, got %s", quoted(pstokn(ps->tok)));
+            report_lex_locate(ps->ls, "Expected field declaration, got %s", quoted(pstokn(ps->tok)));
             return;
         }
 
@@ -752,7 +752,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             return;
         }
 
-        report_lex_locate(ls, "Expected declarator, got %s", quoted(pstokn(ps->tok)));
+        report_lex_locate(ps->ls, "Expected declarator, got %s", quoted(pstokn(ps->tok)));
         return;
     } // for-switch tok
 

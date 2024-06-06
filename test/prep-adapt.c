@@ -14,19 +14,15 @@
     for (char const** _it = (char const*[]){__VA_ARGS__, NULL}; *_it; ++_it)  \
         strcat(__name, *_it);
 
-void run_test(char* file)
+void run_test(FILE* stream, char* file)
 {
     char cref name = strrchr(file, '/') ? strrchr(file, '/')+1 : file;
 
     stacat(src, "/tmp/cintre-test-", name, ".c");
     stacat(bin, "/tmp/cintre-test-", name, ".exe");
 
-    char ab[strlen(src)-strlen("/tmp/")+1];
-    strcpy(ab, src+strlen("/tmp/"));
-    ct_bufsl const _ns = name_space(ab);
-    char ns[_ns.len+1];
-    memcpy(ns, _ns.ptr, _ns.len);
-    ns[_ns.len] = '\0';
+    stacat(_ns, src, "/tmp/");
+    char* const ns = name_space(_ns);
 
     stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
 
@@ -46,9 +42,9 @@ void run_test(char* file)
 int main(void)
 {
     for (size_t k = 0; k < countof(_PREP_ADAPT_DUMP_NS); k++) {
-        struct ct_adpt_item cref it = _PREP_ADAPT_DUMP_NS+k;
+        struct adpt_item cref it = _PREP_ADAPT_DUMP_NS+k;
         printf("%s: ", it->name);
-        ct_print_type(stdout, it->type, true);
+        print_type(stdout, it->type, true);
         printf(";\n");
     }
 }

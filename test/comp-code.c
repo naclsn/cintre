@@ -1,17 +1,17 @@
 #include "run"
 #include "../cintre/compiler.h"
 
-void comp(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
+void comp(void ref usr, expression ref expr, tokt ref tok)
 {
     static char stack[1042];
-    ct_compile_state cs = {.vsp= sizeof stack};
+    compile_state cs = {.vsp= sizeof stack};
 
-    struct ct_slot slot = {.ty= ct_check_expression(&cs, expr)};
+    struct slot slot = {.ty= check_expression(&cs, expr)};
     if (!slot.ty) printf("checking error");
-    else switch (ct_compile_expression(&cs, expr, &slot), slot.usage) {
+    else switch (compile_expression(&cs, expr, &slot), slot.usage) {
     case _slot_value:
         switch (slot.ty->tyty) {
-        case CT_TYPE_CHAR: switch (slot.as.value.c) {
+        case TYPE_CHAR: switch (slot.as.value.c) {
             case '\0': printf("'\\0'"); break;
             case '\'': printf("'\\''"); break;
             case '\"':printf("'\\\"'"); break;
@@ -26,51 +26,50 @@ void comp(void ref usr, ct_expression ref expr, ct_bufsl ref tok)
             case '\v': printf("'\\v'"); break;
             default: printf(' ' <= slot.as.value.c && slot.as.value.c <= '~' ? "'%c'" : "'\\x%02hhx'", slot.as.value.c);
         } break;
-        case CT_TYPE_UCHAR:  printf("0x%02hhx", slot.as.value.uc); break;
-        case CT_TYPE_SCHAR:  printf("%hhi",     slot.as.value.sc); break;
-        case CT_TYPE_SHORT:  printf("%hi",      slot.as.value.ss); break;
-        case CT_TYPE_INT:    printf("%i",       slot.as.value.si); break;
-        case CT_TYPE_LONG:   printf("%li",      slot.as.value.sl); break;
-        case CT_TYPE_USHORT: printf("%hu",      slot.as.value.us); break;
-        case CT_TYPE_UINT:   printf("%u",       slot.as.value.ui); break;
-        case CT_TYPE_ULONG:  printf("%lu",      slot.as.value.ul); break;
-        case CT_TYPE_FLOAT:  printf("%f",       slot.as.value.f);  break;
-        case CT_TYPE_DOUBLE: printf("%lf",      slot.as.value.d);  break;
+        case TYPE_UCHAR:  printf("0x%02hhx", slot.as.value.uc); break;
+        case TYPE_SCHAR:  printf("%hhi",     slot.as.value.sc); break;
+        case TYPE_SHORT:  printf("%hi",      slot.as.value.ss); break;
+        case TYPE_INT:    printf("%i",       slot.as.value.si); break;
+        case TYPE_LONG:   printf("%li",      slot.as.value.sl); break;
+        case TYPE_USHORT: printf("%hu",      slot.as.value.us); break;
+        case TYPE_UINT:   printf("%u",       slot.as.value.ui); break;
+        case TYPE_ULONG:  printf("%lu",      slot.as.value.ul); break;
+        case TYPE_FLOAT:  printf("%f",       slot.as.value.f);  break;
+        case TYPE_DOUBLE: printf("%lf",      slot.as.value.d);  break;
         }
         break;
 
     case _slot_used:
         printf("TODO: slot used");
-        //ct_run();
-        //ct_print_item();
+        //run();
+        //print_item();
         break;
     case _slot_variable:
         printf("TODO: slot variable");
-        //ct_print_item();
+        //print_item();
         break;
     }
     printf("\n");
 
-    ct_lex_state cref ls = usr;
-    report_lex_locate(ls, " -- tok: %.*s", bufmt(*tok));
+    lex_state cref ls = usr;
+    report_lex_locate(ls, " -- tok: %s", tokn(*tok));
 }
 
-void run_test(char* file)
+void run_test(FILE* stream, char* file)
 {
-    ct_lex_state ls = {0};
-    ct_lini(&ls, file);
+    lex_state* const ls = &(lex_state){0};
+    lex_entry(ls, stream, file);
 
-    ct_bufsl tok = ct_lext(&ls);
-    ct_parse_expr_state ps = {.ls= &ls, .usr= &ls, .on= comp};
-    while (tok.len) if ((tok = ct_parse_expression(&ps, tok)).len)
-        switch (*tok.ptr) {
-        case ';':
-            tok = ct_lext(&ls);
-            continue;
+    tokt tok = lext(ls);
+    parse_expr_state ps = {.ls= ls, .usr= ls, .on= comp};
+    while (*tokn(tok)) switch (tok = parse_expression(&ps, tok), *tokn(tok)) {
+    case ';':
+        tok = lext(ls);
+        continue;
 
-        default:
-            exitf("other: %.*s", (unsigned)tok.len, tok.ptr);
-        }
+    default:
+        exitf("other: %s", tokn(tok));
+    }
 
-    ct_ldel(&ls);
+    lex_free(ls);
 }

@@ -877,12 +877,8 @@ enum expr_kind _parse_is_infix(char cref tok, bool const disallow_comma)
     case '!' <<8| '=': return BINOP_NE;
     case '<' <<8| '=': return BINOP_LE;
     case '>' <<8| '=': return BINOP_GE;
-    case '<' <<8| '<': return BINOP_BSHL;
-    case '>' <<8| '>': return BINOP_BSHR;
-    }
-    if (tok[0] == tok[1] && '=' == tok[2]) switch (tok[0]) {
-    case '<': return BINOP_ASGN_BSHL;
-    case '>': return BINOP_ASGN_BSHR;
+    case '<' <<8| '<': return '=' == tok[2] ? BINOP_ASGN_BSHL : BINOP_BSHL;
+    case '>' <<8| '>': return '=' == tok[2] ? BINOP_ASGN_BSHR : BINOP_BSHR;
     }
     return 0;
 }

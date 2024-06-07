@@ -32,6 +32,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "common.h"
+
 typedef struct lex_state lex_state;
 
 /// add to defined macros (-D)
@@ -1003,10 +1005,9 @@ void lex_entry(lex_state* const ls, FILE* const stream, char const* const file) 
 }
 
 void lex_rewind(lex_state* const ls, size_t const count) {
-    for (size_t k = 0; k < count; ++k) {
-        size_t n = ls->tokens.len - ls->ahead - 2;
-        if (!ls->tokens.ptr[n]) break;
-        while (--n && !ls->tokens.ptr[n]);
+    for (size_t k = 0; k < count && ls->ahead+2 < ls->tokens.len; ++k) {
+        ls->ahead+= 2;
+        while (ls->tokens.ptr[ls->tokens.len - ls->ahead-1]) ++ls->ahead;
     }
 }
 

@@ -48,13 +48,23 @@ static inline char const* quoted(char cref txt)
     return lex_strquo(quo, sizeof quo, txt, strlen(txt)) ? quo : txt;
 }
 
+static inline char const* lexerline(char cref file, size_t const line)
+{
+    static char lne[2048];
+    size_t lex_getline(char* const res, size_t const size, char const* const file, size_t const line);
+    return lex_getline(lne, sizeof lne, file, line), lne;
+}
+
 #define report_lex_locate(ls, ...) (                                \
     fflush(stdout),                                                 \
     fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %s \x1b[1m##\x1b[m ",  \
             (ls)->work.ptr+(ls)->sources.ptr[(ls)->sources.len-1].file,  \
             (ls)->sources.ptr[(ls)->sources.len-1].line,  \
-            "-"),             \
+            lexerline(  \
+                (ls)->work.ptr+(ls)->sources.ptr[(ls)->sources.len-1].file,  \
+                (ls)->sources.ptr[(ls)->sources.len-1].line)),  \
     notif(__VA_ARGS__))
+
 
 #define on_lex_preprocerr(ls, err) (  \
     report_lex_locate(ls, "Error: %s", err),  \

@@ -14,5 +14,5 @@
 [test/in/tok-stream/ifs: 43]	coucou
 [yeye: 18]	coucou
 [test/in/tok-stream/include/coucou.h:  1]	coucou
-[1m[yeye:24][m - [1m##[m Error: "Success"
+[1m[yeye:23][m  [1m##[m Error: "Success"
 Stopping at preprocessor error

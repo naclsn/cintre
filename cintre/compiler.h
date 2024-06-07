@@ -357,7 +357,7 @@ void _value_cvt_matrix(struct slot ref dst, struct slot cref src)
 
 #   define _do1(__tdst        ) case TYPE_##__tdst: switch (src->ty->tyty) { _list2(_do2, __tdst) /* unreachable cases */ case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:; } break;
 #   define _do2(__tdst, __tsrc) case TYPE_##__tsrc: _as(__tdst, dst) = _as(__tsrc, src); break;
-                                                       switch (dst->ty->tyty) { _list1(_do1        ) /* unreachable cases */ case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:; }
+                                                    switch (dst->ty->tyty) { _list1(_do1        ) /* unreachable cases */ case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:; }
 #   undef _do2
 #   undef _do1
 

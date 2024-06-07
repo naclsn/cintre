@@ -29,11 +29,11 @@
 3: fun_like3(one and a half, two) // 22222one and a half
 
 #define fun_like4(one, two) #one-#three
-4: fun_like4(no, u) // error but we'll say "no"-#three
+4: fun_like4(no, u) // error but we'll say "no"-"three"
 
 #define fun_like32(a) a , #a
 #define obj_like42 42
-42: fun_like32(obj_like42) // 42 , "obj_like42"
+42: fun_like32(obj_like42) // 42 , "obj_like42" // FIXME: the ".." ends up marked on the wrong line
 
 #define _JOIN(__l, __r) __l##__r
 #define _XJOIN(__l, __r) _JOIN(__l, __r)

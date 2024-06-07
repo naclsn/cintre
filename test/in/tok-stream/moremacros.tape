@@ -1,0 +1,16 @@
+[test/in/tok-stream/moremacros:  2]	12
+[test/in/tok-stream/moremacros:  7]	onetwo
+[test/in/tok-stream/moremacros: 10]	#
+[test/in/tok-stream/moremacros: 10]	a
+[test/in/tok-stream/moremacros: 14]	#
+[test/in/tok-stream/moremacros: 14]	b
+[test/in/tok-stream/moremacros: 24]	"w"
+[test/in/tok-stream/moremacros: 24]	a
+[test/in/tok-stream/moremacros: 24]	(
+[test/in/tok-stream/moremacros: 24]	w
+[test/in/tok-stream/moremacros: 24]	)
+[test/in/tok-stream/moremacros: 30]	[
+[test/in/tok-stream/moremacros: 30]	"x"
+[test/in/tok-stream/moremacros: 30]	,
+[test/in/tok-stream/moremacros: 30]	0
+[test/in/tok-stream/moremacros: 30]	]

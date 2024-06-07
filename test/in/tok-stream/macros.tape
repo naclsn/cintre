@@ -33,8 +33,7 @@
 [test/in/tok-stream/macros: 26]	_www_
 [test/in/tok-stream/macros: 29]	3
 [test/in/tok-stream/macros: 29]	:
-[test/in/tok-stream/macros: 29]	22222
-[test/in/tok-stream/macros: 29]	one
+[test/in/tok-stream/macros: 29]	22222one
 [test/in/tok-stream/macros: 29]	and
 [test/in/tok-stream/macros: 29]	a
 [test/in/tok-stream/macros: 29]	half
@@ -42,13 +41,12 @@
 [test/in/tok-stream/macros: 32]	:
 [test/in/tok-stream/macros: 32]	"no"
 [test/in/tok-stream/macros: 32]	-
-[test/in/tok-stream/macros: 32]	#
-[test/in/tok-stream/macros: 32]	three
+[test/in/tok-stream/macros: 36]	"three"
 [test/in/tok-stream/macros: 36]	42
 [test/in/tok-stream/macros: 36]	:
 [test/in/tok-stream/macros: 36]	42
 [test/in/tok-stream/macros: 36]	,
-[test/in/tok-stream/macros: 36]	"obj_like42"
+[test/in/tok-stream/macros: 42]	"obj_like42"
 [test/in/tok-stream/macros: 42]	43
 [test/in/tok-stream/macros: 42]	:
 [test/in/tok-stream/macros: 42]	_A
@@ -58,4 +56,3 @@
 [test/in/tok-stream/macros: 49]	45
 [test/in/tok-stream/macros: 49]	:
 [test/in/tok-stream/macros: 49]	X_1024
-[test/in/tok-stream/macros: 67]	

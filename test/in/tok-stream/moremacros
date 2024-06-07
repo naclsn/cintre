@@ -1,0 +1,30 @@
+#define a 1##2
+a // 12
+
+#define one 1
+#define two 2
+#define a one##two
+a // onetwo
+
+#define a #a
+a // #a
+
+#define a #b
+#define c(b) a
+c(12) // #b
+
+#define ab(x) #x
+#define y a##b(w)
+y // "w"
+
+#define o (
+#define c )
+#define a(x) #x
+#define b a o w c
+b // a ( w )
+
+#define x y
+#define y z
+#define z 0
+#define a(b) [#b, b]
+a(x) // ["x", 0]

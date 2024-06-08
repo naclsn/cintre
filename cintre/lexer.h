@@ -46,6 +46,8 @@ void lex_incdir(lex_state* const ls, char const* const path);
 void lex_entry(lex_state* const ls, FILE* const stream, char const* const file);
 /// go back (at most) `count` tokens (only reason it'd do less is if it found the begining since last `lex_entry`)
 void lex_rewind(lex_state* const ls, size_t const count);
+/// inject a cheaty token where we at now, `lext` once will read it; this is not the same as `rewind`, it actually adds the token to the stream 'history'
+void lex_inject(lex_state* const ls, char const* const token);
 /// clear and delete everything (do not hold on to tokens!)
 void lex_free(lex_state* const ls);
 /// compute a preprocessor expression
@@ -1009,6 +1011,12 @@ void lex_rewind(lex_state* const ls, size_t const count) {
         ls->ahead+= 2;
         while (ls->tokens.ptr[ls->tokens.len - ls->ahead-1]) ++ls->ahead;
     }
+}
+
+void lex_inject(lex_state* const ls, char const* const token) {
+    size_t const token_len = strlen(token);
+    strcpy(grow(&ls->tokens, ls->tokens.len - ls->ahead, token_len+1), token);
+    ls->ahead+= token_len+1;
 }
 
 void lex_free(lex_state* const ls) {

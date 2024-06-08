@@ -143,12 +143,12 @@ struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref t
             case QUAL_END: case QUAL_CONST: case QUAL_RESTRICT: case QUAL_VOLATILE:;
             }
 
-#       define nameis(s)  (!strcmp(s, cstokn(ty->name))) //(strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+#       define nameis(s)  (!strcmp(s, cstokn(ty->name)))
         if (nameis("char"))
             return _signed ? &adptb_schar_type
                  : _unsigned ? &adptb_uchar_type
                  : &adptb_char_type;
-        if (nameis("int")) // XXX: reachable? || !ty->name.len)
+        if (nameis("int"))
             return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
                  : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
                  : _unsigned ? &adptb_uint_type : &adptb_int_type;

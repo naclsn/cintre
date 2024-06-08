@@ -16,7 +16,10 @@
 void (on_lex_sysinclude)(char cref path);
 #include "parser.h"
 
+void emit_top(void* _, declaration cref decl, tokt ref tok);
+
 lex_state _ls = {0}, * ls = &_ls;
+parse_decl_state _ps = {.ls= &_ls, .on= emit_top}, * ps = &_ps;
 FILE* result = NULL;
 int indent = 0;
 
@@ -96,12 +99,12 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
             }
 
         char const* adptb = NULL;
-#       define nameis(s)  (!strcmp(s, tokn(ty->name))) //(strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+#       define nameis(s)  (!strcmp(s, tokn(ty->name)))
         if (nameis("char"))
             adptb = _signed ? "adptb_schar_type"
                   : _unsigned ? "adptb_uchar_type"
                   : "adptb_char_type";
-        if (nameis("int")) // XXX: reachable? || !ty->name.len)
+        if (nameis("int"))
             adptb = _short ? (_unsigned ? "adptb_ushort_type" : "adptb_short_type")
                   : _long ? (_unsigned ? "adptb_ulong_type" : "adptb_long_type")
                   : _unsigned ? "adptb_uint_type" : "adptb_int_type";
@@ -575,10 +578,10 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
     // but basically we need to know if we are in the top-level ("entry") file
     if (!follow_incl && 1 != ls->sources.len) {
         //notif("Skipping: '%s' (%s)", tokn(decl->name), bufmt(decl->type.name));
-        return;
+        goto next;
     }
 
-    if (decl->is_inline) return;
+    if (decl->is_inline) goto next;
 
     if (just_did_sys_include) {
         just_did_sys_include = false;
@@ -589,13 +592,13 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
         // unreachable cases
     case SPEC_AUTO:
     case SPEC_REGISTER:
-        return;
+        goto next;
 
     case SPEC_STATIC: // internal linkage (not visible)
         {
             bool found = false;
             search_namespace (decl->name, seen.stas) { found = true; break; }
-            if (found) return;
+            if (found) goto next;
 
             struct seen_sta ref sta = dyarr_push(&seen.stas);
             if (!sta) errdie("OOM");
@@ -621,24 +624,63 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
         }
         emitln(";");
         emit_empty();
-        return;
+        goto next;
 
     case SPEC_NONE: // default at file scope is external linkage
         {
             bool found = false;
             search_namespace (decl->name, seen.stas) { found = true; break; }
-            if (found) return;
+            if (found) goto next;
         }
         // fall through
     case SPEC_EXTERN: // external linkage
         emit_extern(decl);
         emit_empty();
-        return;
+        goto next;
 
     case SPEC_TYPEDEF:
         emit_typedef(decl);
         emit_empty();
+        goto next;
+    }
+
+next:
+    switch (*tokn(*tok)) {
+    case '=':
+        *tok = lext(ls);
+        if ('{' == *tokn(*tok)) {
+
+    case '{':
+            for (unsigned depth = 0; (*tok = lext(ls)), *tokn(*tok); ) {
+                bool c = '}' == *tokn(*tok);
+                if (!*tokn(*tok) || (!depth && c)) break;
+                depth+= ('{' == *tokn(*tok))-c;
+            }
+            *tok = lext(ls);
+
+            if (!*tokn(*tok) || !strchr(",;", *tokn(*tok))) {
+                ps->base = NULL; // reset
+                return;
+            }
+
+        } else *tok = parse_expression(&(parse_expr_state){.ls= ls, .disallow_comma= true}, *tok);
+
+        if (';' == *tokn(*tok)) {
+    case ';':
+            *tok = lext(ls);
+            ps->base = NULL; // reset
+            return;
+        }
+        // fall through
+    case ',':
+        *tok = parse_declaration(ps, lext(ls));
         return;
+
+    case '\0':
+        return;
+
+    default:
+        errdie("Unexpected token after declaration: '%s'", tokn(*tok));
     }
 }
 
@@ -782,39 +824,7 @@ int do_prepare(int argc, char** argv)
         lex_entry(ls, s, infile);
     }
 
-    tokt tok = lext(ls);
-    parse_decl_state ps = {.ls= ls, .on= emit_top};
-    while (*tokn(tok)) switch (tok = parse_declaration(&ps, tok), *tokn(tok)) {
-    case '=':
-        tok = lext(ls);
-        if ('{' == *tokn(tok)) {
-
-    case '{':
-            for (unsigned depth = 0; (tok = lext(ls)), *tokn(tok); ) {
-                bool c = '}' == *tokn(tok);
-                if (!*tokn(tok) || (!depth && c)) break;
-                depth+= ('{' == *tokn(tok))-c;
-            }
-            tok = lext(ls);
-
-            if (!*tokn(tok) || !strchr(",;", *tokn(tok))) {
-                ps.base = (declaration){0}; // reset
-                continue;
-            }
-
-        } else tok = parse_expression(&(parse_expr_state){.ls= ls, .disallow_comma= true}, tok);
-
-        if (';' == *tokn(tok))
-    case ';':
-            ps.base = (declaration){0}; // reset
-        // fall through
-    case ',':
-        tok = lext(ls);
-        continue;
-
-    default:
-        return EXIT_FAILURE;
-    }
+    for (tokt tok = lext(ls); *tokn(tok); tok = parse_declaration(ps, tok));
 
     char cref thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%s[] = {", thisns) {

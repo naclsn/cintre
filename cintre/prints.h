@@ -49,7 +49,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
     }
 
     switch (ty->kind) {
-    case KIND_NOTAG: fprintf(strm, "\x1b[32m%s\x1b[m", !*tokn(ty->name) ? "int" : tokn(ty->name)); break;
+    case KIND_NOTAG: fprintf(strm, "\x1b[32m%s\x1b[m", tokn(ty->name)); break;
 
     case KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
     case KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");

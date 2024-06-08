@@ -325,12 +325,12 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
             case QUAL_END: case QUAL_CONST: case QUAL_RESTRICT: case QUAL_VOLATILE:;
             }
 
-#       define nameis(s)  (!strcmp(s, gstokn(ty->name))) //(strlen(s) == ty->name.len && !memcmp(s, ty->name.ptr, strlen(s)))
+#       define nameis(s)  (!strcmp(s, gstokn(ty->name)))
         if (nameis("char"))
             return _signed ? &adptb_schar_type
                  : _unsigned ? &adptb_uchar_type
                  : &adptb_char_type;
-        if (nameis("int")) // XXX: reachable? || !ty->name.len)
+        if (nameis("int"))
             return _short ? (_unsigned ? &adptb_ushort_type : &adptb_short_type)
                  : _long ? (_unsigned ? &adptb_ulong_type : &adptb_long_type)
                  : _unsigned ? &adptb_uint_type : &adptb_int_type;
@@ -491,7 +491,6 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
 void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
 {
     cintre_state ref gs = usr;
-    (void)tok;
 
     char cref decl_name = gstokn(decl->name);
 
@@ -543,6 +542,19 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
             .kind= kind,
             .as.variable= gs->runr.sp, // (yyy: `.as` not used when `ITEM_TYPEDEF`)
         }, sizeof *it);
+
+    if ('=' == *gstokn(*tok)) {
+        lex_rewind(&gs->lexr, 1);
+
+        //char cref name = dyarr_top(&gs->locs)->name;
+
+        gs->expr.disallow_comma = true;
+        notif("FIXME: *tok = parse_expression(&gs->expr, name)");
+        gs->expr.disallow_comma = false;
+        return;
+    }
+
+    if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, *tok);
 }
 
 void accept_expr(void ref usr, expression ref expr, tokt ref tok)
@@ -839,26 +851,7 @@ int main(int argc, char cref* argv)
         if (!*tok) continue;
 
         if (';' == *tok) accept_expr(gs->expr.usr, NULL, &tok_at);
-
-        else if (_is_decl_keyword(gs, tok)) {
-            gs->decl.base = (declaration){0};
-
-            do {
-                tok_at = parse_declaration(&gs->decl, tok_at);
-                tok = gstokn(tok_at);
-
-                if ('=' == *tok) {
-                    lex_rewind(&gs->lexr, 1);
-
-                    //char cref name = dyarr_top(&gs->locs)->name;
-
-                    gs->expr.disallow_comma = true;
-                    notif("FIXME: tok = parse_expression(&gs->expr, name)");
-                    gs->expr.disallow_comma = false;
-                }
-            } while (',' == *tok ? tok_at = lext(&gs->lexr), true : false);
-        }
-
+        else if (_is_decl_keyword(gs, tok)) parse_declaration(&gs->decl, tok_at);
         else parse_expression(&gs->expr, tok_at);
 
         if (gs->save && *line) fprintf(gs->save, "%s\n", line);

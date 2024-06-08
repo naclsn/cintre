@@ -3,16 +3,18 @@
 /// lex_state ls = ...;
 /// my_state_t my_state = ...;
 ///
-/// void accept_decl(my_state_t* me, declaration const* decl, tokt* tok) { ... }
-/// void accept_expr(my_state_t* me, expression* expr, tokt* tok) { ... }
+/// void accept_decl(my_state_t* me, declaration const* decl, tokt* tok) {
+///     // note: `int a, b;` has 2 declarations with the same "base"
+///     if (',' == *tokn(after)) *tok = parse_declaration_continue(&decl_ps, lext(&ls), decl_ps.base);
+///     else if (';' == *tokn(after)) *tok = lext(&ls), decl_ps.base = NULL;
+/// }
+/// void accept_expr(my_state_t* me, expression* expr, tokt* tok) {
+///     ...
+/// }
 ///
 /// {
 ///     parse_decl_state decl_ps = {.ls= &ls, .usr= &my_state, .on= accept_decl};
 ///     tokt after = parse_declaration(&decl_ps, lext(&ls));
-///     // note: `int a, b;` has 2 declarations with the same "base", so it
-///     // will be 2 calls to `parse_declaration` with the same state;
-///     // however when the ';' is found the usual behavior is to reset:
-///     if (';' == *after.ptr) decl_ps.base = (declaration){0};
 /// }
 ///
 /// {
@@ -120,7 +122,7 @@ typedef struct declaration {
                 }* first;
             } fun;
 
-            struct deck_type_arr {
+            struct decl_type_arr {
                 struct declaration const* item;
                 struct expression* count; // NULL when [*] or [], n otherwise
                 bool is_static;
@@ -139,7 +141,7 @@ typedef struct parse_decl_state {
     void* usr;
     void (*on)(void ref usr, declaration cref decl, tokt ref tok);
     tokt tok;
-    declaration base;
+    declaration* base;
 } parse_decl_state;
 
 tokt parse_declaration(parse_decl_state ref ps, tokt tok);
@@ -673,7 +675,10 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         continue;
 
     case_iskw('s','i','g','n','e','d') case_iskw('u','n','s','i','g','n','e','d') case_iskw('s','h','o','r','t') case_iskw('l','o','n','g')
-        if (!*pstokn(decl->type.name)) decl->type.name = 0; //exitf("decl->type.name = \"int\""); // XXX
+        // inserts the "int" into the token stream, it will cause a broken
+        // token history in some cases (eg. `unsigned int` -> `unsigned int
+        // int`) that's the easiest and most sane solution I have
+        if (!*pstokn(decl->type.name)) lex_inject(ps->ls, "int");
     case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
         for (unsigned k = 0; k < countof(decl->type.quals); k++) if (QUAL_END == decl->type.quals[k]) {
@@ -771,7 +776,8 @@ void _parse_decl_exit(parse_decl_state ref ps, struct _parse_decl_capture ref _,
 tokt parse_declaration(parse_decl_state ref ps, tokt tok)
 {
     ps->tok = tok;
-    _parse_decl_spec(ps, &(struct _parse_decl_capture){.then= _parse_decl_exit}, &ps->base);
+    if (!ps->base) ps->base = &(declaration){0};
+    _parse_decl_spec(ps, &(struct _parse_decl_capture){.then= _parse_decl_exit}, ps->base);
     return ps->tok;
 }
 
@@ -1019,7 +1025,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
                         .ls= ps->ls,
                         .usr= (void*[2]){capt->next->next, ps},
                         .on= (void(*)())_parse_on_cast_type,
-                        .base.type.name= atom.info.atom,
+                        .base= &(declaration){.type.name= atom.info.atom},
                     }, ps->tok);
                 return;
             }

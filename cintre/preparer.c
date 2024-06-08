@@ -306,7 +306,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.fun.ret->type, NULL, in_cast);
             // const and such (after '*')
-            if (name) emit(" (*%s%s)", twice ? "*" : "", tokn(*name));
+            if (name) emit(" (*%s%s)", twice ? "*" : "", name);
             else emit(" (*%s)", twice ? "*" : "");
             emit("(");
             if (-1ul != ty2->info.fun.count) {
@@ -324,7 +324,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
             bool const twice = KIND_PTR == ty->info.ptr->type.kind;
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.arr.item->type, NULL, in_cast);
-            if (name) emit(" (*%s)", tokn(*name));
+            if (name) emit(" (*%s)", name);
             else emit(" (*%s)", twice ? "*" : "");
             emit("[");
             if (ty2->info.arr.count) emit_cexpr(ty2->info.arr.count);
@@ -340,7 +340,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
 
     case KIND_FUN:
         emit_forward(&ty->info.fun.ret->type, NULL, in_cast);
-        if (name) emit(" %s", tokn(*name));
+        if (name) emit(" %s", name);
         emit("(");
         if (-1ul != ty->info.fun.count) {
             if (0 == ty->info.fun.count) emit("void");
@@ -355,7 +355,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
 
     case KIND_ARR:
         emit_forward(&ty->info.arr.item->type, NULL, in_cast);
-        if (name) emit(" %s", tokn(*name));
+        if (name) emit(" %s", name);
         emit("[");
         if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
         emit("]");

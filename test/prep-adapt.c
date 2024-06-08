@@ -21,7 +21,8 @@ void run_test(FILE* stream, char* file)
     stacat(src, "/tmp/cintre-test-", name, ".c");
     stacat(bin, "/tmp/cintre-test-", name, ".exe");
 
-    stacat(_ns, src, "/tmp/");
+    char _ns[strlen(src)];
+    strcpy(_ns, src+strlen("/tmp/"));
     char* const ns = name_space(_ns);
 
     stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");

@@ -579,8 +579,8 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
-        printf("   save \"file\"           -  save each next lines to the file\n");
-        printf("   load \"file\"           -  load the file, running each lines\n");
+        printf("   save \"file\"             -  save each next lines to the file\n");
+        printf("   load \"file\"             -  load the file, running each lines\n");
         printf("   qs[ave]                 -  save a snapshot of the state (list with qq)\n");
         printf("   ql[oad]                 -  load a snapshot of the state (list with qq)\n");
         printf("   ast                     -  ast of the expression\n");

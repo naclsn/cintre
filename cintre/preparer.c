@@ -74,9 +74,117 @@ struct {
 /// forwards as-is
 void emit_cexpr(expression cref expr)
 {
-    if (ATOM == expr->kind)
+    emit("(");
+    switch (expr->kind) {
+    case ATOM:
         emit("%s", tokn(expr->info.atom));
-    else errdie("NIY: more complex expression than single literal");
+        break;
+
+    case BINOP_SUBSCR:
+        emit_cexpr(expr->info.subscr.base);
+        emit("[");
+        emit_cexpr(expr->info.subscr.off);
+        emit("]");
+        break;
+
+    case BINOP_CALL:
+        emit_cexpr(expr->info.call.base);
+        emit("(");
+        for (struct expr_call_arg* it = expr->info.call.first; it; it = it->next) {
+            emit_cexpr(it->expr);
+            if (it->next) emit(", ");
+        }
+        emit(")");
+        break;
+
+    case BINOP_TERNBRANCH:
+        emit("0");
+        break;
+    case BINOP_TERNCOND:
+        emit_cexpr(expr->info.binary.lhs); // condition
+        emit(" ? ");
+        emit_cexpr(expr->info.binary.rhs->info.binary.lhs); // consequence
+        emit(" : ");
+        emit_cexpr(expr->info.binary.rhs->info.binary.rhs); // alternative
+        break;
+
+        char const* binop;
+    case BINOP_COMMA:     binop = ", ";   goto binop;
+    case BINOP_ASGN:      binop = " = ";  goto binop;
+    case BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
+    case BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
+    case BINOP_ASGN_BAND: binop = "&= ";  goto binop;
+    case BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
+    case BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
+    case BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
+    case BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
+    case BINOP_ASGN_REM:  binop = "%= ";  goto binop;
+    case BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
+    case BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
+    case BINOP_LOR:       binop = " || "; goto binop;
+    case BINOP_LAND:      binop = " && "; goto binop;
+    case BINOP_BOR:       binop = " | ";  goto binop;
+    case BINOP_BXOR:      binop = " ^ ";  goto binop;
+    case BINOP_BAND:      binop = " & ";  goto binop;
+    case BINOP_EQ:        binop = " == "; goto binop;
+    case BINOP_NE:        binop = " != "; goto binop;
+    case BINOP_LT:        binop = " < ";  goto binop;
+    case BINOP_GT:        binop = " > ";  goto binop;
+    case BINOP_LE:        binop = " <= "; goto binop;
+    case BINOP_GE:        binop = " >= "; goto binop;
+    case BINOP_BSHL:      binop = "<<";   goto binop;
+    case BINOP_BSHR:      binop = ">>";   goto binop;
+    case BINOP_SUB:       binop = "-";    goto binop;
+    case BINOP_ADD:       binop = "+";    goto binop;
+    case BINOP_REM:       binop = "%";    goto binop;
+    case BINOP_DIV:       binop = "/";    goto binop;
+    case BINOP_MUL:       binop = "*";    goto binop;
+    binop:
+        emit_cexpr(expr->info.binary.lhs);
+        emit("%s", binop);
+        emit_cexpr(expr->info.binary.lhs);
+        break;
+
+    case UNOP_CAST:
+        emit("(");
+        errdie("TODO: emit_decl_type(expr->info.cast.type)");
+        emit(")");
+        emit_cexpr(expr->info.cast.opr);
+        break;
+
+        char const* unop;
+    case UNOP_ADDR:    unop = "&";  goto unop;
+    case UNOP_DEREF:   unop = "*";  goto unop;
+    case UNOP_BNOT:    unop = "~";  goto unop;
+    case UNOP_LNOT:    unop = "!";  goto unop;
+    case UNOP_MINUS:   unop = "-";  goto unop;
+    case UNOP_PLUS:    unop = "+";  goto unop;
+    case UNOP_PRE_DEC: unop = "--"; goto unop;
+    case UNOP_PRE_INC: unop = "++"; goto unop;
+    unop:
+        emit("%s", unop);
+        emit_cexpr(expr->info.unary.opr);
+        break;
+
+    case UNOP_POST_DEC:
+        emit_cexpr(expr->info.unary.opr);
+        emit("--");
+        break;
+    case UNOP_POST_INC:
+        emit_cexpr(expr->info.unary.opr);
+        emit("++");
+        break;
+
+    case UNOP_PMEMBER:
+        emit_cexpr(expr->info.member.base);
+        emit("->%s", tokn(expr->info.member.name));
+        break;
+    case UNOP_MEMBER:
+        emit_cexpr(expr->info.member.base);
+        emit(".%s", tokn(expr->info.member.name));
+        break;
+    }
+    emit(")");
 }
 void _emit_cexpr(void* _, expression ref expr, tokt ref tok) { (void)_; (void)tok; emit_cexpr(expr); }
 

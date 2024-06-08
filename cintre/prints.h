@@ -419,7 +419,8 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
     switch (tty->tyty) {
     case TYPE_VOID: fprintf(strm, "()"); break;
 
-    case TYPE_CHAR:;
+    case TYPE_CHAR:
+        fprintf(strm, "\x1b[33m");
         switch (*(char*)p) {
             case '\0': fprintf(strm, "'\\0'"); break;
             case '\'': fprintf(strm, "'\\''"); break;
@@ -434,22 +435,24 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
             case '\t': fprintf(strm, "'\\t'"); break;
             case '\v': fprintf(strm, "'\\v'"); break;
             default: fprintf(strm, ' ' <= *(char*)p && *(char*)p <= '~' ? "'%c'" : "'\\x%02hhx'", *(char*)p);
-        } break;
+        }
+        fprintf(strm, "\x1b[m");
+        break;
 
-    case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", *(unsigned char*)p);  break;
-    case TYPE_SCHAR:  fprintf(strm, "%hhi",     *(signed char*)p);    break;
-    case TYPE_SHORT:  fprintf(strm, "%hi",      *(short*)p);          break;
-    case TYPE_INT:    fprintf(strm, "%i",       *(int*)p);            break;
-    case TYPE_LONG:   fprintf(strm, "%li",      *(long*)p);           break;
-    case TYPE_USHORT: fprintf(strm, "%hu",      *(unsigned short*)p); break;
-    case TYPE_UINT:   fprintf(strm, "%u",       *(unsigned int*)p);   break;
-    case TYPE_ULONG:  fprintf(strm, "%lu",      *(unsigned long*)p);  break;
-    case TYPE_FLOAT:  fprintf(strm, "%f",       *(float*)p);          break;
-    case TYPE_DOUBLE: fprintf(strm, "%lf",      *(double*)p);         break;
+    case TYPE_UCHAR:  fprintf(strm, "\x1b[33m0x%02hhx\x1b[m", *(unsigned char*)p);  break;
+    case TYPE_SCHAR:  fprintf(strm, "\x1b[33m%hhi\x1b[m",     *(signed char*)p);    break;
+    case TYPE_SHORT:  fprintf(strm, "\x1b[33m%hi\x1b[m",      *(short*)p);          break;
+    case TYPE_INT:    fprintf(strm, "\x1b[33m%i\x1b[m",       *(int*)p);            break;
+    case TYPE_LONG:   fprintf(strm, "\x1b[33m%li\x1b[m",      *(long*)p);           break;
+    case TYPE_USHORT: fprintf(strm, "\x1b[33m%hu\x1b[m",      *(unsigned short*)p); break;
+    case TYPE_UINT:   fprintf(strm, "\x1b[33m%u\x1b[m",       *(unsigned int*)p);   break;
+    case TYPE_ULONG:  fprintf(strm, "\x1b[33m%lu\x1b[m",      *(unsigned long*)p);  break;
+    case TYPE_FLOAT:  fprintf(strm, "\x1b[33m%f\x1b[m",       *(float*)p);          break;
+    case TYPE_DOUBLE: fprintf(strm, "\x1b[33m%lf\x1b[m",      *(double*)p);         break;
 
-    case TYPE_STRUCT:
-    case TYPE_UNION:
-        fprintf(strm, "{\n");
+    case TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
+    case TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
+        fprintf(strm, " {\n");
         for (size_t k = 0; k < tty->info.comp.count; k++) {
             struct adpt_comp_field cref f = tty->info.comp.fields+k;
             fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
@@ -463,10 +466,10 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         fprintf(strm, "%*s}", depth*3, "");
         break;
 
-    case TYPE_FUN: fprintf(strm, "(%p)", p); break;
+    case TYPE_FUN: fprintf(strm, "\x1b[32m(%p)\x1b[m", p); break;
 
     case TYPE_PTR:
-        fprintf(strm, "(%p) ", p);
+        fprintf(strm, "\x1b[32m(%p)\x1b[m", p);
         //print_item(strm, &(struct adpt_item){
         //        .type= tty->info.ptr,
         //        .as.object= *(void**)p,

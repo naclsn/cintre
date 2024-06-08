@@ -597,7 +597,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     case ATOM:;
         char cref atom = cstokn(expr->info.atom);
         if ('"' == atom[0]) {
-            exitf("FIXME: slot->as.variable = len"); // (from checker)
+            slot->as.variable = ((struct comp_checked*)expr->usr)->info.str_variable;
             slot->usage = _slot_variable;
             return;
         }

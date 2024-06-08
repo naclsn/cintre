@@ -33,7 +33,15 @@ typedef struct compile_state {
     // - ptr decay (arr type to ptr)
     // - address of (ptr around type)
     // - cast (type to itself)
-    dyarr(struct adpt_type) chk_work;
+    dyarr(struct comp_checked {
+        struct adpt_type const type;
+        union comp_chk_info {
+            size_t str_variable; // if str, the location on stack ('variable') where the array is allocated
+            // TODO: union {} num_value; // if num, the value
+            // TODO: struct adpt_item ident_lookup; // if ident, the result of `lookup`
+        } info;
+    }) chk_types;
+
     // used to deduplicat string literals
     dyarr(buf) chk_interned;
 } compile_state;
@@ -171,7 +179,7 @@ struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref t
         struct adpt_type cref ptr = _cast_type(cs, &ty->info.ptr->type);
         if (!ptr) return NULL;
 
-        return memcpy(dyarr_push(&cs->chk_work), &(struct adpt_type){
+        return memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
                 .size= sizeof(void*),
                 .align= sizeof(void*),
                 .tyty= TYPE_PTR,
@@ -228,13 +236,13 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case ATOM:;
         char cref atom = cstokn(expr->info.atom);
         if ('"' == *atom) {
-            // xxx: because of \u and \U it can be longer than the atom
+            // xxx: may not be enough because of \u and \U it can be longer than the atom
             buf data = {
                 .ptr= mallox(data.cap = strlen(atom)),
                 .len= lex_struqo(data.ptr, data.cap, atom),
             };
 
-            size_t found_at, found_off;
+            size_t found_at, found_off, str_variable;
             for (found_at = 0; found_at < cs->chk_interned.len; found_at++) {
                 buf cref it = cs->chk_interned.ptr+found_at;
                 char cref first = memchr(it->ptr, data.ptr[0], it->len);
@@ -243,9 +251,8 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                     break;
             }
             if (found_at < cs->chk_interned.len) {
-                //size_t const cs_vsp_back_then = cs->chk_interned.ptr[found_at].cap;
-                // (yyy: same discussion as in the new string literal case bellow)
-                exitf("FIXME: expr->info.atom.len = cs_vsp_back_then+found_off");
+                size_t const cs_vsp_back_then = cs->chk_interned.ptr[found_at].cap;
+                str_variable = cs_vsp_back_then+found_off;
                 free(data.ptr);
             }
 
@@ -270,13 +277,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data);
                 _emit_data(cs, 0, data.len, (unsigned char*)data.ptr);
 
-                // yyy: store the location of the array here, it is retrieved
-                // by the compiler. 2 things:
-                // - atom.ptr is not changed, so ptr[0] is still '"' which the
-                //   compiler needs to know what it is dealing with
-                // - atom.len is no longer needed because the data has already
-                //   been essentially emitted, len "points" to this 'variable'
-                exitf("FIXME: expr->info.atom.len = cs->vsp");
+                str_variable = cs->vsp;
 
                 buf ref intern = dyarr_push(&cs->chk_interned);
                 *intern = data;
@@ -287,15 +288,18 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
                 intern->cap = cs->vsp;
             }
 
-            return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct adpt_type){
-                    .size= sizeof(char*),
-                    .align= sizeof(char*),
-                    .tyty= TYPE_ARR,
-                    .info.arr= {
-                        .item= &adptb_char_type,
-                        .count= data.len,
+            return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct comp_checked){
+                    .type= {
+                        .size= sizeof(char*),
+                        .align= sizeof(char*),
+                        .tyty= TYPE_ARR,
+                        .info.arr= {
+                            .item= &adptb_char_type,
+                            .count= data.len,
+                        },
                     },
-                }, sizeof(struct adpt_type));
+                    .info.str_variable= str_variable,
+                }, sizeof(struct comp_checked));
         }
 
         // xxx: not supposed to be of type `char` but `int`
@@ -468,7 +472,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (BINOP_SUB == expr->kind || BINOP_ADD == expr->kind) {
             if (isint(tlhs)) {
                 if (isptr(trhs)) return expr->usr = (void*)rhs;
-                if (isarr(trhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct adpt_type){
+                if (isarr(trhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= TYPE_PTR,
@@ -477,7 +481,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             }
             if (isint(trhs)) {
                 if (isptr(tlhs)) return expr->usr = (void*)tlhs;
-                if (isarr(tlhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct adpt_type){
+                if (isarr(tlhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= TYPE_PTR,
@@ -499,7 +503,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case UNOP_ADDR:
         if (_is_expr_lvalue(cs, expr->info.unary.opr)) {
             failforward(opr, expr->info.unary.opr);
-            return expr->usr = memcpy(dyarr_push(&cs->chk_work), &(struct adpt_type){
+            return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
                     .size= sizeof(void*),
                     .align= sizeof(void*),
                     .tyty= TYPE_PTR,

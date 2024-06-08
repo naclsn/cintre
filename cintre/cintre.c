@@ -53,7 +53,7 @@ typedef struct cintre_state {
 
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 {
-    cs->chk_work.len = 0; // xxx: annoying
+    cs->chk_types.len = 0; // xxx: annoying
     struct slot slot = {.ty= check_expression(cs, expr)};
     if (!slot.ty) return false;
     _alloc_slot(cs, &slot);
@@ -255,7 +255,7 @@ void cintre_cleanup(cintre_state ref gs)
     free(gs->ty_work.ptr);
 
     // xxx: annoying
-    free(gs->comp.chk_work.ptr);
+    free(gs->comp.chk_types.ptr);
     for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
         free(gs->comp.chk_interned.ptr[k].ptr);
     free(gs->comp.chk_interned.ptr);
@@ -551,7 +551,7 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         gs->expr.disallow_comma = true;
         notif("FIXME: *tok = parse_expression(&gs->expr, name)");
         gs->expr.disallow_comma = false;
-        return;
+        return; // remove when fixed
     }
 
     if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, *tok);
@@ -763,7 +763,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     gs->comp.res.len = 0;
 
     if (xcmdis("ty")) {
-        gs->comp.chk_work.len = 0; // xxx: annoying
+        gs->comp.chk_types.len = 0; // xxx: annoying
         struct adpt_type cref ty = check_expression(&gs->comp, expr);
         gs->runr.sp = psp; // yyy: free string/comp literals
         if (!ty) return;

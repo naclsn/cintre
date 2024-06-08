@@ -89,10 +89,10 @@ struct adpt_item const* test_lookup(void* _, char cref name)
 
 void check(void ref usr, expression ref expr, tokt ref tok)
 {
-    struct adpt_type cref ty = check_expression(&(compile_state){.lookup= test_lookup}, expr);
+    lex_state cref ls = usr;
+    struct adpt_type cref ty = check_expression(&(compile_state){.ls= ls, .lookup= test_lookup}, expr);
     print_type(stdout, ty, true);
     printf("\n");
-    lex_state cref ls = usr;
     report_lex_locate(ls, " -- tok: %s", tokn(*tok));
 }
 

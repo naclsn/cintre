@@ -776,7 +776,8 @@ void _parse_decl_exit(parse_decl_state ref ps, struct _parse_decl_capture ref _,
 tokt parse_declaration(parse_decl_state ref ps, tokt tok)
 {
     ps->tok = tok;
-    if (!ps->base) ps->base = &(declaration){0};
+    declaration base = {0};
+    if (!ps->base) ps->base = &base;
     _parse_decl_spec(ps, &(struct _parse_decl_capture){.then= _parse_decl_exit}, ps->base);
     return ps->tok;
 }

@@ -25,6 +25,7 @@
 
 void print_decl(FILE ref strm, struct lex_state cref ls, declaration cref decl);
 void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr, unsigned const depth);
+void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
@@ -58,11 +59,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
             fprintf(strm, " {");
             for (struct decl_type_field const* it = ty->info.comp.first; it; it = it->next) {
                 print_decl(strm, ls, it->decl);
-                // todo: same as an array's length, this is incorrect but
-                //       avoids unneeded complication
-                if (it->bitw) ATOM == it->bitw->kind
-                        ? fprintf(strm, ":%s", tokn(it->bitw->info.atom))
-                        : fprintf(strm, "<expr>");
+                if (it->bitw) fprintf(strm, " :"), print_cxpr(strm, ls, it->bitw);
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -76,6 +73,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
             fprintf(strm, " {");
             for (struct decl_type_enumer const* it = ty->info.enu.first; it; it = it->next) {
                 fprintf(strm, "%s", tokn(it->name));
+                if (it->expr) fprintf(strm, "= "), print_cxpr(strm, ls, it->expr);
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -104,14 +102,9 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
     case KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (ty->info.arr.is_static) fprintf(strm, "\x1b[36mstatic\x1b[m ");
-        if (!ty->info.arr.count) fprintf(strm, "*, ");
-        // todo: this was temporary to generate the test tapes, but because
-        //       we're not going to just compile and run the expression here
-        //       we'll need to print the expression which gets complicated and
-        //       more importantly unneeded for now and before a long time
-        else ATOM == ty->info.arr.count->kind
-                ? fprintf(strm, "%s, ", tokn(ty->info.arr.count->info.atom))
-                : fprintf(strm, "<expr>");
+        if (!ty->info.arr.count) fprintf(strm, "*");
+        else print_cxpr(strm, ls, ty->info.arr.count);
+        fprintf(strm, ", ");
         _print_decl_type(strm, ls, &ty->info.arr.item->type);
         fprintf(strm, "]");
         break;
@@ -195,6 +188,121 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
         print_expr(strm, ls, expr->info.binary.rhs, depth+1);
         break;
     }
+}
+
+void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
+{
+    fprintf(strm, "(");
+    switch (expr->kind) {
+    case ATOM:
+        fprintf(strm, "%s", tokn(expr->info.atom));
+        break;
+
+    case BINOP_SUBSCR:
+        print_cxpr(strm, ls, expr->info.subscr.base);
+        fprintf(strm, "[");
+        print_cxpr(strm, ls, expr->info.subscr.off);
+        fprintf(strm, "]");
+        break;
+
+    case BINOP_CALL:
+        print_cxpr(strm, ls, expr->info.call.base);
+        fprintf(strm, "(");
+        for (struct expr_call_arg* it = expr->info.call.first; it; it = it->next) {
+            print_cxpr(strm, ls, it->expr);
+            if (it->next) fprintf(strm, ", ");
+        }
+        fprintf(strm, ")");
+        break;
+
+    case BINOP_TERNBRANCH:
+        fprintf(strm, "0");
+        break;
+    case BINOP_TERNCOND:
+        print_cxpr(strm, ls, expr->info.binary.lhs); // condition
+        fprintf(strm, " ? ");
+        print_cxpr(strm, ls, expr->info.binary.rhs->info.binary.lhs); // consequence
+        fprintf(strm, " : ");
+        print_cxpr(strm, ls, expr->info.binary.rhs->info.binary.rhs); // alternative
+        break;
+
+        char const* binop;
+    case BINOP_COMMA:     binop = ", ";   goto binop;
+    case BINOP_ASGN:      binop = " = ";  goto binop;
+    case BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
+    case BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
+    case BINOP_ASGN_BAND: binop = "&= ";  goto binop;
+    case BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
+    case BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
+    case BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
+    case BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
+    case BINOP_ASGN_REM:  binop = "%= ";  goto binop;
+    case BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
+    case BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
+    case BINOP_LOR:       binop = " || "; goto binop;
+    case BINOP_LAND:      binop = " && "; goto binop;
+    case BINOP_BOR:       binop = " | ";  goto binop;
+    case BINOP_BXOR:      binop = " ^ ";  goto binop;
+    case BINOP_BAND:      binop = " & ";  goto binop;
+    case BINOP_EQ:        binop = " == "; goto binop;
+    case BINOP_NE:        binop = " != "; goto binop;
+    case BINOP_LT:        binop = " < ";  goto binop;
+    case BINOP_GT:        binop = " > ";  goto binop;
+    case BINOP_LE:        binop = " <= "; goto binop;
+    case BINOP_GE:        binop = " >= "; goto binop;
+    case BINOP_BSHL:      binop = "<<";   goto binop;
+    case BINOP_BSHR:      binop = ">>";   goto binop;
+    case BINOP_SUB:       binop = "-";    goto binop;
+    case BINOP_ADD:       binop = "+";    goto binop;
+    case BINOP_REM:       binop = "%";    goto binop;
+    case BINOP_DIV:       binop = "/";    goto binop;
+    case BINOP_MUL:       binop = "*";    goto binop;
+    binop:
+        print_cxpr(strm, ls, expr->info.binary.lhs);
+        fprintf(strm, "%s", binop);
+        print_cxpr(strm, ls, expr->info.binary.rhs);
+        break;
+
+    case UNOP_CAST:
+        fprintf(strm, "(");
+        _print_decl_type(strm, ls, expr->info.cast.type);
+        fprintf(strm, ")");
+        print_cxpr(strm, ls, expr->info.cast.opr);
+        break;
+
+        char const* unop;
+    case UNOP_ADDR:    unop = "&";  goto unop;
+    case UNOP_DEREF:   unop = "*";  goto unop;
+    case UNOP_BNOT:    unop = "~";  goto unop;
+    case UNOP_LNOT:    unop = "!";  goto unop;
+    case UNOP_MINUS:   unop = "-";  goto unop;
+    case UNOP_PLUS:    unop = "+";  goto unop;
+    case UNOP_PRE_DEC: unop = "--"; goto unop;
+    case UNOP_PRE_INC: unop = "++"; goto unop;
+    unop:
+        fprintf(strm, "%s", unop);
+        print_cxpr(strm, ls, expr->info.unary.opr);
+        break;
+
+    case UNOP_POST_DEC:
+        print_cxpr(strm, ls, expr->info.unary.opr);
+        fprintf(strm, "--");
+        break;
+    case UNOP_POST_INC:
+        print_cxpr(strm, ls, expr->info.unary.opr);
+        fprintf(strm, "++");
+        break;
+
+    case UNOP_PMEMBER:
+        print_cxpr(strm, ls, expr->info.member.base);
+        fprintf(strm, "->%s", tokn(expr->info.member.name));
+        break;
+    case UNOP_MEMBER:
+        print_cxpr(strm, ls, expr->info.member.base);
+        fprintf(strm, ".%s", tokn(expr->info.member.name));
+        break;
+    }
+    fprintf(strm, ")");
 }
 
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top)

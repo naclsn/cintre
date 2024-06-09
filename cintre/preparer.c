@@ -142,7 +142,7 @@ void emit_cexpr(expression cref expr)
     binop:
         emit_cexpr(expr->info.binary.lhs);
         emit("%s", binop);
-        emit_cexpr(expr->info.binary.lhs);
+        emit_cexpr(expr->info.binary.rhs);
         break;
 
     case UNOP_CAST:
@@ -677,8 +677,10 @@ void emit_typedef(declaration cref decl)
     emitln("#define %s_adapt_type %s_adapt_tdf_type", tokn(decl->name), tokn(decl->name));
 }
 
+bool parse_failure = false;
 void emit_top(void* _, declaration cref decl, tokt ref tok)
 {
+    parse_failure = false;
     (void)_;
     (void)tok;
 
@@ -932,7 +934,8 @@ int do_prepare(int argc, char** argv)
         lex_entry(ls, s, infile);
     }
 
-    for (tokt tok = lext(ls); *tokn(tok); tok = parse_declaration(ps, tok));
+    for (tokt tok = lext(ls); *tokn(tok) && !parse_failure; parse_failure = true, tok = parse_declaration(ps, tok));
+    if (parse_failure) exitf("Could not parse source");
 
     char cref thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%s[] = {", thisns) {

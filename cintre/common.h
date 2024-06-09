@@ -95,6 +95,7 @@ struct run_state;
 
 void print_decl(FILE ref strm, struct lex_state cref ls, struct declaration cref decl);
 void print_expr(FILE ref strm, struct lex_state cref ls, struct expression cref expr, unsigned const depth);
+void print_cxpr(FILE ref strm, struct lex_state cref ls, struct expression cref expr);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, struct bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);

@@ -223,19 +223,19 @@ void _emit_arith(compile_state ref cs, enum _arith_op aop, enum _arith_w w, size
 enum _arith_w _slot_arith_w(struct slot cref slot)
 {
     switch (slot->ty->tyty) {
-    case TYPE_CHAR:   return _oprw_8;
-    case TYPE_UCHAR:  return _oprw_8;
-    case TYPE_SCHAR:  return _oprw_8;
-    case TYPE_SHORT:  return _oprw_16;
-    case TYPE_INT:    return _oprw_32;
-    case TYPE_LONG:   return _oprw_64;
-    case TYPE_USHORT: return _oprw_16;
-    case TYPE_UINT:   return _oprw_32;
-    case TYPE_ULONG:  return _oprw_64;
-    case TYPE_FLOAT:  return _oprw_f;
-    case TYPE_DOUBLE: return _oprw_d;
+    case ADPT_TYPE_CHAR:   return _oprw_8;
+    case ADPT_TYPE_UCHAR:  return _oprw_8;
+    case ADPT_TYPE_SCHAR:  return _oprw_8;
+    case ADPT_TYPE_SHORT:  return _oprw_16;
+    case ADPT_TYPE_INT:    return _oprw_32;
+    case ADPT_TYPE_LONG:   return _oprw_64;
+    case ADPT_TYPE_USHORT: return _oprw_16;
+    case ADPT_TYPE_UINT:   return _oprw_32;
+    case ADPT_TYPE_ULONG:  return _oprw_64;
+    case ADPT_TYPE_FLOAT:  return _oprw_f;
+    case ADPT_TYPE_DOUBLE: return _oprw_d;
         // unreachable cases
-    case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:;
+    case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;
     }
     return 0;
 }
@@ -243,19 +243,19 @@ enum _arith_w _slot_arith_w(struct slot cref slot)
 size_t _slot_arith_v(struct slot cref slot)
 {
     switch (slot->ty->tyty) {
-    case TYPE_CHAR:   return slot->as.value.c;
-    case TYPE_UCHAR:  return slot->as.value.uc;
-    case TYPE_SCHAR:  return slot->as.value.sc;
-    case TYPE_SHORT:  return slot->as.value.ss;
-    case TYPE_INT:    return slot->as.value.si;
-    case TYPE_LONG:   return slot->as.value.sl;
-    case TYPE_USHORT: return slot->as.value.us;
-    case TYPE_UINT:   return slot->as.value.ui;
-    case TYPE_ULONG:  return slot->as.value.ul;
-    case TYPE_FLOAT:  return slot->as.value.f;
-    case TYPE_DOUBLE: return slot->as.value.d;
+    case ADPT_TYPE_CHAR:   return slot->as.value.c;
+    case ADPT_TYPE_UCHAR:  return slot->as.value.uc;
+    case ADPT_TYPE_SCHAR:  return slot->as.value.sc;
+    case ADPT_TYPE_SHORT:  return slot->as.value.ss;
+    case ADPT_TYPE_INT:    return slot->as.value.si;
+    case ADPT_TYPE_LONG:   return slot->as.value.sl;
+    case ADPT_TYPE_USHORT: return slot->as.value.us;
+    case ADPT_TYPE_UINT:   return slot->as.value.ui;
+    case ADPT_TYPE_ULONG:  return slot->as.value.ul;
+    case ADPT_TYPE_FLOAT:  return slot->as.value.f;
+    case ADPT_TYPE_DOUBLE: return slot->as.value.d;
         // unreachable cases
-    case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:;
+    case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;
     }
     return 0;
 }
@@ -268,11 +268,11 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
     // signed   -> unsigned: sign extend
 
     bool const is_src_signed =
-        TYPE_CHAR  == small_src->ty->tyty ||
-        TYPE_SCHAR == small_src->ty->tyty ||
-        TYPE_SHORT == small_src->ty->tyty ||
-        TYPE_INT   == small_src->ty->tyty ||
-        TYPE_LONG  == small_src->ty->tyty;
+        ADPT_TYPE_CHAR  == small_src->ty->tyty ||
+        ADPT_TYPE_SCHAR == small_src->ty->tyty ||
+        ADPT_TYPE_SHORT == small_src->ty->tyty ||
+        ADPT_TYPE_INT   == small_src->ty->tyty ||
+        ADPT_TYPE_LONG  == small_src->ty->tyty;
 
     _emit_instr_w_opr(_l2(small_src->ty->size)<<4 | _l2(big_dst->ty->size) | !is_src_signed<<2,
             //at(big_dst), at(small_src));
@@ -282,34 +282,34 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)  \
     do switch ((dst)->ty->tyty) {  \
-    case TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
-    case TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
-    case TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
-    case TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
-    case TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
-    case TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
-    case TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
-    case TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
-    case TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
+    case ADPT_TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
+    case ADPT_TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
+    case ADPT_TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
+    case ADPT_TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
+    case ADPT_TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
+    case ADPT_TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
+    case ADPT_TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
+    case ADPT_TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
+    case ADPT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
         /* unreachable cases */  \
-    case TYPE_VOID: case TYPE_FLOAT: case TYPE_DOUBLE: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:;  \
+    case ADPT_TYPE_VOID: case ADPT_TYPE_FLOAT: case ADPT_TYPE_DOUBLE: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;  \
     } while (0)
 
 #define _cfold_arith(dst, lhs, op, rhs)  \
     do switch ((dst)->ty->tyty) {  \
-    case TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
-    case TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
-    case TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
-    case TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
-    case TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
-    case TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
-    case TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
-    case TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
-    case TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
-    case TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
-    case TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
+    case ADPT_TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
+    case ADPT_TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
+    case ADPT_TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
+    case ADPT_TYPE_SHORT:  (dst)->as.value.ss = (lhs)->as.value.ss op (rhs)->as.value.ss; break;  \
+    case ADPT_TYPE_INT:    (dst)->as.value.si = (lhs)->as.value.si op (rhs)->as.value.si; break;  \
+    case ADPT_TYPE_LONG:   (dst)->as.value.sl = (lhs)->as.value.sl op (rhs)->as.value.sl; break;  \
+    case ADPT_TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
+    case ADPT_TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
+    case ADPT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
+    case ADPT_TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
+    case ADPT_TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
         /* unreachable cases */  \
-    case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:;  \
+    case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;  \
     } while (0)
 
 /// makes a slot "pysical", ie if it was a value, it will be inserted as data
@@ -328,7 +328,7 @@ void _read_object_to_stack(compile_state ref cs, struct slot cref into, void cre
 {
     struct slot ptr = {.ty= &(struct adpt_type){
         .size= sizeof(void*), .align= sizeof(void*),
-        .tyty= TYPE_PTR, // xxx: USL
+        .tyty= ADPT_TYPE_PTR, // xxx: USL
         .info.ptr= into->ty, // xxx: USL
     }};
     _alloc_slot(cs, &ptr);
@@ -355,9 +355,9 @@ void _value_cvt_matrix(struct slot ref dst, struct slot cref src)
 #   define _list1(__do     ) __do(CHAR     ) __do(UCHAR     ) __do(SCHAR     ) __do(SHORT     ) __do(INT     ) __do(LONG     ) __do(USHORT     ) __do(UINT     ) __do(ULONG     ) __do(FLOAT     ) __do(DOUBLE     )
 #   define _list2(__do, __x) __do(__x, CHAR) __do(__x, UCHAR) __do(__x, SCHAR) __do(__x, SHORT) __do(__x, INT) __do(__x, LONG) __do(__x, USHORT) __do(__x, UINT) __do(__x, ULONG) __do(__x, FLOAT) __do(__x, DOUBLE)
 
-#   define _do1(__tdst        ) case TYPE_##__tdst: switch (src->ty->tyty) { _list2(_do2, __tdst) /* unreachable cases */ case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:; } break;
-#   define _do2(__tdst, __tsrc) case TYPE_##__tsrc: _as(__tdst, dst) = _as(__tsrc, src); break;
-                                                    switch (dst->ty->tyty) { _list1(_do1        ) /* unreachable cases */ case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_FUN: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:; }
+#   define _do1(__tdst        ) case ADPT_TYPE_##__tdst: switch (src->ty->tyty) { _list2(_do2, __tdst) /* unreachable cases */ case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:; } break;
+#   define _do2(__tdst, __tsrc) case ADPT_TYPE_##__tsrc: _as(__tdst, dst) = _as(__tsrc, src); break;
+                                                    switch (dst->ty->tyty) { _list1(_do1        ) /* unreachable cases */ case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:; }
 #   undef _do2
 #   undef _do1
 
@@ -400,7 +400,7 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
     // - the slot is a value, compile-time conversion
 
     struct adpt_type cref expr_ty = _truetype(expr->usr);
-    if (TYPE_ARR == expr_ty->tyty && TYPE_PTR == slot->ty->tyty) {
+    if (ADPT_TYPE_ARR == expr_ty->tyty && ADPT_TYPE_PTR == slot->ty->tyty) {
         struct slot tmp = {.ty= expr_ty};
         compile_expression(cs, expr, &tmp);
 
@@ -411,8 +411,8 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
         return;
     }
 
-    bool const is_to_int = TYPE_CHAR <= slot->ty->tyty && slot->ty->tyty <= TYPE_ULONG;
-    bool const is_to_flt = TYPE_FLOAT <= slot->ty->tyty && slot->ty->tyty <= TYPE_DOUBLE;
+    bool const is_to_int = ADPT_TYPE_CHAR <= slot->ty->tyty && slot->ty->tyty <= ADPT_TYPE_ULONG;
+    bool const is_to_flt = ADPT_TYPE_FLOAT <= slot->ty->tyty && slot->ty->tyty <= ADPT_TYPE_DOUBLE;
 
     // TODO: more properly handle ptr <-> int
 
@@ -422,8 +422,8 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
         return;
     }
 
-    bool const is_from_int = TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= TYPE_ULONG;
-    //bool const is_from_flt = TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= TYPE_DOUBLE;
+    bool const is_from_int = ADPT_TYPE_CHAR <= expr_ty->tyty && expr_ty->tyty <= ADPT_TYPE_ULONG;
+    //bool const is_from_flt = ADPT_TYPE_FLOAT <= expr_ty->tyty && expr_ty->tyty <= ADPT_TYPE_DOUBLE;
 
     // same size -> nothing to do
     if (slot->ty->size == expr_ty->size && is_from_int == is_to_int) {
@@ -431,10 +431,10 @@ void _fit_expr_to_slot(compile_state ref cs, expression cref expr, struct slot r
         return;
     }
 
-    //bool const is_to_signed = TYPE_SCHAR == slot->ty->tyty || TYPE_SHORT == slot->ty->tyty || TYPE_INT == slot->ty->tyty || TYPE_LONG == slot->ty->tyty;
-    //bool const is_to_unsigned = TYPE_UCHAR == slot->ty->tyty || TYPE_USHORT == slot->ty->tyty || TYPE_UINT == slot->ty->tyty || TYPE_ULONG == slot->ty->tyty;
-    //bool const is_from_signed = TYPE_SCHAR == expr_ty->tyty || TYPE_SHORT == expr_ty->tyty || TYPE_INT == expr_ty->tyty || TYPE_LONG == expr_ty->tyty;
-    //bool const is_from_unsigned = TYPE_UCHAR == expr_ty->tyty || TYPE_USHORT == expr_ty->tyty || TYPE_UINT == expr_ty->tyty || TYPE_ULONG == expr_ty->tyty;
+    //bool const is_to_signed = ADPT_TYPE_SCHAR == slot->ty->tyty || ADPT_TYPE_SHORT == slot->ty->tyty || ADPT_TYPE_INT == slot->ty->tyty || ADPT_TYPE_LONG == slot->ty->tyty;
+    //bool const is_to_unsigned = ADPT_TYPE_UCHAR == slot->ty->tyty || ADPT_TYPE_USHORT == slot->ty->tyty || ADPT_TYPE_UINT == slot->ty->tyty || ADPT_TYPE_ULONG == slot->ty->tyty;
+    //bool const is_from_signed = ADPT_TYPE_SCHAR == expr_ty->tyty || ADPT_TYPE_SHORT == expr_ty->tyty || ADPT_TYPE_INT == expr_ty->tyty || ADPT_TYPE_LONG == expr_ty->tyty;
+    //bool const is_from_unsigned = ADPT_TYPE_UCHAR == expr_ty->tyty || ADPT_TYPE_USHORT == expr_ty->tyty || ADPT_TYPE_UINT == expr_ty->tyty || ADPT_TYPE_ULONG == expr_ty->tyty;
 
     struct slot tmp = {.ty= expr_ty};
 
@@ -509,27 +509,27 @@ struct slot _compile_lvalue(compile_state ref cs, expression cref expr)
     struct slot r = {.ty= _truetype(expr->usr)};
 
     switch (expr->kind) {
-    case ATOM: {
+    case EXPR_ATOM: {
             // can only be ident
             struct adpt_item cref found = cs->lookup(cs->usr, cstokn(expr->info.atom));
             switch (found->kind) {
-            case ITEM_OBJECT:
+            case ADPT_ITEM_OBJECT:
                 r.as.value.p = found->as.object;
                 r.usage = _slot_value;
                 break;
 
-            case ITEM_VARIABLE:
+            case ADPT_ITEM_VARIABLE:
                 r.as.variable = found->as.variable;
                 r.usage = _slot_variable;
                 break;
 
                 // unreachable cases
-            case ITEM_VALUE: case ITEM_TYPEDEF:;
+            case ADPT_ITEM_VALUE: case ADPT_ITEM_TYPEDEF:;
             }
         }
         break;
 
-    case UNOP_MEMBER: {
+    case EXPR_UNOP_MEMBER: {
             expression cref base_ex = expr->info.member.base;
 
             char cref name = cstokn(expr->info.member.name);
@@ -572,9 +572,9 @@ struct slot _compile_lvalue(compile_state ref cs, expression cref expr)
         }
         break;
 
-    case BINOP_SUBSCR:
-    case UNOP_DEREF:
-    case UNOP_PMEMBER:
+    case EXPR_BINOP_SUBSCR:
+    case EXPR_UNOP_DEREF:
+    case EXPR_UNOP_PMEMBER:
         notif("NIY: this kind of lvalue");
         r.usage = _slot_value;
         break;
@@ -594,7 +594,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
     enum _arith_op op = 0;
 
     switch (expr->kind) {
-    case ATOM:;
+    case EXPR_ATOM:;
         char cref atom = cstokn(expr->info.atom);
         if ('"' == atom[0]) {
             slot->as.variable = ((struct comp_checked*)expr->usr)->info.str_variable;
@@ -616,10 +616,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             // no _truetype because it's an adptb_.._type from checker
             enum adpt_type_tag const tyty = ((struct adpt_type const*)expr->usr)->tyty;
             switch (tyty) {
-            case TYPE_INT:
-            case TYPE_LONG:
-            case TYPE_UINT:
-            case TYPE_ULONG:
+            case ADPT_TYPE_INT:
+            case ADPT_TYPE_LONG:
+            case ADPT_TYPE_UINT:
+            case ADPT_TYPE_ULONG:
                 if (len <3) {
                     if ('9' < atom[len-1]) slot->as.value.ul = atom[0]-'0';
                     else slot->as.value.ul = atom[len-1]-'0' + (2 == len ? (atom[len-2]-'0')*10 : 0);
@@ -642,8 +642,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 }
                 break;
 
-            case TYPE_FLOAT:
-            case TYPE_DOUBLE:;
+            case ADPT_TYPE_FLOAT:
+            case ADPT_TYPE_DOUBLE:;
                 double r = 0;
 
                 if (len <3 || 'x' != (atom[1]|32)) {
@@ -679,7 +679,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                     }
                 }
 
-                if (TYPE_FLOAT == tyty) slot->as.value.f = r;
+                if (ADPT_TYPE_FLOAT == tyty) slot->as.value.f = r;
                 else slot->as.value.d = r;
                 break;
 
@@ -692,31 +692,31 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
         struct adpt_item cref found = cs->lookup(cs->usr, atom);
         switch (found->kind) {
-        case ITEM_VALUE:
+        case ADPT_ITEM_VALUE:
             slot->as.value.sl = found->as.value;
             slot->usage = _slot_value;
             break;
 
-        case ITEM_OBJECT:
+        case ADPT_ITEM_OBJECT:
             _read_object_to_stack(cs, slot, found->as.object);
             slot->usage = _slot_used;
             break;
 
-        case ITEM_TYPEDEF:
+        case ADPT_ITEM_TYPEDEF:
             // unreachable
             break;
 
-        case ITEM_VARIABLE:
+        case ADPT_ITEM_VARIABLE:
             slot->as.variable = found->as.variable;
             slot->usage = _slot_variable;
             break;
         }
         return;
 
-    case BINOP_SUBSCR: {
+    case EXPR_BINOP_SUBSCR: {
             struct slot base = {.ty= _truetype(expr->info.subscr.base->usr)};
 
-            if (TYPE_ARR == base.ty->tyty) {
+            if (ADPT_TYPE_ARR == base.ty->tyty) {
                 compile_expression(cs, expr->info.subscr.base, &base);
 
                 if (_slot_variable != base.usage) {
@@ -744,7 +744,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
                     struct slot ptr = {.ty= &(struct adpt_type){
                         .size= sizeof(void*), .align= sizeof(void*),
-                        .tyty= TYPE_PTR, // xxx: USL
+                        .tyty= ADPT_TYPE_PTR, // xxx: USL
                         .info.ptr= base.ty, // xxx: USL
                     }};
                     _alloc_slot(cs, &ptr);
@@ -816,7 +816,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_CALL: {
+    case EXPR_BINOP_CALL: {
             struct slot fun = {.ty= _truetype(expr->info.call.base->usr)};
             _alloc_slot(cs, &fun);
 
@@ -845,8 +845,8 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_TERNCOND:
-    case BINOP_TERNBRANCH: {
+    case EXPR_BINOP_TERNCOND:
+    case EXPR_BINOP_TERNBRANCH: {
             expression cref condition = expr->info.binary.lhs;
             expression cref consequence = expr->info.binary.rhs->info.binary.lhs;
             expression cref alternative = expr->info.binary.rhs->info.binary.rhs;
@@ -898,7 +898,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_COMMA: {
+    case EXPR_BINOP_COMMA: {
             struct slot drp = {.ty= _truetype(expr->info.binary.lhs->usr)};
             _alloc_slot(cs, &drp);
             compile_expression(cs, expr->info.binary.lhs, &drp);
@@ -909,17 +909,17 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
         {
-    case BINOP_ASGN_BOR:  op = _ops_bori;  goto sw_asgn;
-    case BINOP_ASGN_BXOR: op = _ops_bxori; goto sw_asgn;
-    case BINOP_ASGN_BAND: op = _ops_bandi; goto sw_asgn;
-    case BINOP_ASGN_BSHL: op = _ops_bshli; goto sw_asgn;
-    case BINOP_ASGN_BSHR: op = _ops_bshri; goto sw_asgn;
-    case BINOP_ASGN_SUB:  op = _ops_subi;  goto sw_asgn;
-    case BINOP_ASGN_ADD:  op = _ops_addi;  goto sw_asgn;
-    case BINOP_ASGN_REM:  op = _ops_remi;  goto sw_asgn;
-    case BINOP_ASGN_DIV:  op = _ops_divi;  goto sw_asgn;
-    case BINOP_ASGN_MUL:  op = _ops_muli;  goto sw_asgn;
-    case BINOP_ASGN:
+    case EXPR_BINOP_ASGN_BOR:  op = _ops_bori;  goto sw_asgn;
+    case EXPR_BINOP_ASGN_BXOR: op = _ops_bxori; goto sw_asgn;
+    case EXPR_BINOP_ASGN_BAND: op = _ops_bandi; goto sw_asgn;
+    case EXPR_BINOP_ASGN_BSHL: op = _ops_bshli; goto sw_asgn;
+    case EXPR_BINOP_ASGN_BSHR: op = _ops_bshri; goto sw_asgn;
+    case EXPR_BINOP_ASGN_SUB:  op = _ops_subi;  goto sw_asgn;
+    case EXPR_BINOP_ASGN_ADD:  op = _ops_addi;  goto sw_asgn;
+    case EXPR_BINOP_ASGN_REM:  op = _ops_remi;  goto sw_asgn;
+    case EXPR_BINOP_ASGN_DIV:  op = _ops_divi;  goto sw_asgn;
+    case EXPR_BINOP_ASGN_MUL:  op = _ops_muli;  goto sw_asgn;
+    case EXPR_BINOP_ASGN:
         sw_asgn:;
 
             expression cref dst_ex = expr->info.binary.lhs;
@@ -934,7 +934,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 void cref as_object = dst.as.value.p;
                 dst.ty = &(struct adpt_type){
                     .size= sizeof(void*), .align= sizeof(void*),
-                    .tyty= TYPE_PTR, // xxx: USL
+                    .tyty= ADPT_TYPE_PTR, // xxx: USL
                     .info.ptr= dst.ty, // xxx: USL
                 };
                 _alloc_slot(cs, &dst);
@@ -972,25 +972,25 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         return;
 
         {
-    case BINOP_BOR:  op = _ops_bori;  goto sw_binop;
-    case BINOP_BXOR: op = _ops_bxori; goto sw_binop;
-    case BINOP_BAND: op = _ops_bandi; goto sw_binop;
-    case BINOP_BSHL: op = _ops_bshli; goto sw_binop; // asy
-    case BINOP_BSHR: op = _ops_bshri; goto sw_binop; // asy
-    case BINOP_SUB:  op = _ops_subi;  goto sw_binop; // asy
-    case BINOP_ADD:  op = _ops_addi;  goto sw_binop;
-    case BINOP_REM:  op = _ops_remi;  goto sw_binop; // asy
-    case BINOP_DIV:  op = _ops_divi;  goto sw_binop; // asy
-    case BINOP_MUL:  op = _ops_muli;  goto sw_binop;
+    case EXPR_BINOP_BOR:  op = _ops_bori;  goto sw_binop;
+    case EXPR_BINOP_BXOR: op = _ops_bxori; goto sw_binop;
+    case EXPR_BINOP_BAND: op = _ops_bandi; goto sw_binop;
+    case EXPR_BINOP_BSHL: op = _ops_bshli; goto sw_binop; // asy
+    case EXPR_BINOP_BSHR: op = _ops_bshri; goto sw_binop; // asy
+    case EXPR_BINOP_SUB:  op = _ops_subi;  goto sw_binop; // asy
+    case EXPR_BINOP_ADD:  op = _ops_addi;  goto sw_binop;
+    case EXPR_BINOP_REM:  op = _ops_remi;  goto sw_binop; // asy
+    case EXPR_BINOP_DIV:  op = _ops_divi;  goto sw_binop; // asy
+    case EXPR_BINOP_MUL:  op = _ops_muli;  goto sw_binop;
         sw_binop:;
 
             struct slot lhs = *slot, rhs = {0};
 
-            if (TYPE_PTR == slot->ty->tyty) {
+            if (ADPT_TYPE_PTR == slot->ty->tyty) {
                 // one is a pointer(/array), the other is promoted to long and mult by sizeof item
                 expression const* ptr, * off;
                 struct adpt_type const* ty = _truetype(expr->info.binary.lhs->usr);
-                if (TYPE_PTR == ty->tyty || TYPE_ARR == ty->tyty)
+                if (ADPT_TYPE_PTR == ty->tyty || ADPT_TYPE_ARR == ty->tyty)
                     ptr = expr->info.binary.lhs, off = expr->info.binary.rhs;
                 else ty = _truetype(expr->info.binary.rhs->usr),
                     ptr = expr->info.binary.rhs, off = expr->info.binary.lhs;
@@ -1008,7 +1008,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 }
                 // YYY: to make things simpler, the slot is forcefully used
                 // (with the lea in _fit or the move above); only case where
-                // this is unnecessary is with TYPE_PTR and _slot_variable
+                // this is unnecessary is with ADPT_TYPE_PTR and _slot_variable
                 // which, granted, is likely the most common case, but not
                 // worth 'optimizing'
 
@@ -1047,7 +1047,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
                 rhs = *slot;
                 lhs = *slot = tmp;
-                // wip: only comming from case ATOM in assignment
+                // wip: only comming from case EXPR_ATOM in assignment
                 // so for now the destination is a stack variable
             }
 
@@ -1135,7 +1135,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case UNOP_ADDR: {
+    case EXPR_UNOP_ADDR: {
             //if (..FUN..) slot->usage = _slot_var.. idk;
 
             struct slot obj = _compile_lvalue(cs, expr->info.unary.opr);
@@ -1163,7 +1163,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case UNOP_DEREF: {
+    case EXPR_UNOP_DEREF: {
             struct slot ptr = {.ty= _truetype(expr->info.unary.opr->usr)};
             _alloc_slot(cs, &ptr);
             compile_expression(cs, expr->info.unary.opr, &ptr);
@@ -1182,7 +1182,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
             case _slot_variable:
                 _cancel_slot(cs, &ptr);
-                if (TYPE_ARR == ptr.ty->tyty) {
+                if (ADPT_TYPE_ARR == ptr.ty->tyty) {
                     slot->as.variable = ptr.as.variable;
                     slot->usage = _slot_variable;
                 } else {
@@ -1194,15 +1194,15 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case UNOP_CAST:
+    case EXPR_UNOP_CAST:
         _fit_expr_to_slot(cs, expr->info.cast.opr, slot);
         return;
 
-    case UNOP_PMEMBER:
+    case EXPR_UNOP_PMEMBER:
         notif("NIY: pmember");
         slot->usage = _slot_used;
         return;
-    case UNOP_MEMBER: {
+    case EXPR_UNOP_MEMBER: {
             expression cref base_ex = expr->info.member.base;
             char cref name = cstokn(expr->info.member.name);
             struct adpt_type cref base_ty = _truetype(base_ex->usr);
@@ -1229,35 +1229,35 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
-    case BINOP_LOR:
-    case BINOP_LAND:
+    case EXPR_BINOP_LOR:
+    case EXPR_BINOP_LAND:
         notif("NIY: branches");
         slot->usage = _slot_used;
         return;
 
-    case BINOP_EQ:
-    case BINOP_NE:
-    case BINOP_LT:
-    case BINOP_GT:
-    case BINOP_LE:
-    case BINOP_GE:
+    case EXPR_BINOP_EQ:
+    case EXPR_BINOP_NE:
+    case EXPR_BINOP_LT:
+    case EXPR_BINOP_GT:
+    case EXPR_BINOP_LE:
+    case EXPR_BINOP_GE:
         notif("NIY: comparisons");
         slot->usage = _slot_used;
         return;
 
-    case UNOP_BNOT:
-    case UNOP_LNOT:
-    case UNOP_MINUS:
-    case UNOP_PLUS:
+    case EXPR_UNOP_BNOT:
+    case EXPR_UNOP_LNOT:
+    case EXPR_UNOP_MINUS:
+    case EXPR_UNOP_PLUS:
         compile_expression(cs, expr->info.unary.opr, slot);
 
         switch (slot->usage) {
         case _slot_value:
             switch (expr->kind) {
-            case UNOP_BNOT: _cfold_arith_ints(slot, &(struct slot){0}, |~, slot); break;
-            case UNOP_LNOT: _cfold_arith(slot, &(struct slot){0}, ||!, slot); break;
-            case UNOP_MINUS: _cfold_arith(slot, &(struct slot){0}, -, slot); break;
-            case UNOP_PLUS: break;
+            case EXPR_UNOP_BNOT: _cfold_arith_ints(slot, &(struct slot){0}, |~, slot); break;
+            case EXPR_UNOP_LNOT: _cfold_arith(slot, &(struct slot){0}, ||!, slot); break;
+            case EXPR_UNOP_MINUS: _cfold_arith(slot, &(struct slot){0}, -, slot); break;
+            case EXPR_UNOP_PLUS: break;
                 // unreachable cases
             default:; // (44 cases ><'')
             }
@@ -1267,10 +1267,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         case _slot_used:     at_slot = at(slot); if (0)
         case _slot_variable: at_slot = atv(slot);
             switch (expr->kind) {
-            case UNOP_BNOT: _emit_arith(cs, _ops_bxori, _slot_arith_w(slot), at(slot), -1/* xxx: should be of the type's size, this is larger */, at_slot); break;
-            case UNOP_LNOT: notif("NIY: emit lnot"); break;
-            case UNOP_MINUS: _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, at_slot); break;
-            case UNOP_PLUS: _emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
+            case EXPR_UNOP_BNOT: _emit_arith(cs, _ops_bxori, _slot_arith_w(slot), at(slot), -1/* xxx: should be of the type's size, this is larger */, at_slot); break;
+            case EXPR_UNOP_LNOT: notif("NIY: emit lnot"); break;
+            case EXPR_UNOP_MINUS: _emit_arith(cs, _ops_subi, _slot_arith_w(slot), at(slot), 0, at_slot); break;
+            case EXPR_UNOP_PLUS: _emit_move(cs, at(slot), slot->ty->size, atv(slot)); break;
                 // unreachable cases
             default:; // (44 cases ><'')
             }
@@ -1280,10 +1280,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
         {
             bool post;
-    case UNOP_PRE_DEC: post = false; op = _ops_rsubi; goto sw_crement;
-    case UNOP_PRE_INC: post = false; op = _ops_addi;  goto sw_crement;
-    case UNOP_POST_DEC: post = true; op = _ops_rsubi; goto sw_crement;
-    case UNOP_POST_INC: post = true; op = _ops_addi;  goto sw_crement;
+    case EXPR_UNOP_PRE_DEC: post = false; op = _ops_rsubi; goto sw_crement;
+    case EXPR_UNOP_PRE_INC: post = false; op = _ops_addi;  goto sw_crement;
+    case EXPR_UNOP_POST_DEC: post = true; op = _ops_rsubi; goto sw_crement;
+    case EXPR_UNOP_POST_INC: post = true; op = _ops_addi;  goto sw_crement;
         sw_crement:;
 
             struct slot dst = _compile_lvalue(cs, expr->info.unary.opr);
@@ -1308,7 +1308,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 slot->usage = _slot_used;
             }
             _emit_arith(cs, op, _slot_arith_w(slot), atv(slot),
-                    TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
+                    ADPT_TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
                     atv(slot));
 
             return;

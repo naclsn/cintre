@@ -101,5 +101,6 @@ void print_code(FILE ref strm, struct bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
 void print_tops(FILE ref strm, struct run_state cref rs, struct adpt_item cref items, size_t const count);
 void print_slot(FILE ref strm, struct slot cref slt);
+void print_lexr(FILE ref strm, struct lex_state cref ls);
 
 #endif // CINTRE_COMMON_H

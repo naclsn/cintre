@@ -36,24 +36,24 @@ void print_slot(FILE ref strm, struct slot cref slt);
 
 void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty)
 {
-    for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
-    case QUAL_END:                                                  break;
-    case QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
-    case QUAL_RESTRICT:  fprintf(strm, "\x1b[34mrestrict\x1b[m ");  break;
-    case QUAL_VOLATILE:  fprintf(strm, "\x1b[34mvolatile\x1b[m ");  break;
-    case QUAL_SIGNED:    fprintf(strm, "\x1b[34msigned\x1b[m ");    break;
-    case QUAL_UNSIGNED:  fprintf(strm, "\x1b[34munsigned\x1b[m ");  break;
-    case QUAL_SHORT:     fprintf(strm, "\x1b[34mshort\x1b[m ");     break;
-    case QUAL_LONG:      fprintf(strm, "\x1b[34mlong\x1b[m ");      break;
-    case QUAL_COMPLEX:   fprintf(strm, "\x1b[34mcomplex\x1b[m ");   break;
-    case QUAL_IMAGINARY: fprintf(strm, "\x1b[34mimaginary\x1b[m "); break;
+    for (size_t k = 0; DECL_QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+    case DECL_QUAL_END:                                                  break;
+    case DECL_QUAL_CONST:     fprintf(strm, "\x1b[34mconst\x1b[m ");     break;
+    case DECL_QUAL_RESTRICT:  fprintf(strm, "\x1b[34mrestrict\x1b[m ");  break;
+    case DECL_QUAL_VOLATILE:  fprintf(strm, "\x1b[34mvolatile\x1b[m ");  break;
+    case DECL_QUAL_SIGNED:    fprintf(strm, "\x1b[34msigned\x1b[m ");    break;
+    case DECL_QUAL_UNSIGNED:  fprintf(strm, "\x1b[34munsigned\x1b[m ");  break;
+    case DECL_QUAL_SHORT:     fprintf(strm, "\x1b[34mshort\x1b[m ");     break;
+    case DECL_QUAL_LONG:      fprintf(strm, "\x1b[34mlong\x1b[m ");      break;
+    case DECL_QUAL_COMPLEX:   fprintf(strm, "\x1b[34mcomplex\x1b[m ");   break;
+    case DECL_QUAL_IMAGINARY: fprintf(strm, "\x1b[34mimaginary\x1b[m "); break;
     }
 
     switch (ty->kind) {
-    case KIND_NOTAG: fprintf(strm, "\x1b[32m%s\x1b[m", tokn(ty->name)); break;
+    case DECL_KIND_NOTAG: fprintf(strm, "\x1b[32m%s\x1b[m", tokn(ty->name)); break;
 
-    case KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
-    case KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
+    case DECL_KIND_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
+    case DECL_KIND_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
         if (*tokn(ty->name)) fprintf(strm, " %s", tokn(ty->name));
         if ((size_t)-1 != ty->info.comp.count) {
             fprintf(strm, " {");
@@ -66,7 +66,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
         }
         break;
 
-    case KIND_ENUM:
+    case DECL_KIND_ENUM:
         fprintf(strm, "\x1b[34menum\x1b[m");
         if (*tokn(ty->name)) fprintf(strm, " %s", tokn(ty->name));
         if ((size_t)-1 != ty->info.enu.count) {
@@ -80,13 +80,13 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
         }
         break;
 
-    case KIND_PTR:
+    case DECL_KIND_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
         _print_decl_type(strm, ls, &ty->info.ptr->type);
         fprintf(strm, "]");
         break;
 
-    case KIND_FUN:
+    case DECL_KIND_FUN:
         fprintf(strm, "\x1b[34mfun\x1b[m(");
         if ((size_t)-1 == ty->info.fun.count) ;
         else if (!ty->info.fun.count) fprintf(strm, "\x1b[36mvoid\x1b[m");
@@ -99,7 +99,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
         _print_decl_type(strm, ls, &ty->info.fun.ret->type);
         break;
 
-    case KIND_ARR:
+    case DECL_KIND_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (ty->info.arr.is_static) fprintf(strm, "\x1b[36mstatic\x1b[m ");
         if (!ty->info.arr.count) fprintf(strm, "*");
@@ -114,12 +114,12 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
 void print_decl(FILE ref strm, lex_state cref ls, declaration cref decl)
 {
     switch (decl->spec) {
-    case SPEC_NONE:                                               break;
-    case SPEC_TYPEDEF:  fprintf(strm, "\x1b[36mtypedef\x1b[m ");  break;
-    case SPEC_EXTERN:   fprintf(strm, "\x1b[36mextern\x1b[m ");   break;
-    case SPEC_STATIC:   fprintf(strm, "\x1b[36mstatic\x1b[m ");   break;
-    case SPEC_AUTO:     fprintf(strm, "\x1b[36mauto\x1b[m ");     break;
-    case SPEC_REGISTER: fprintf(strm, "\x1b[36mregister\x1b[m "); break;
+    case DECL_SPEC_NONE:                                               break;
+    case DECL_SPEC_TYPEDEF:  fprintf(strm, "\x1b[36mtypedef\x1b[m ");  break;
+    case DECL_SPEC_EXTERN:   fprintf(strm, "\x1b[36mextern\x1b[m ");   break;
+    case DECL_SPEC_STATIC:   fprintf(strm, "\x1b[36mstatic\x1b[m ");   break;
+    case DECL_SPEC_AUTO:     fprintf(strm, "\x1b[36mauto\x1b[m ");     break;
+    case DECL_SPEC_REGISTER: fprintf(strm, "\x1b[36mregister\x1b[m "); break;
     }
     if (decl->is_inline) fprintf(strm, "\x1b[34minline\x1b[m ");
     fprintf(strm, "%s: ", tokn(decl->name));
@@ -136,7 +136,7 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
         return;
     }
 
-    if (ATOM == expr->kind) {
+    if (EXPR_ATOM == expr->kind) {
         char const c = *tokn(expr->info.atom);
         fprintf(strm, "\x1b[%dm%s\x1b[m\n", '"' == c ? 36 : ('0' <= c && c <= '9') || '\'' == c || '.' == c ? 33 : 0, tokn(expr->info.atom));
         return;
@@ -145,29 +145,29 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
     fprintf(strm, "\x1b[34m%s\x1b[m\n", op_kind_names[expr->kind]);
 
     switch (expr->kind) {
-    case UNOP_CAST:
+    case EXPR_UNOP_CAST:
         for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
         _print_decl_type(strm, ls, expr->info.cast.type);
         fprintf(strm, "\n");
         print_expr(strm, ls, expr->info.cast.opr, depth+1);
         break;
 
-    case UNOP_MEMBER:
-    case UNOP_PMEMBER:
+    case EXPR_UNOP_MEMBER:
+    case EXPR_UNOP_PMEMBER:
         print_expr(strm, ls, expr->info.member.base, depth+1);
         for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
-        fprintf(strm, "%s%s\n", UNOP_MEMBER == expr->kind ? "." : "->", tokn(expr->info.member.name));
+        fprintf(strm, "%s%s\n", EXPR_UNOP_MEMBER == expr->kind ? "." : "->", tokn(expr->info.member.name));
         break;
 
-    case UNOP_ADDR:     case UNOP_DEREF:
-    case UNOP_BNOT:     case UNOP_LNOT:
-    case UNOP_MINUS:    case UNOP_PLUS:
-    case UNOP_PRE_DEC:  case UNOP_PRE_INC:
-    case UNOP_POST_DEC: case UNOP_POST_INC:
+    case EXPR_UNOP_ADDR:     case EXPR_UNOP_DEREF:
+    case EXPR_UNOP_BNOT:     case EXPR_UNOP_LNOT:
+    case EXPR_UNOP_MINUS:    case EXPR_UNOP_PLUS:
+    case EXPR_UNOP_PRE_DEC:  case EXPR_UNOP_PRE_INC:
+    case EXPR_UNOP_POST_DEC: case EXPR_UNOP_POST_INC:
         print_expr(strm, ls, expr->info.unary.opr, depth+1);
         break;
 
-    case BINOP_CALL:
+    case EXPR_BINOP_CALL:
         print_expr(strm, ls, expr->info.call.base, depth+1);
         size_t count = 0;
         for (struct expr_call_arg const* it = expr->info.call.first; it; it = it->next)
@@ -178,7 +178,7 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
             print_expr(strm, ls, it->expr, depth+2);
         break;
 
-    case BINOP_SUBSCR:
+    case EXPR_BINOP_SUBSCR:
         print_expr(strm, ls, expr->info.subscr.base, depth+1);
         print_expr(strm, ls, expr->info.subscr.off, depth+1);
         break;
@@ -194,18 +194,18 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
 {
     fprintf(strm, "(");
     switch (expr->kind) {
-    case ATOM:
+    case EXPR_ATOM:
         fprintf(strm, "%s", tokn(expr->info.atom));
         break;
 
-    case BINOP_SUBSCR:
+    case EXPR_BINOP_SUBSCR:
         print_cxpr(strm, ls, expr->info.subscr.base);
         fprintf(strm, "[");
         print_cxpr(strm, ls, expr->info.subscr.off);
         fprintf(strm, "]");
         break;
 
-    case BINOP_CALL:
+    case EXPR_BINOP_CALL:
         print_cxpr(strm, ls, expr->info.call.base);
         fprintf(strm, "(");
         for (struct expr_call_arg* it = expr->info.call.first; it; it = it->next) {
@@ -215,10 +215,10 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         fprintf(strm, ")");
         break;
 
-    case BINOP_TERNBRANCH:
+    case EXPR_BINOP_TERNBRANCH:
         fprintf(strm, "0");
         break;
-    case BINOP_TERNCOND:
+    case EXPR_BINOP_TERNCOND:
         print_cxpr(strm, ls, expr->info.binary.lhs); // condition
         fprintf(strm, " ? ");
         print_cxpr(strm, ls, expr->info.binary.rhs->info.binary.lhs); // consequence
@@ -227,43 +227,43 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         break;
 
         char const* binop;
-    case BINOP_COMMA:     binop = ", ";   goto binop;
-    case BINOP_ASGN:      binop = " = ";  goto binop;
-    case BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
-    case BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
-    case BINOP_ASGN_BAND: binop = "&= ";  goto binop;
-    case BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
-    case BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
-    case BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
-    case BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
-    case BINOP_ASGN_REM:  binop = "%= ";  goto binop;
-    case BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
-    case BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
-    case BINOP_LOR:       binop = " || "; goto binop;
-    case BINOP_LAND:      binop = " && "; goto binop;
-    case BINOP_BOR:       binop = " | ";  goto binop;
-    case BINOP_BXOR:      binop = " ^ ";  goto binop;
-    case BINOP_BAND:      binop = " & ";  goto binop;
-    case BINOP_EQ:        binop = " == "; goto binop;
-    case BINOP_NE:        binop = " != "; goto binop;
-    case BINOP_LT:        binop = " < ";  goto binop;
-    case BINOP_GT:        binop = " > ";  goto binop;
-    case BINOP_LE:        binop = " <= "; goto binop;
-    case BINOP_GE:        binop = " >= "; goto binop;
-    case BINOP_BSHL:      binop = "<<";   goto binop;
-    case BINOP_BSHR:      binop = ">>";   goto binop;
-    case BINOP_SUB:       binop = "-";    goto binop;
-    case BINOP_ADD:       binop = "+";    goto binop;
-    case BINOP_REM:       binop = "%";    goto binop;
-    case BINOP_DIV:       binop = "/";    goto binop;
-    case BINOP_MUL:       binop = "*";    goto binop;
+    case EXPR_BINOP_COMMA:     binop = ", ";   goto binop;
+    case EXPR_BINOP_ASGN:      binop = " = ";  goto binop;
+    case EXPR_BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
+    case EXPR_BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
+    case EXPR_BINOP_ASGN_BAND: binop = "&= ";  goto binop;
+    case EXPR_BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
+    case EXPR_BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
+    case EXPR_BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
+    case EXPR_BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
+    case EXPR_BINOP_ASGN_REM:  binop = "%= ";  goto binop;
+    case EXPR_BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
+    case EXPR_BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
+    case EXPR_BINOP_LOR:       binop = " || "; goto binop;
+    case EXPR_BINOP_LAND:      binop = " && "; goto binop;
+    case EXPR_BINOP_BOR:       binop = " | ";  goto binop;
+    case EXPR_BINOP_BXOR:      binop = " ^ ";  goto binop;
+    case EXPR_BINOP_BAND:      binop = " & ";  goto binop;
+    case EXPR_BINOP_EQ:        binop = " == "; goto binop;
+    case EXPR_BINOP_NE:        binop = " != "; goto binop;
+    case EXPR_BINOP_LT:        binop = " < ";  goto binop;
+    case EXPR_BINOP_GT:        binop = " > ";  goto binop;
+    case EXPR_BINOP_LE:        binop = " <= "; goto binop;
+    case EXPR_BINOP_GE:        binop = " >= "; goto binop;
+    case EXPR_BINOP_BSHL:      binop = "<<";   goto binop;
+    case EXPR_BINOP_BSHR:      binop = ">>";   goto binop;
+    case EXPR_BINOP_SUB:       binop = "-";    goto binop;
+    case EXPR_BINOP_ADD:       binop = "+";    goto binop;
+    case EXPR_BINOP_REM:       binop = "%";    goto binop;
+    case EXPR_BINOP_DIV:       binop = "/";    goto binop;
+    case EXPR_BINOP_MUL:       binop = "*";    goto binop;
     binop:
         print_cxpr(strm, ls, expr->info.binary.lhs);
         fprintf(strm, "%s", binop);
         print_cxpr(strm, ls, expr->info.binary.rhs);
         break;
 
-    case UNOP_CAST:
+    case EXPR_UNOP_CAST:
         fprintf(strm, "(");
         _print_decl_type(strm, ls, expr->info.cast.type);
         fprintf(strm, ")");
@@ -271,33 +271,33 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         break;
 
         char const* unop;
-    case UNOP_ADDR:    unop = "&";  goto unop;
-    case UNOP_DEREF:   unop = "*";  goto unop;
-    case UNOP_BNOT:    unop = "~";  goto unop;
-    case UNOP_LNOT:    unop = "!";  goto unop;
-    case UNOP_MINUS:   unop = "-";  goto unop;
-    case UNOP_PLUS:    unop = "+";  goto unop;
-    case UNOP_PRE_DEC: unop = "--"; goto unop;
-    case UNOP_PRE_INC: unop = "++"; goto unop;
+    case EXPR_UNOP_ADDR:    unop = "&";  goto unop;
+    case EXPR_UNOP_DEREF:   unop = "*";  goto unop;
+    case EXPR_UNOP_BNOT:    unop = "~";  goto unop;
+    case EXPR_UNOP_LNOT:    unop = "!";  goto unop;
+    case EXPR_UNOP_MINUS:   unop = "-";  goto unop;
+    case EXPR_UNOP_PLUS:    unop = "+";  goto unop;
+    case EXPR_UNOP_PRE_DEC: unop = "--"; goto unop;
+    case EXPR_UNOP_PRE_INC: unop = "++"; goto unop;
     unop:
         fprintf(strm, "%s", unop);
         print_cxpr(strm, ls, expr->info.unary.opr);
         break;
 
-    case UNOP_POST_DEC:
+    case EXPR_UNOP_POST_DEC:
         print_cxpr(strm, ls, expr->info.unary.opr);
         fprintf(strm, "--");
         break;
-    case UNOP_POST_INC:
+    case EXPR_UNOP_POST_INC:
         print_cxpr(strm, ls, expr->info.unary.opr);
         fprintf(strm, "++");
         break;
 
-    case UNOP_PMEMBER:
+    case EXPR_UNOP_PMEMBER:
         print_cxpr(strm, ls, expr->info.member.base);
         fprintf(strm, "->%s", tokn(expr->info.member.name));
         break;
-    case UNOP_MEMBER:
+    case EXPR_UNOP_MEMBER:
         print_cxpr(strm, ls, expr->info.member.base);
         fprintf(strm, ".%s", tokn(expr->info.member.name));
         break;
@@ -314,21 +314,21 @@ void print_type(FILE ref strm, struct adpt_type cref ty, bool const top)
 
     struct adpt_type cref tty = top ? _truetype(ty) : ty;
     switch (tty->tyty) {
-    case TYPE_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
-    case TYPE_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
-    case TYPE_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
-    case TYPE_SCHAR:  fprintf(strm, "\x1b[32mschar\x1b[m");  break;
-    case TYPE_SHORT:  fprintf(strm, "\x1b[32mshort\x1b[m");  break;
-    case TYPE_INT:    fprintf(strm, "\x1b[32mint\x1b[m");    break;
-    case TYPE_LONG:   fprintf(strm, "\x1b[32mlong\x1b[m");   break;
-    case TYPE_USHORT: fprintf(strm, "\x1b[32mushort\x1b[m"); break;
-    case TYPE_UINT:   fprintf(strm, "\x1b[32muint\x1b[m");   break;
-    case TYPE_ULONG:  fprintf(strm, "\x1b[32mulong\x1b[m");  break;
-    case TYPE_FLOAT:  fprintf(strm, "\x1b[32mfloat\x1b[m");  break;
-    case TYPE_DOUBLE: fprintf(strm, "\x1b[32mdouble\x1b[m"); break;
+    case ADPT_TYPE_VOID:   fprintf(strm, "\x1b[32mvoid\x1b[m");   break;
+    case ADPT_TYPE_CHAR:   fprintf(strm, "\x1b[32mchar\x1b[m");   break;
+    case ADPT_TYPE_UCHAR:  fprintf(strm, "\x1b[32muchar\x1b[m");  break;
+    case ADPT_TYPE_SCHAR:  fprintf(strm, "\x1b[32mschar\x1b[m");  break;
+    case ADPT_TYPE_SHORT:  fprintf(strm, "\x1b[32mshort\x1b[m");  break;
+    case ADPT_TYPE_INT:    fprintf(strm, "\x1b[32mint\x1b[m");    break;
+    case ADPT_TYPE_LONG:   fprintf(strm, "\x1b[32mlong\x1b[m");   break;
+    case ADPT_TYPE_USHORT: fprintf(strm, "\x1b[32mushort\x1b[m"); break;
+    case ADPT_TYPE_UINT:   fprintf(strm, "\x1b[32muint\x1b[m");   break;
+    case ADPT_TYPE_ULONG:  fprintf(strm, "\x1b[32mulong\x1b[m");  break;
+    case ADPT_TYPE_FLOAT:  fprintf(strm, "\x1b[32mfloat\x1b[m");  break;
+    case ADPT_TYPE_DOUBLE: fprintf(strm, "\x1b[32mdouble\x1b[m"); break;
 
-    case TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
-    case TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
+    case ADPT_TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
+    case ADPT_TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
         if (tty->info.comp.named) {
             fprintf(strm, " %s", tty->info.comp.named);
             if (!top) break;
@@ -342,7 +342,7 @@ void print_type(FILE ref strm, struct adpt_type cref ty, bool const top)
         fprintf(strm, "}");
         break;
 
-    case TYPE_FUN:
+    case ADPT_TYPE_FUN:
         fprintf(strm, "\x1b[34mfun\x1b[m(");
         for (size_t k = 0; k < tty->info.fun.count; k++) {
             struct adpt_fun_param const* it = tty->info.fun.params+k;
@@ -353,19 +353,19 @@ void print_type(FILE ref strm, struct adpt_type cref ty, bool const top)
         print_type(strm, tty->info.fun.ret, false);
         break;
 
-    case TYPE_PTR:
+    case ADPT_TYPE_PTR:
         fprintf(strm, "\x1b[34mptr\x1b[m[");
         print_type(strm, tty->info.ptr, false);
         fprintf(strm, "]");
         break;
 
-    case TYPE_ARR:
+    case ADPT_TYPE_ARR:
         fprintf(strm, "\x1b[34marr\x1b[m[%zu, ", tty->info.arr.count);
         print_type(strm, tty->info.arr.item, false);
         fprintf(strm, "]");
         break;
 
-    case TYPE_NAMED:
+    case ADPT_TYPE_NAMED:
         fprintf(strm, "\x1b[32m%s\x1b[m", tty->info.named.name);
         if (top) {
             fprintf(strm, " = ");
@@ -510,24 +510,24 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         fprintf(strm, "\n   = ");
     }
 
-    if (ITEM_TYPEDEF == it->kind) {
+    if (ADPT_ITEM_TYPEDEF == it->kind) {
         fprintf(strm, "???");
         return;
     }
-    if (ITEM_VALUE == it->kind) {
+    if (ADPT_ITEM_VALUE == it->kind) {
         fprintf(strm, "%li", it->as.value);
         return;
     }
 
-    void cref p = ITEM_OBJECT == it->kind
+    void cref p = ADPT_ITEM_OBJECT == it->kind
         ? it->as.object
         : stack+it->as.variable;
 
     struct adpt_type cref tty = _truetype(it->type);
     switch (tty->tyty) {
-    case TYPE_VOID: fprintf(strm, "()"); break;
+    case ADPT_TYPE_VOID: fprintf(strm, "()"); break;
 
-    case TYPE_CHAR:
+    case ADPT_TYPE_CHAR:
         fprintf(strm, "\x1b[33m");
         switch (*(char*)p) {
             case '\0': fprintf(strm, "'\\0'"); break;
@@ -547,26 +547,26 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         fprintf(strm, "\x1b[m");
         break;
 
-    case TYPE_UCHAR:  fprintf(strm, "\x1b[33m0x%02hhx\x1b[m", *(unsigned char*)p);  break;
-    case TYPE_SCHAR:  fprintf(strm, "\x1b[33m%hhi\x1b[m",     *(signed char*)p);    break;
-    case TYPE_SHORT:  fprintf(strm, "\x1b[33m%hi\x1b[m",      *(short*)p);          break;
-    case TYPE_INT:    fprintf(strm, "\x1b[33m%i\x1b[m",       *(int*)p);            break;
-    case TYPE_LONG:   fprintf(strm, "\x1b[33m%li\x1b[m",      *(long*)p);           break;
-    case TYPE_USHORT: fprintf(strm, "\x1b[33m%hu\x1b[m",      *(unsigned short*)p); break;
-    case TYPE_UINT:   fprintf(strm, "\x1b[33m%u\x1b[m",       *(unsigned int*)p);   break;
-    case TYPE_ULONG:  fprintf(strm, "\x1b[33m%lu\x1b[m",      *(unsigned long*)p);  break;
-    case TYPE_FLOAT:  fprintf(strm, "\x1b[33m%f\x1b[m",       *(float*)p);          break;
-    case TYPE_DOUBLE: fprintf(strm, "\x1b[33m%lf\x1b[m",      *(double*)p);         break;
+    case ADPT_TYPE_UCHAR:  fprintf(strm, "\x1b[33m0x%02hhx\x1b[m", *(unsigned char*)p);  break;
+    case ADPT_TYPE_SCHAR:  fprintf(strm, "\x1b[33m%hhi\x1b[m",     *(signed char*)p);    break;
+    case ADPT_TYPE_SHORT:  fprintf(strm, "\x1b[33m%hi\x1b[m",      *(short*)p);          break;
+    case ADPT_TYPE_INT:    fprintf(strm, "\x1b[33m%i\x1b[m",       *(int*)p);            break;
+    case ADPT_TYPE_LONG:   fprintf(strm, "\x1b[33m%li\x1b[m",      *(long*)p);           break;
+    case ADPT_TYPE_USHORT: fprintf(strm, "\x1b[33m%hu\x1b[m",      *(unsigned short*)p); break;
+    case ADPT_TYPE_UINT:   fprintf(strm, "\x1b[33m%u\x1b[m",       *(unsigned int*)p);   break;
+    case ADPT_TYPE_ULONG:  fprintf(strm, "\x1b[33m%lu\x1b[m",      *(unsigned long*)p);  break;
+    case ADPT_TYPE_FLOAT:  fprintf(strm, "\x1b[33m%f\x1b[m",       *(float*)p);          break;
+    case ADPT_TYPE_DOUBLE: fprintf(strm, "\x1b[33m%lf\x1b[m",      *(double*)p);         break;
 
-    case TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
-    case TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
+    case ADPT_TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
+    case ADPT_TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
         fprintf(strm, " {\n");
         for (size_t k = 0; k < tty->info.comp.count; k++) {
             struct adpt_comp_field cref f = tty->info.comp.fields+k;
             fprintf(strm, "%*s.%s= ", (depth+1)*3, "", f->name);
             print_item(strm, &(struct adpt_item){
                     .type= f->type,
-                    .kind= ITEM_OBJECT,
+                    .kind= ADPT_ITEM_OBJECT,
                     .as.object= (char*)p+f->offset, // xxx: discards const
                 }, stack, depth+1);
             fprintf(strm, "\n");
@@ -574,9 +574,9 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         fprintf(strm, "%*s}", depth*3, "");
         break;
 
-    case TYPE_FUN: fprintf(strm, "\x1b[32m(%p)\x1b[m", p); break;
+    case ADPT_TYPE_FUN: fprintf(strm, "\x1b[32m(%p)\x1b[m", p); break;
 
-    case TYPE_PTR:
+    case ADPT_TYPE_PTR:
         fprintf(strm, "\x1b[32m(%p)\x1b[m", p);
         //print_item(strm, &(struct adpt_item){
         //        .type= tty->info.ptr,
@@ -584,7 +584,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         //    }, stack, depth);
         break;
 
-    case TYPE_ARR:
+    case ADPT_TYPE_ARR:
         fprintf(strm, "[\n");
         for (size_t k = 0; k < tty->info.arr.count; k++) {
             fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
@@ -598,7 +598,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         break;
 
         // unreachable case
-    case TYPE_NAMED:;
+    case ADPT_TYPE_NAMED:;
     }
 
     if (!depth) fprintf(strm, "\n");
@@ -627,7 +627,7 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
 
             if (!in_var_size) {
                 size_t n;
-                for (n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable <= at-1-k) {
+                for (n = 0; n < count; n++) if (ADPT_ITEM_VARIABLE == items[n].kind && items[n].as.variable <= at-1-k) {
                     struct adpt_type cref tty = _truetype(items[n].type);
                     if (at-1-k < items[n].as.variable+tty->size) {
                         in_var_size = tty->size - ((at-1-k)-items[n].as.variable);
@@ -645,7 +645,7 @@ void print_tops(FILE ref strm, run_state cref rs, struct adpt_item cref items, s
 
         fprintf(strm, "  \x1b[1m|\x1b[m");
         for (int k = 15; k >= 0; k--)
-            for (size_t n = 0; n < count; n++) if (ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-1-k)
+            for (size_t n = 0; n < count; n++) if (ADPT_ITEM_VARIABLE == items[n].kind && items[n].as.variable == at-1-k)
                 fprintf(strm, "  \x1b[%um%s\x1b[m(%zu)", col_n(items[n].name), items[n].name, _truetype(items[n].type)->size);
 
         fprintf(strm, "\n");
@@ -662,23 +662,23 @@ void print_slot(FILE ref strm, struct slot cref slot)
     case _slot_value:
         fprintf(strm, " \x1b[36mvalue\x1b[m = ");
         switch (slot->ty->tyty) {
-        case TYPE_CHAR:   fprintf(strm, "'%c'",     slot->as.value.c);  break;
-        case TYPE_UCHAR:  fprintf(strm, "0x%02hhx", slot->as.value.uc); break;
-        case TYPE_SCHAR:  fprintf(strm, "%hhi",     slot->as.value.sc); break;
-        case TYPE_SHORT:  fprintf(strm, "%hi",      slot->as.value.ss); break;
-        case TYPE_INT:    fprintf(strm, "%i",       slot->as.value.si); break;
-        case TYPE_LONG:   fprintf(strm, "%li",      slot->as.value.sl); break;
-        case TYPE_USHORT: fprintf(strm, "%hu",      slot->as.value.us); break;
-        case TYPE_UINT:   fprintf(strm, "%u",       slot->as.value.ui); break;
-        case TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
-        case TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
-        case TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
-        case TYPE_FUN:
-        case TYPE_PTR:
-        case TYPE_ARR:    fprintf(strm, "%p",       slot->as.value.p);  break;
+        case ADPT_TYPE_CHAR:   fprintf(strm, "'%c'",     slot->as.value.c);  break;
+        case ADPT_TYPE_UCHAR:  fprintf(strm, "0x%02hhx", slot->as.value.uc); break;
+        case ADPT_TYPE_SCHAR:  fprintf(strm, "%hhi",     slot->as.value.sc); break;
+        case ADPT_TYPE_SHORT:  fprintf(strm, "%hi",      slot->as.value.ss); break;
+        case ADPT_TYPE_INT:    fprintf(strm, "%i",       slot->as.value.si); break;
+        case ADPT_TYPE_LONG:   fprintf(strm, "%li",      slot->as.value.sl); break;
+        case ADPT_TYPE_USHORT: fprintf(strm, "%hu",      slot->as.value.us); break;
+        case ADPT_TYPE_UINT:   fprintf(strm, "%u",       slot->as.value.ui); break;
+        case ADPT_TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
+        case ADPT_TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
+        case ADPT_TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
+        case ADPT_TYPE_FUN:
+        case ADPT_TYPE_PTR:
+        case ADPT_TYPE_ARR:    fprintf(strm, "%p",       slot->as.value.p);  break;
 
             // unreachable cases
-        case TYPE_VOID: case TYPE_STRUCT: case TYPE_UNION: case TYPE_NAMED:;
+        case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_NAMED:;
         }
         break;
 
@@ -690,6 +690,57 @@ void print_slot(FILE ref strm, struct slot cref slot)
         fprintf(strm, " \x1b[36mvariable\x1b[m @ %zu", slot->as.variable);
         break;
     }
+}
+
+void print_lexr(FILE ref strm, struct lex_state cref ls)
+{
+    fprintf(strm, "ls= {\n");
+
+    fprintf(strm, "    macros= [\n");
+    for (size_t k = 0; k < ls->macros.len; ++k) {
+        struct lex_macro const* const it = ls->macros.ptr+k;
+        fprintf(strm, "        {   name= \"%s\"\n", ls->work.ptr+it->name);
+        fprintf(strm, "            value= ");
+        for (size_t kk = 0; kk < it->length; kk+= strlen(ls->work.ptr+it->value+kk)+1)
+            fprintf(strm, "%s@", ls->work.ptr+it->value+kk);
+        fprintf(strm, "\n");
+        fprintf(strm, "            length= %zu\n", it->length);
+        fprintf(strm, "            params= %d\n", it->params);
+        fprintf(strm, "            marked= %s\n", it->marked ? "true" : "false");
+        fprintf(strm, "        }\n");
+    }
+    fprintf(strm, "    ]\n");
+
+    fprintf(strm, "    paths= [\n");
+    for (size_t k = 0; k < ls->paths.len; ++k)
+        fprintf(strm, "        %s\n", ls->paths.ptr[k]);
+    fprintf(strm, "    ]\n");
+
+    fprintf(strm, "    sources= [\n");
+    for (size_t k = 0; k < ls->sources.len; ++k)
+        fprintf(strm, "        %s:%zu (%s)\n", ls->work.ptr+ls->sources.ptr[k].file, ls->sources.ptr[k].line, ls->sources.ptr[k].stream ? "open" : "close");
+    fprintf(strm, "    ]\n");
+    fprintf(strm, "    gotc= 0x%02hhX '%c'\n", ls->gotc, ' ' <= ls->gotc && ls->gotc <= '~' ? ls->gotc : ' ');
+
+    fprintf(strm, "    nlend= %s\n", ls->nlend ? "true" : "false");
+    fprintf(strm, "    noxid= %s\n", ls->noxid ? "true" : "false");
+    fprintf(strm, "    nomrg= %s\n", ls->nomrg ? "true" : "false");
+    fprintf(strm, "    nodir= %s\n", ls->nodir ? "true" : "false");
+    fprintf(strm, "    dumgc= %s\n", ls->dumgc ? "true" : "false");
+    fprintf(strm, "    cstream= %s\n", ls->cstream ? ls->cstream : "(null)");
+
+    fprintf(strm, "    work= ");
+    for (size_t k = 0; k < ls->work.len; k+= strlen(ls->work.ptr+k)+1)
+        fprintf(strm, "%s@", ls->work.ptr+k);
+    fprintf(strm, "\n");
+
+    fprintf(strm, "    ahead= %zu\n", ls->ahead);
+    fprintf(strm, "    tokens= ");
+    for (size_t k = 0; k < ls->tokens.len; k+= strlen(ls->tokens.ptr+k)+1)
+        fprintf(strm, "%s@", ls->tokens.ptr+k);
+    fprintf(strm, "\n            %*s^\n", (unsigned)(ls->tokens.len - ls->ahead), "");
+
+    fprintf(strm, "}\n");
 }
 
 #endif // CINTRE_PRINTS_H

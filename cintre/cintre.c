@@ -146,7 +146,7 @@ char* _prompt_compl(char cref text, int const state)
     }
     size_t const len = strlen(text);
     // todo: could have completion based on type
-    //if (TYPE_STRUCT || TYPE_UNION) .. rl_point, rl_line_buffer ..;
+    //if (ADPT_TYPE_STRUCT || ADPT_TYPE_UNION) .. rl_point, rl_line_buffer ..;
     if (is_xcmd) {
         static char cref cmds[] = {"help", "locales", "namespaces", "stacktop", "clstack", "save \"", "load \"", "ast", "type", "bytecode"};
         while (k < countof(cmds)) if (!memcmp(cmds[k++], text, len)) {
@@ -164,9 +164,9 @@ char* _prompt_compl(char cref text, int const state)
             struct adpt_item cref it = !ns ? gs->locs.ptr+k : gs->nsps.spaces[ns-1].items+k;
             if (!memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
-                bool const tdf = ITEM_TYPEDEF == it->kind;
-                bool const fun = TYPE_FUN == _tailtype(it->type)->tyty;
-                bool const arr = TYPE_ARR == _truetype(it->type)->tyty;
+                bool const tdf = ADPT_ITEM_TYPEDEF == it->kind;
+                bool const fun = ADPT_TYPE_FUN == _tailtype(it->type)->tyty;
+                bool const arr = ADPT_TYPE_ARR == _truetype(it->type)->tyty;
                 char ref r = malloc(len + (tdf|fun|arr));
                 if (!r) return NULL;
                 strcpy(r, it->name);
@@ -238,19 +238,19 @@ void cintre_cleanup(cintre_state ref gs)
     }
 
     for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
-    case TYPE_STRUCT:
-    case TYPE_UNION:;
+    case ADPT_TYPE_STRUCT:
+    case ADPT_TYPE_UNION:;
         struct adpt_comp_desc cref comp = &gs->ty_work.ptr[k].info.comp;
         for (size_t kk = 0; kk < comp->count; kk++) free((void*)comp->fields[kk].name);
         free((void*)comp->fields);
         break;
-    case TYPE_FUN:;
+    case ADPT_TYPE_FUN:;
         struct adpt_fun_desc cref fun = &gs->ty_work.ptr[k].info.fun;
         for (size_t kk = 0; kk < fun->count; kk++) free((void*)fun->params[kk].name);
         free((void*)fun->params);
         break;
         // noop cases
-    case TYPE_VOID: case TYPE_CHAR: case TYPE_UCHAR: case TYPE_SCHAR: case TYPE_SHORT: case TYPE_INT: case TYPE_LONG: case TYPE_USHORT: case TYPE_UINT: case TYPE_ULONG: case TYPE_FLOAT: case TYPE_DOUBLE: case TYPE_PTR: case TYPE_ARR: case TYPE_NAMED:;
+    case ADPT_TYPE_VOID: case ADPT_TYPE_CHAR: case ADPT_TYPE_UCHAR: case ADPT_TYPE_SCHAR: case ADPT_TYPE_SHORT: case ADPT_TYPE_INT: case ADPT_TYPE_LONG: case ADPT_TYPE_USHORT: case ADPT_TYPE_UINT: case ADPT_TYPE_ULONG: case ADPT_TYPE_FLOAT: case ADPT_TYPE_DOUBLE: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;
     }
     free(gs->ty_work.ptr);
 
@@ -301,7 +301,7 @@ bool _is_decl_keyword(cintre_state cref gs, char cref tok)
         !strcmp("const",    tok) ) return true;
 
     struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, tok);
-    return it && ITEM_TYPEDEF == it->kind;
+    return it && ADPT_ITEM_TYPEDEF == it->kind;
 }
 
 /// allocates using `gs->ty_work`; on failure, it is safe to set the length of
@@ -311,18 +311,18 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
     switch (ty->kind) {
         struct adpt_type* r;
 
-    case KIND_NOTAG:;
+    case DECL_KIND_NOTAG:;
         bool _signed = false, _unsigned = false, _short = false, _long = false;
-        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
-            case QUAL_SIGNED:    _signed = true;          break;
-            case QUAL_UNSIGNED:  _unsigned = true;        break;
-            case QUAL_SHORT:     _short = true;           break;
-            case QUAL_LONG:      _long = true;            break;
-            case QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
-            case QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
+        for (size_t k = 0; DECL_QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case DECL_QUAL_SIGNED:    _signed = true;          break;
+            case DECL_QUAL_UNSIGNED:  _unsigned = true;        break;
+            case DECL_QUAL_SHORT:     _short = true;           break;
+            case DECL_QUAL_LONG:      _long = true;            break;
+            case DECL_QUAL_COMPLEX:   notif("NIY: complex");   return NULL;
+            case DECL_QUAL_IMAGINARY: notif("NIY: imaginary"); return NULL;
 
                 // noop cases
-            case QUAL_END: case QUAL_CONST: case QUAL_RESTRICT: case QUAL_VOLATILE:;
+            case DECL_QUAL_END: case DECL_QUAL_CONST: case DECL_QUAL_RESTRICT: case DECL_QUAL_VOLATILE:;
             }
 
 #       define nameis(s)  (!strcmp(s, gstokn(ty->name)))
@@ -340,18 +340,18 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
 #       undef nameis
 
         struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, gstokn(ty->name));
-        if (it && ITEM_TYPEDEF == it->kind) return it->type;
+        if (it && ADPT_ITEM_TYPEDEF == it->kind) return it->type;
         return NULL;
 
-    case KIND_STRUCT:
-    case KIND_UNION:
+    case DECL_KIND_STRUCT:
+    case DECL_KIND_UNION:
         if (-1ul == ty->info.comp.count) {
             char ref name = gstokn(ty->name);
             // xxx: lexer internal (the fact that we know we can)
             name[-1] = '@';
             struct adpt_item cref it = gs->comp.lookup(gs->comp.usr, name-1);
             name[-1] = '\0';
-            if (it && ITEM_TYPEDEF == it->kind) return it->type;
+            if (it && ADPT_ITEM_TYPEDEF == it->kind) return it->type;
             return NULL;
         }
 
@@ -368,16 +368,16 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
         return memcpy(r, &(struct adpt_type){
                 .size= 0,
                 .align= 0,
-                .tyty= KIND_STRUCT == ty->kind ? TYPE_STRUCT : TYPE_UNION,
+                .tyty= DECL_KIND_STRUCT == ty->kind ? ADPT_TYPE_STRUCT : ADPT_TYPE_UNION,
                 .info.comp = {
                     .fields= NULL,
                     .count= 0,
                 },
             }, sizeof*r);
 
-    case KIND_ENUM: return &adptb_int_type;
+    case DECL_KIND_ENUM: return &adptb_int_type;
 
-    case KIND_PTR:;
+    case DECL_KIND_PTR:;
         struct adpt_type cref ptr = _decl_to_adpt_type(gs, &ty->info.ptr->type);
         if (!ptr) return NULL;
 
@@ -385,11 +385,11 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
         return memcpy(r, &(struct adpt_type){
                 .size= sizeof(void*),
                 .align= sizeof(void*),
-                .tyty= TYPE_PTR,
+                .tyty= ADPT_TYPE_PTR,
                 .info.ptr= ptr,
             }, sizeof*r);
 
-    case KIND_FUN:
+    case DECL_KIND_FUN:
         if (-1ul == ty->info.fun.count) return NULL;
 
         struct adpt_type cref ret = _decl_to_adpt_type(gs, &ty->info.fun.ret->type);
@@ -417,7 +417,7 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
         return memcpy(r, &(struct adpt_type){
                 .size= sizeof(void(*)()),
                 .align= sizeof(void(*)()),
-                .tyty= TYPE_FUN,
+                .tyty= ADPT_TYPE_FUN,
                 .info.fun= {
                     .ret= ret,
                     .params= params,
@@ -425,7 +425,7 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
                 },
             }, sizeof*r);
 
-    case KIND_ARR:;
+    case DECL_KIND_ARR:;
         struct adpt_type cref item = _decl_to_adpt_type(gs, &ty->info.arr.item->type);
         if (!item) return NULL;
 
@@ -435,10 +435,10 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
             size_t const psp = gs->runr.sp;
 
             expression cast = {
-                .kind= UNOP_CAST,
+                .kind= EXPR_UNOP_CAST,
                 .info.cast= {
                     .opr= ty->info.arr.count,
-                    .type= &(struct decl_type){.quals= {QUAL_LONG}},
+                    .type= &(struct decl_type){.quals= {DECL_QUAL_LONG}},
                 },
             };
             if (!check_expression(&gs->comp, &cast)) return NULL;
@@ -475,7 +475,7 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
         return memcpy(r, &(struct adpt_type){
                 .size= item->size*count,
                 .align= item->align,
-                .tyty= TYPE_ARR,
+                .tyty= ADPT_TYPE_ARR,
                 .info.arr= {
                     .item= item,
                     .count= count,
@@ -513,24 +513,24 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         return;
     }
 
-    int kind = ITEM_VARIABLE;
+    int kind = ADPT_ITEM_VARIABLE;
     switch (decl->spec) {
-    case SPEC_TYPEDEF:
-        kind = ITEM_TYPEDEF;
+    case DECL_SPEC_TYPEDEF:
+        kind = ADPT_ITEM_TYPEDEF;
         break;
 
-    case SPEC_EXTERN:
+    case DECL_SPEC_EXTERN:
         notif("`extern` in declaration, nothing declared");
         return;
 
-    case SPEC_STATIC:
+    case DECL_SPEC_STATIC:
         notif("`static` ignored in declaration"); if (0)
-    case SPEC_AUTO:
+    case DECL_SPEC_AUTO:
         notif("`auto` ignored in declaration"); if (0)
-    case SPEC_REGISTER:
+    case DECL_SPEC_REGISTER:
         notif("`register` ignored in declaration");
         // fall through
-    case SPEC_NONE:
+    case DECL_SPEC_NONE:
         //size_t end = gs->sp;
         gs->runr.sp = ((gs->runr.sp-tty->size) / tty->align) * tty->align;
     }
@@ -540,18 +540,16 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
             .name= strcpy(mallox(strlen(decl_name)+1), decl_name),
             .type= ty,
             .kind= kind,
-            .as.variable= gs->runr.sp, // (yyy: `.as` not used when `ITEM_TYPEDEF`)
+            .as.variable= gs->runr.sp, // (yyy: `.as` not used when `ADPT_ITEM_TYPEDEF`)
         }, sizeof *it);
 
     if ('=' == *gstokn(*tok)) {
         lex_rewind(&gs->lexr, 1);
-
-        //char cref name = dyarr_top(&gs->locs)->name;
+        lex_inject(&gs->lexr, dyarr_top(&gs->locs)->name);
 
         gs->expr.disallow_comma = true;
-        notif("FIXME: *tok = parse_expression(&gs->expr, name)");
+        *tok = parse_expression(&gs->expr, lext(&gs->lexr));
         gs->expr.disallow_comma = false;
-        return; // remove when fixed
     }
 
     if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, *tok);
@@ -565,12 +563,8 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     if (';' == *gstokn(*tok)) {
         tokt const xcmd_at = lext(&gs->lexr);
         xcmd = gstokn(xcmd_at);
-        // yyy: hackish, this is for the gs->save (end of main repl)
-        //      it assumes the ';' is part of the actual input
-        //      (ie. not from macro, etc..)
-        notif("FIXME: *(char*)tok->ptr = '\\0'");
     }
-#   define xcmdis(s)  (!strcmp(s, xcmd)) //(xcmd.len && !memcmp(s, xcmd.ptr, strlen(s)))
+#   define xcmdis(s)  (!strcmp(s, xcmd))
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
@@ -595,7 +589,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
         for (size_t k = 0; k < gs->locs.len; k++) {
             struct adpt_item cref it = gs->locs.ptr+k;
-            if (ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
+            if (ADPT_ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
             else printf("   [top-%zu] %-8s\t", sz-it->as.variable, it->name);
             print_type(stdout, it->type, false);
             printf("\n");
@@ -617,11 +611,11 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
             for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
                 struct adpt_item cref it = gs->nsps.spaces[ns].items+k;
                 switch (it->kind) {
-                case ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
-                case ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
-                case ITEM_TYPEDEF: printf("   [typedef] %-8s\t", it->name);            break;
+                case ADPT_ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
+                case ADPT_ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
+                case ADPT_ITEM_TYPEDEF: printf("   [typedef] %-8s\t", it->name);            break;
                     // unreachable case
-                case ITEM_VARIABLE:;
+                case ADPT_ITEM_VARIABLE:;
                 }
                 print_type(stdout, it->type, false);
                 printf("\n");
@@ -768,7 +762,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         gs->runr.sp = psp; // yyy: free string/comp literals
         if (!ty) return;
         printf("Expression is of type: ");
-        if (TYPE_NAMED == ty->tyty)
+        if (ADPT_TYPE_NAMED == ty->tyty)
             printf("(\x1b[32m%s\x1b[m) ", ty->info.named.name);
         print_type(stdout, ty, true);
         printf("\n");
@@ -788,7 +782,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     struct adpt_item const res = {
         .name= "_",
         .type= expr->usr,
-        .kind= ITEM_VARIABLE,
+        .kind= ADPT_ITEM_VARIABLE,
         .as.variable= gs->runr.sp,
     };
 

@@ -58,38 +58,38 @@ typedef struct declaration {
 #define kws(a,b,c,...) (((a)&31)<<10 | ((b)&31)<<5 | ((c)&31))
 
     enum decl_spec {
-        SPEC_NONE= 0,
-        SPEC_TYPEDEF= kws('t','y','p','e','d','e','f'),
-        SPEC_EXTERN= kws('e','x','t','e','r','n'),
-        SPEC_STATIC= kws('s','t','a','t','i','c'),
-        SPEC_AUTO= kws('a','u','t','o'),
-        SPEC_REGISTER= kws('r','e','g','i','s','t','e','r'),
+        DECL_SPEC_NONE= 0,
+        DECL_SPEC_TYPEDEF= kws('t','y','p','e','d','e','f'),
+        DECL_SPEC_EXTERN= kws('e','x','t','e','r','n'),
+        DECL_SPEC_STATIC= kws('s','t','a','t','i','c'),
+        DECL_SPEC_AUTO= kws('a','u','t','o'),
+        DECL_SPEC_REGISTER= kws('r','e','g','i','s','t','e','r'),
     } spec;
 
     bool is_inline;
 
     struct decl_type {
         enum decl_type_qual {
-            QUAL_END= 0,
-            QUAL_CONST= kws('c','o','n','s','t'),
-            QUAL_RESTRICT= kws('r','e','s','t','r','i','c','t'),
-            QUAL_VOLATILE= kws('v','o','l','a','t','i','l','e'),
-            QUAL_SIGNED= kws('s','i','g','n','e','d'),
-            QUAL_UNSIGNED= kws('u','n','s','i','g','n','e','d'),
-            QUAL_SHORT= kws('s','h','o','r','t'),
-            QUAL_LONG= kws('l','o','n','g'),
-            QUAL_COMPLEX= kws('c','o','m','p','l','e','x'),
-            QUAL_IMAGINARY= kws('i','m','a','g','i','n','a','r','y'),
+            DECL_QUAL_END= 0,
+            DECL_QUAL_CONST= kws('c','o','n','s','t'),
+            DECL_QUAL_RESTRICT= kws('r','e','s','t','r','i','c','t'),
+            DECL_QUAL_VOLATILE= kws('v','o','l','a','t','i','l','e'),
+            DECL_QUAL_SIGNED= kws('s','i','g','n','e','d'),
+            DECL_QUAL_UNSIGNED= kws('u','n','s','i','g','n','e','d'),
+            DECL_QUAL_SHORT= kws('s','h','o','r','t'),
+            DECL_QUAL_LONG= kws('l','o','n','g'),
+            DECL_QUAL_COMPLEX= kws('c','o','m','p','l','e','x'),
+            DECL_QUAL_IMAGINARY= kws('i','m','a','g','i','n','a','r','y'),
         } quals[8];
 
         enum decl_type_kind {
-            KIND_NOTAG= 0,
-            KIND_STRUCT= kws('s','t','r','u','c','t'),
-            KIND_UNION= kws('u','n','i','o','n'),
-            KIND_ENUM= kws('e','n','u','m'),
-            KIND_PTR= '*',
-            KIND_FUN= ('('&31)<<5 | (')'&31),
-            KIND_ARR= ('['&31)<<5 | (']'&31),
+            DECL_KIND_NOTAG= 0,
+            DECL_KIND_STRUCT= kws('s','t','r','u','c','t'),
+            DECL_KIND_UNION= kws('u','n','i','o','n'),
+            DECL_KIND_ENUM= kws('e','n','u','m'),
+            DECL_KIND_PTR= '*',
+            DECL_KIND_FUN= ('('&31)<<5 | (')'&31),
+            DECL_KIND_ARR= ('['&31)<<5 | (']'&31),
         } kind;
 
         union decl_type_info {
@@ -149,38 +149,38 @@ tokt parse_declaration(parse_decl_state ref ps, tokt tok);
 // struct expression {{{
 typedef struct expression {
     enum expr_kind {
-        ATOM,
+        EXPR_ATOM,
 
-        BINOP_SUBSCR, BINOP_CALL,
+        EXPR_BINOP_SUBSCR, EXPR_BINOP_CALL,
 
-        BINOP_TERNCOND,
-        BINOP_TERNBRANCH,
-        BINOP_COMMA,
+        EXPR_BINOP_TERNCOND,
+        EXPR_BINOP_TERNBRANCH,
+        EXPR_BINOP_COMMA,
 
-        BINOP_ASGN,
-        BINOP_ASGN_BOR, BINOP_ASGN_BXOR, BINOP_ASGN_BAND,
-        BINOP_ASGN_BSHL, BINOP_ASGN_BSHR,
-        BINOP_ASGN_SUB, BINOP_ASGN_ADD,
-        BINOP_ASGN_REM, BINOP_ASGN_DIV, BINOP_ASGN_MUL,
+        EXPR_BINOP_ASGN,
+        EXPR_BINOP_ASGN_BOR, EXPR_BINOP_ASGN_BXOR, EXPR_BINOP_ASGN_BAND,
+        EXPR_BINOP_ASGN_BSHL, EXPR_BINOP_ASGN_BSHR,
+        EXPR_BINOP_ASGN_SUB, EXPR_BINOP_ASGN_ADD,
+        EXPR_BINOP_ASGN_REM, EXPR_BINOP_ASGN_DIV, EXPR_BINOP_ASGN_MUL,
 
-        BINOP_LOR, BINOP_LAND,
-        BINOP_BOR, BINOP_BXOR, BINOP_BAND,
-        BINOP_EQ, BINOP_NE,
-        BINOP_LT, BINOP_GT, BINOP_LE, BINOP_GE,
-        BINOP_BSHL, BINOP_BSHR,
-        BINOP_SUB, BINOP_ADD,
-        BINOP_REM, BINOP_DIV, BINOP_MUL,
+        EXPR_BINOP_LOR, EXPR_BINOP_LAND,
+        EXPR_BINOP_BOR, EXPR_BINOP_BXOR, EXPR_BINOP_BAND,
+        EXPR_BINOP_EQ, EXPR_BINOP_NE,
+        EXPR_BINOP_LT, EXPR_BINOP_GT, EXPR_BINOP_LE, EXPR_BINOP_GE,
+        EXPR_BINOP_BSHL, EXPR_BINOP_BSHR,
+        EXPR_BINOP_SUB, EXPR_BINOP_ADD,
+        EXPR_BINOP_REM, EXPR_BINOP_DIV, EXPR_BINOP_MUL,
 
-        //UNOP_SIZEOF, UNOP_ALIGNOF, //BINOP_OFFSETOF,
-        UNOP_ADDR, UNOP_DEREF,
-        UNOP_CAST,
-        UNOP_BNOT, UNOP_LNOT,
-        UNOP_MINUS, UNOP_PLUS,
-        UNOP_PRE_DEC, UNOP_PRE_INC,
+        //EXPR_UNOP_SIZEOF, EXPR_UNOP_ALIGNOF, //EXPR_BINOP_OFFSETOF,
+        EXPR_UNOP_ADDR, EXPR_UNOP_DEREF,
+        EXPR_UNOP_CAST,
+        EXPR_UNOP_BNOT, EXPR_UNOP_LNOT,
+        EXPR_UNOP_MINUS, EXPR_UNOP_PLUS,
+        EXPR_UNOP_PRE_DEC, EXPR_UNOP_PRE_INC,
 
-        //UNOP_COMPLIT,
-        UNOP_PMEMBER, UNOP_MEMBER,
-        UNOP_POST_DEC, UNOP_POST_INC,
+        //EXPR_UNOP_COMPLIT,
+        EXPR_UNOP_PMEMBER, EXPR_UNOP_MEMBER,
+        EXPR_UNOP_POST_DEC, EXPR_UNOP_POST_INC,
     } kind;
 
     union expr_info {
@@ -298,7 +298,7 @@ void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, tok
 }
 
 #define kw(s) ((s)[0] && (s)[1] ? kws((s)[0],(s)[1],(s)[2],) : 0)
-#define iskwx(tok, ...) (!strcmp((char[]){__VA_ARGS__, '\0'}, tok)) //!dyarr_cmp(&((tokt){.ptr= (char[]){__VA_ARGS__}, .len= sizeof((char[]){__VA_ARGS__})}), &tok)
+#define iskwx(tok, ...) (!strcmp((char[]){__VA_ARGS__, '\0'}, tok))
 #define iskw(tok, askw, ...) (kws(__VA_ARGS__) == askw && iskwx(tok, __VA_ARGS__))
 
 /// pre-ish declarator part with '('<decl>')' | '*'<decl>
@@ -324,7 +324,7 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         declaration ptr = {
             .spec= decl->spec,
             .is_inline= decl->is_inline, // yyy: y not
-            .type= {.kind= KIND_PTR, .info.ptr= decl},
+            .type= {.kind= DECL_KIND_PTR, .info.ptr= decl},
             .name= decl->name,
         };
         decl->name = 0;
@@ -333,7 +333,7 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
                     iskw(pstokn(ps->tok), askw, 'r','e','s','t','r','i','c','t') ||
                     iskw(pstokn(ps->tok), askw, 'v','o','l','a','t','i','l','e') );
                 ps->tok = lext(ps->ls)) {
-            for (unsigned k = 0; k < countof(ptr.type.quals); k++) if (QUAL_END == ptr.type.quals[k]) {
+            for (unsigned k = 0; k < countof(ptr.type.quals); k++) if (DECL_QUAL_END == ptr.type.quals[k]) {
                 ptr.type.quals[k] = askw;
                 break;
             }
@@ -386,11 +386,11 @@ void _parse_decl_fixup(parse_decl_state ref ps, struct _parse_decl_capture ref c
     // 'visit' hold; until find before; replace with after
     declaration** it = &hold;
     do switch ((*it)->type.kind) { // xxx: casts are to discard const qualifier
-        case KIND_PTR: it = (declaration**)&(*it)->type.info.ptr;      break;
-        case KIND_FUN: it = (declaration**)&(*it)->type.info.fun.ret;  break;
-        case KIND_ARR: it = (declaration**)&(*it)->type.info.arr.item; break;
+        case DECL_KIND_PTR: it = (declaration**)&(*it)->type.info.ptr;      break;
+        case DECL_KIND_FUN: it = (declaration**)&(*it)->type.info.fun.ret;  break;
+        case DECL_KIND_ARR: it = (declaration**)&(*it)->type.info.arr.item; break;
             // unreachable cases
-        case KIND_NOTAG: case KIND_STRUCT: case KIND_UNION: case KIND_ENUM:;
+        case DECL_KIND_NOTAG: case DECL_KIND_STRUCT: case DECL_KIND_UNION: case DECL_KIND_ENUM:;
         }
     while (before != *it);
     *it = after;
@@ -410,7 +410,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         declaration fun = {
             .spec= decl->spec,
             .is_inline= decl->is_inline,
-            .type= {.kind= KIND_FUN, .info.fun.ret= decl},
+            .type= {.kind= DECL_KIND_FUN, .info.fun.ret= decl},
             .name= decl->name,
         };
         decl->name = 0;
@@ -440,7 +440,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         declaration arr = {
             .spec= decl->spec,
             .is_inline= decl->is_inline, // yyy: y not
-            .type= {.kind= KIND_ARR, .info.arr.item= decl},
+            .type= {.kind= DECL_KIND_ARR, .info.arr.item= decl},
             .name= decl->name,
         };
         decl->name = 0;
@@ -453,7 +453,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
                     iskw(pstokn(ps->tok), askw, 'r','e','s','t','r','i','c','t') ||
                     iskw(pstokn(ps->tok), askw, 'v','o','l','a','t','i','l','e') );
                 ps->tok = lext(ps->ls)) {
-            for (unsigned k = 0; k < countof(arr.type.quals); k++) if (QUAL_END == arr.type.quals[k]) {
+            for (unsigned k = 0; k < countof(arr.type.quals); k++) if (DECL_QUAL_END == arr.type.quals[k]) {
                 arr.type.quals[k] = askw;
                 break;
             }
@@ -681,7 +681,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         if (!*pstokn(decl->type.name)) lex_inject(ps->ls, "int");
     case_iskw('c','o','n','s','t') case_iskw('r','e','s','t','r','i','c','t') case_iskw('v','o','l','a','t','i','l','e')
     case_iskw('c','o','m','p','l','e','x') case_iskw('i','m','a','g','i','n','a','r','y')
-        for (unsigned k = 0; k < countof(decl->type.quals); k++) if (QUAL_END == decl->type.quals[k]) {
+        for (unsigned k = 0; k < countof(decl->type.quals); k++) if (DECL_QUAL_END == decl->type.quals[k]) {
             decl->type.quals[k] = askw;
             break;
         }
@@ -692,7 +692,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
     case_iskw('s','t','r','u','c','t') case_iskw('u','n','i','o','n') case_iskw('e','n','u','m')
         decl->type.kind = askw;
-        bool const e = KIND_ENUM == askw;
+        bool const e = DECL_KIND_ENUM == askw;
         ps->tok = lext(ps->ls);
         if (isidstart(*pstokn(ps->tok))) {
             decl->type.name = ps->tok;
@@ -815,12 +815,12 @@ void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, tokt ref to
 
     if ('{' == *pstokn(ps->tok)) {
         notif("NIY: compound literal");
-        //expression comp = {.kind= UNOP_COMPLIT, .info.comp.type= &decl->type};
+        //expression comp = {.kind= EXPR_UNOP_COMPLIT, .info.comp.type= &decl->type};
         *tok = ps->tok;
         return;
     }
 
-    expression cast = {.kind= UNOP_CAST, .info.cast.type= &decl->type};
+    expression cast = {.kind= EXPR_UNOP_CAST, .info.cast.type= &decl->type};
     capt->hold = &cast;
     _parse_expr_one(ps, &(struct _parse_expr_capture){
             .next= capt,
@@ -832,8 +832,8 @@ enum expr_kind _parse_is_postfix(char cref tok)
 {
     if (!tok[0]) return 0;
     switch (tok[0] <<8| tok[1]) {
-    case '-' <<8| '-': return UNOP_POST_DEC;
-    case '+' <<8| '+': return UNOP_POST_INC;
+    case '-' <<8| '-': return EXPR_UNOP_POST_DEC;
+    case '+' <<8| '+': return EXPR_UNOP_POST_INC;
     }
     return 0;
 }
@@ -841,14 +841,14 @@ enum expr_kind _parse_is_prefix(char cref tok)
 {
     if (!tok[0]) return 0;
     switch (tok[0] <<8| tok[1]) {
-    case '&' <<8| '\0': return UNOP_ADDR;
-    case '*' <<8| '\0': return UNOP_DEREF;
-    case '~' <<8| '\0': return UNOP_BNOT;
-    case '!' <<8| '\0': return UNOP_LNOT;
-    case '-' <<8| '\0': return UNOP_MINUS;
-    case '+' <<8| '\0': return UNOP_PLUS;
-    case '-' <<8| '-': return UNOP_PRE_DEC;
-    case '+' <<8| '+': return UNOP_PRE_INC;
+    case '&' <<8| '\0': return EXPR_UNOP_ADDR;
+    case '*' <<8| '\0': return EXPR_UNOP_DEREF;
+    case '~' <<8| '\0': return EXPR_UNOP_BNOT;
+    case '!' <<8| '\0': return EXPR_UNOP_LNOT;
+    case '-' <<8| '\0': return EXPR_UNOP_MINUS;
+    case '+' <<8| '\0': return EXPR_UNOP_PLUS;
+    case '-' <<8| '-': return EXPR_UNOP_PRE_DEC;
+    case '+' <<8| '+': return EXPR_UNOP_PRE_INC;
     }
     return 0;
 }
@@ -856,36 +856,36 @@ enum expr_kind _parse_is_infix(char cref tok, bool const disallow_comma)
 {
     if (!tok[0]) return 0;
     switch (tok[0] <<8| tok[1]) {
-    case '?' <<8| '\0': return BINOP_TERNCOND;
-    //case ' <<8| '\0':': return BINOP_TERNBRANCH;
-    case ',' <<8| '\0': return disallow_comma ? 0 : BINOP_COMMA;
-    case '=' <<8| '\0': return BINOP_ASGN;
-    case '|' <<8| '\0': return BINOP_BOR;
-    case '^' <<8| '\0': return BINOP_BXOR;
-    case '&' <<8| '\0': return BINOP_BAND;
-    case '-' <<8| '\0': return BINOP_SUB;
-    case '+' <<8| '\0': return BINOP_ADD;
-    case '%' <<8| '\0': return BINOP_REM;
-    case '/' <<8| '\0': return BINOP_DIV;
-    case '*' <<8| '\0': return BINOP_MUL;
-    case '<' <<8| '\0': return BINOP_LT;
-    case '>' <<8| '\0': return BINOP_GT;
-    case '|' <<8| '=': return BINOP_ASGN_BOR;
-    case '^' <<8| '=': return BINOP_ASGN_BXOR;
-    case '&' <<8| '=': return BINOP_ASGN_BAND;
-    case '-' <<8| '=': return BINOP_ASGN_SUB;
-    case '+' <<8| '=': return BINOP_ASGN_ADD;
-    case '%' <<8| '=': return BINOP_ASGN_REM;
-    case '/' <<8| '=': return BINOP_ASGN_DIV;
-    case '*' <<8| '=': return BINOP_ASGN_MUL;
-    case '|' <<8| '|': return BINOP_LOR;
-    case '&' <<8| '&': return BINOP_LAND;
-    case '=' <<8| '=': return BINOP_EQ;
-    case '!' <<8| '=': return BINOP_NE;
-    case '<' <<8| '=': return BINOP_LE;
-    case '>' <<8| '=': return BINOP_GE;
-    case '<' <<8| '<': return '=' == tok[2] ? BINOP_ASGN_BSHL : BINOP_BSHL;
-    case '>' <<8| '>': return '=' == tok[2] ? BINOP_ASGN_BSHR : BINOP_BSHR;
+    case '?' <<8| '\0': return EXPR_BINOP_TERNCOND;
+    //case ' <<8| '\0':': return EXPR_BINOP_TERNBRANCH;
+    case ',' <<8| '\0': return disallow_comma ? 0 : EXPR_BINOP_COMMA;
+    case '=' <<8| '\0': return EXPR_BINOP_ASGN;
+    case '|' <<8| '\0': return EXPR_BINOP_BOR;
+    case '^' <<8| '\0': return EXPR_BINOP_BXOR;
+    case '&' <<8| '\0': return EXPR_BINOP_BAND;
+    case '-' <<8| '\0': return EXPR_BINOP_SUB;
+    case '+' <<8| '\0': return EXPR_BINOP_ADD;
+    case '%' <<8| '\0': return EXPR_BINOP_REM;
+    case '/' <<8| '\0': return EXPR_BINOP_DIV;
+    case '*' <<8| '\0': return EXPR_BINOP_MUL;
+    case '<' <<8| '\0': return EXPR_BINOP_LT;
+    case '>' <<8| '\0': return EXPR_BINOP_GT;
+    case '|' <<8| '=': return EXPR_BINOP_ASGN_BOR;
+    case '^' <<8| '=': return EXPR_BINOP_ASGN_BXOR;
+    case '&' <<8| '=': return EXPR_BINOP_ASGN_BAND;
+    case '-' <<8| '=': return EXPR_BINOP_ASGN_SUB;
+    case '+' <<8| '=': return EXPR_BINOP_ASGN_ADD;
+    case '%' <<8| '=': return EXPR_BINOP_ASGN_REM;
+    case '/' <<8| '=': return EXPR_BINOP_ASGN_DIV;
+    case '*' <<8| '=': return EXPR_BINOP_ASGN_MUL;
+    case '|' <<8| '|': return EXPR_BINOP_LOR;
+    case '&' <<8| '&': return EXPR_BINOP_LAND;
+    case '=' <<8| '=': return EXPR_BINOP_EQ;
+    case '!' <<8| '=': return EXPR_BINOP_NE;
+    case '<' <<8| '=': return EXPR_BINOP_LE;
+    case '>' <<8| '=': return EXPR_BINOP_GE;
+    case '<' <<8| '<': return '=' == tok[2] ? EXPR_BINOP_ASGN_BSHL : EXPR_BINOP_BSHL;
+    case '>' <<8| '>': return '=' == tok[2] ? EXPR_BINOP_ASGN_BSHR : EXPR_BINOP_BSHR;
     }
     return 0;
 }
@@ -970,7 +970,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     //}
 
     // TODO: join adjacent string literals (would like to say this should be done in the lexer tho-)
-    expression atom = {.kind= ATOM, .info.atom= ps->tok};
+    expression atom = {.kind= EXPR_ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
 
     // yyy: any non null if comming from right above (ie is in a parenthesised thing)
@@ -1135,12 +1135,12 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
         ps->tok = lext(ps->ls);
         if (')' == *pstokn(ps->tok)) {
             ps->tok = lext(ps->ls);
-            expression access = {.kind= BINOP_CALL, .info.call.base= expr};
+            expression access = {.kind= EXPR_BINOP_CALL, .info.call.base= expr};
             _parse_expr_one_after(ps, capt, &access);
             return;
         }
         expression callbase = {
-            .kind= BINOP_CALL,
+            .kind= EXPR_BINOP_CALL,
             .info.call= {
                 .base= expr,
                 .first= &(struct expr_call_arg){0},
@@ -1162,7 +1162,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
     case '[':
         ps->tok = lext(ps->ls);
         expression whole = {
-            .kind= BINOP_SUBSCR,
+            .kind= EXPR_BINOP_SUBSCR,
             .info.subscr.base= expr,
             // yyy: any non null if disallow comma was set
             .usr= ps->disallow_comma ? (void*)"" : NULL,
@@ -1188,7 +1188,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
         _expect1(&name);
         _expectid(&name);
         expression access = {
-            .kind= pmem ? UNOP_PMEMBER : UNOP_MEMBER,
+            .kind= pmem ? EXPR_UNOP_PMEMBER : EXPR_UNOP_MEMBER,
             .info.member= {.base= expr, .name= name},
         };
         ps->tok = lext(ps->ls);
@@ -1205,7 +1205,7 @@ void _parse_expr_tern_cond(parse_expr_state ref ps, struct _parse_expr_capture r
     _expect1(&ps->tok);
     _expect(&ps->tok, ":");
     expression ref condition_root = capt->hold;
-    expression branches = {.kind= BINOP_TERNBRANCH, .info.binary.lhs= consequence};
+    expression branches = {.kind= EXPR_BINOP_TERNBRANCH, .info.binary.lhs= consequence};
     condition_root->info.binary.rhs = &branches;
 
     ps->disallow_comma = true;
@@ -1232,7 +1232,7 @@ void _parse_expr_tern_branch(parse_expr_state ref ps, struct _parse_expr_capture
 
     if (!ps->disallow_comma && ',' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
-        expression in = {.kind= BINOP_COMMA, .info.binary.lhs= condition_root};
+        expression in = {.kind= EXPR_BINOP_COMMA, .info.binary.lhs= condition_root};
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
                     .next= &(struct _parse_expr_capture){
@@ -1261,7 +1261,7 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
     ps->tok = lext(ps->ls);
 
-    if (BINOP_TERNCOND == infix) {
+    if (EXPR_BINOP_TERNCOND == infix) {
         capt->hold->info.binary.rhs = rhs;
         expression in = {.kind= infix, .info.binary.lhs= capt->hold};
         // yyy: any non null if disallow comma was set
@@ -1283,7 +1283,7 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
         return;
     }
 
-    if (BINOP_COMMA == infix) {
+    if (EXPR_BINOP_COMMA == infix) {
         capt->hold->info.binary.rhs = rhs;
         expression in = {.kind= infix, .info.binary.lhs= capt->hold};
         _parse_expr_one(ps, &(struct _parse_expr_capture){
@@ -1301,8 +1301,8 @@ void _parse_expr_two(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     }
 
     enum expr_kind const l = capt->hold->kind, n = infix;
-    if (l < n || ( (BINOP_ASGN <= l && l <= BINOP_ASGN_MUL)
-                && (BINOP_ASGN <= n && n <= BINOP_ASGN_MUL) )) {
+    if (l < n || ( (EXPR_BINOP_ASGN <= l && l <= EXPR_BINOP_ASGN_MUL)
+                && (EXPR_BINOP_ASGN <= n && n <= EXPR_BINOP_ASGN_MUL) )) {
         expression in = {.kind= infix, .info.binary.lhs= rhs};
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){
@@ -1346,7 +1346,7 @@ void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref _
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
 
-        if (BINOP_TERNCOND == infix) {
+        if (EXPR_BINOP_TERNCOND == infix) {
             // yyy: any non null if disallow comma was set
             in.usr = ps->disallow_comma ? (void*)"" : NULL;
             ps->disallow_comma = false;
@@ -1365,7 +1365,7 @@ void _parse_expr_entry(parse_expr_state ref ps, struct _parse_expr_capture ref _
             return;
         }
 
-        if (BINOP_COMMA == infix) {
+        if (EXPR_BINOP_COMMA == infix) {
             _parse_expr_one(ps, &(struct _parse_expr_capture){
                     .next= &(struct _parse_expr_capture){
                         .next= &(struct _parse_expr_capture){
@@ -1400,7 +1400,7 @@ void _parse_expr_continue(parse_expr_state ref ps, struct _parse_expr_capture re
         ps->tok = lext(ps->ls);
         expression in = {.kind= infix, .info.binary.lhs= lhs};
 
-        if (BINOP_TERNCOND == infix) {
+        if (EXPR_BINOP_TERNCOND == infix) {
             // yyy: any non null if disallow comma was set
             in.usr = ps->disallow_comma ? (void*)"" : NULL;
             ps->disallow_comma = false;
@@ -1420,7 +1420,7 @@ void _parse_expr_continue(parse_expr_state ref ps, struct _parse_expr_capture re
             return;
         }
 
-        if (BINOP_COMMA == infix) {
+        if (EXPR_BINOP_COMMA == infix) {
             _parse_expr_one(ps, &(struct _parse_expr_capture){
                     .next= &(struct _parse_expr_capture){
                         .next= &(struct _parse_expr_capture){

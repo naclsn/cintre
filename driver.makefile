@@ -29,7 +29,7 @@ _rl_cflags := -DUSE_READLINE $(shell pkg-config readline --cflags)
 _rl_libs := $(shell pkg-config readline --libs)
 endif
 
-$(build)/$(prog): $(build/objs) $(build/c-prog).o $(build)/cintre.o; $(CC) $^ -o $@ $(CFLAGS) -lc -lm $(_rl_libs)
+$(build)/$(prog): $(build/objs) $(build/c-prog).o $(build)/cintre.o; $(CC) $^ -o $@ $(CFLAGS) $(LDFLAGS) -lc -lm $(_rl_libs)
 
 $(build/c-prog).c: $(build/a-headers) $(PR); $(PR) -m $(build/a-headers) -o $@
 $(build/c-prog).o: $(build/c-prog).c; $(CC) -c $< -o $@ $(CFLAGS) -I. -I$(cintre)
@@ -39,6 +39,8 @@ $(build)/a-standard.h: $(cintre)/standard.h $(PR); $(PR) $< -Pno-emit-decl -Pno-
 
 # build/a-entry.h: some/entry.ch $(PR); $(PR) $< -o $@ $(CFLAGS-a-entry)
 $(foreach e,$(entries),$(eval $(build)/a-$(basename $(notdir $(e))).h: $(e) $$(PR); $$(PR) $$< -o $$@ $(CFLAGS) $$(CFLAGS-$$(basename $$@))))
+
+.DELETE_ON_ERROR:
 
 $(PR): $(cintre)/preparer.c $(cintre)/*.h; $(CC) $< -o $@ $(CFLAGS)
 .PRECIOUS: $(build)/a-%.h $(build)/%.o $(PR)

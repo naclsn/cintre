@@ -13,7 +13,9 @@
 
 #include "common.h"
 #define on_lex_sysinclude(ls, path) on_lex_sysinclude(path)
+#define on_lex_missinclude(ls, path) on_lex_missinclude(path)
 void (on_lex_sysinclude)(char cref path);
+void (on_lex_missinclude)(char cref path);
 #include "parser.h"
 
 void emit_top(void* _, declaration cref decl, tokt ref tok);
@@ -37,16 +39,6 @@ bool emit_decl = true, emit_incl = false, emit_sysi = true, follow_incl = false;
 #define emitln(...)  (emit(__VA_ARGS__), fprintf(result, "\n%*s", indent*4, ""))
 #define emit_empty()  fprintf(result, "\n%*s", indent*4, "")
 
-// so as to remember to put an empty line after the last one
-bool just_did_sys_include = false;
-void (on_lex_sysinclude)(char cref path)
-{
-    if (emit_sysi) {
-        emitln("#include <%s>", path);
-        just_did_sys_include = true;
-    }
-}
-
 struct {
     dyarr(struct seen_fun { tokt name; }) funs;
     dyarr(struct seen_tag { tokt name; }) tags;
@@ -57,6 +49,20 @@ struct {
 } seen = {0};
 
 #define errdie(...) (report_lex_locate(ls, "preparer: " __VA_ARGS__), exit(EXIT_FAILURE))
+
+// so as to remember to put an empty line after the last one
+bool just_did_sys_include = false;
+void (on_lex_sysinclude)(char cref path)
+{
+    if (emit_sysi) {
+        emitln("#include <%s>", path);
+        just_did_sys_include = true;
+    }
+}
+void (on_lex_missinclude)(char cref path)
+{
+    errdie("Could not include \"%s\"", path);
+}
 
 #define _linked_it_type_comp struct decl_type_field
 #define _linked_it_type_enu struct decl_type_enumer
@@ -76,18 +82,18 @@ void emit_cexpr(expression cref expr)
 {
     emit("(");
     switch (expr->kind) {
-    case ATOM:
+    case EXPR_ATOM:
         emit("%s", tokn(expr->info.atom));
         break;
 
-    case BINOP_SUBSCR:
+    case EXPR_BINOP_SUBSCR:
         emit_cexpr(expr->info.subscr.base);
         emit("[");
         emit_cexpr(expr->info.subscr.off);
         emit("]");
         break;
 
-    case BINOP_CALL:
+    case EXPR_BINOP_CALL:
         emit_cexpr(expr->info.call.base);
         emit("(");
         for (struct expr_call_arg* it = expr->info.call.first; it; it = it->next) {
@@ -97,10 +103,10 @@ void emit_cexpr(expression cref expr)
         emit(")");
         break;
 
-    case BINOP_TERNBRANCH:
+    case EXPR_BINOP_TERNBRANCH:
         emit("0");
         break;
-    case BINOP_TERNCOND:
+    case EXPR_BINOP_TERNCOND:
         emit_cexpr(expr->info.binary.lhs); // condition
         emit(" ? ");
         emit_cexpr(expr->info.binary.rhs->info.binary.lhs); // consequence
@@ -109,43 +115,43 @@ void emit_cexpr(expression cref expr)
         break;
 
         char const* binop;
-    case BINOP_COMMA:     binop = ", ";   goto binop;
-    case BINOP_ASGN:      binop = " = ";  goto binop;
-    case BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
-    case BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
-    case BINOP_ASGN_BAND: binop = "&= ";  goto binop;
-    case BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
-    case BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
-    case BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
-    case BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
-    case BINOP_ASGN_REM:  binop = "%= ";  goto binop;
-    case BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
-    case BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
-    case BINOP_LOR:       binop = " || "; goto binop;
-    case BINOP_LAND:      binop = " && "; goto binop;
-    case BINOP_BOR:       binop = " | ";  goto binop;
-    case BINOP_BXOR:      binop = " ^ ";  goto binop;
-    case BINOP_BAND:      binop = " & ";  goto binop;
-    case BINOP_EQ:        binop = " == "; goto binop;
-    case BINOP_NE:        binop = " != "; goto binop;
-    case BINOP_LT:        binop = " < ";  goto binop;
-    case BINOP_GT:        binop = " > ";  goto binop;
-    case BINOP_LE:        binop = " <= "; goto binop;
-    case BINOP_GE:        binop = " >= "; goto binop;
-    case BINOP_BSHL:      binop = "<<";   goto binop;
-    case BINOP_BSHR:      binop = ">>";   goto binop;
-    case BINOP_SUB:       binop = "-";    goto binop;
-    case BINOP_ADD:       binop = "+";    goto binop;
-    case BINOP_REM:       binop = "%";    goto binop;
-    case BINOP_DIV:       binop = "/";    goto binop;
-    case BINOP_MUL:       binop = "*";    goto binop;
+    case EXPR_BINOP_COMMA:     binop = ", ";   goto binop;
+    case EXPR_BINOP_ASGN:      binop = " = ";  goto binop;
+    case EXPR_BINOP_ASGN_BOR:  binop = "|= ";  goto binop;
+    case EXPR_BINOP_ASGN_BXOR: binop = "^= ";  goto binop;
+    case EXPR_BINOP_ASGN_BAND: binop = "&= ";  goto binop;
+    case EXPR_BINOP_ASGN_BSHL: binop = "<<= "; goto binop;
+    case EXPR_BINOP_ASGN_BSHR: binop = ">>= "; goto binop;
+    case EXPR_BINOP_ASGN_SUB:  binop = "-= ";  goto binop;
+    case EXPR_BINOP_ASGN_ADD:  binop = "+= ";  goto binop;
+    case EXPR_BINOP_ASGN_REM:  binop = "%= ";  goto binop;
+    case EXPR_BINOP_ASGN_DIV:  binop = "/= ";  goto binop;
+    case EXPR_BINOP_ASGN_MUL:  binop = "*= ";  goto binop;
+    case EXPR_BINOP_LOR:       binop = " || "; goto binop;
+    case EXPR_BINOP_LAND:      binop = " && "; goto binop;
+    case EXPR_BINOP_BOR:       binop = " | ";  goto binop;
+    case EXPR_BINOP_BXOR:      binop = " ^ ";  goto binop;
+    case EXPR_BINOP_BAND:      binop = " & ";  goto binop;
+    case EXPR_BINOP_EQ:        binop = " == "; goto binop;
+    case EXPR_BINOP_NE:        binop = " != "; goto binop;
+    case EXPR_BINOP_LT:        binop = " < ";  goto binop;
+    case EXPR_BINOP_GT:        binop = " > ";  goto binop;
+    case EXPR_BINOP_LE:        binop = " <= "; goto binop;
+    case EXPR_BINOP_GE:        binop = " >= "; goto binop;
+    case EXPR_BINOP_BSHL:      binop = "<<";   goto binop;
+    case EXPR_BINOP_BSHR:      binop = ">>";   goto binop;
+    case EXPR_BINOP_SUB:       binop = "-";    goto binop;
+    case EXPR_BINOP_ADD:       binop = "+";    goto binop;
+    case EXPR_BINOP_REM:       binop = "%";    goto binop;
+    case EXPR_BINOP_DIV:       binop = "/";    goto binop;
+    case EXPR_BINOP_MUL:       binop = "*";    goto binop;
     binop:
         emit_cexpr(expr->info.binary.lhs);
         emit("%s", binop);
         emit_cexpr(expr->info.binary.rhs);
         break;
 
-    case UNOP_CAST:
+    case EXPR_UNOP_CAST:
         emit("(");
         errdie("TODO: emit_decl_type(expr->info.cast.type)");
         emit(")");
@@ -153,33 +159,33 @@ void emit_cexpr(expression cref expr)
         break;
 
         char const* unop;
-    case UNOP_ADDR:    unop = "&";  goto unop;
-    case UNOP_DEREF:   unop = "*";  goto unop;
-    case UNOP_BNOT:    unop = "~";  goto unop;
-    case UNOP_LNOT:    unop = "!";  goto unop;
-    case UNOP_MINUS:   unop = "-";  goto unop;
-    case UNOP_PLUS:    unop = "+";  goto unop;
-    case UNOP_PRE_DEC: unop = "--"; goto unop;
-    case UNOP_PRE_INC: unop = "++"; goto unop;
+    case EXPR_UNOP_ADDR:    unop = "&";  goto unop;
+    case EXPR_UNOP_DEREF:   unop = "*";  goto unop;
+    case EXPR_UNOP_BNOT:    unop = "~";  goto unop;
+    case EXPR_UNOP_LNOT:    unop = "!";  goto unop;
+    case EXPR_UNOP_MINUS:   unop = "-";  goto unop;
+    case EXPR_UNOP_PLUS:    unop = "+";  goto unop;
+    case EXPR_UNOP_PRE_DEC: unop = "--"; goto unop;
+    case EXPR_UNOP_PRE_INC: unop = "++"; goto unop;
     unop:
         emit("%s", unop);
         emit_cexpr(expr->info.unary.opr);
         break;
 
-    case UNOP_POST_DEC:
+    case EXPR_UNOP_POST_DEC:
         emit_cexpr(expr->info.unary.opr);
         emit("--");
         break;
-    case UNOP_POST_INC:
+    case EXPR_UNOP_POST_INC:
         emit_cexpr(expr->info.unary.opr);
         emit("++");
         break;
 
-    case UNOP_PMEMBER:
+    case EXPR_UNOP_PMEMBER:
         emit_cexpr(expr->info.member.base);
         emit("->%s", tokn(expr->info.member.name));
         break;
-    case UNOP_MEMBER:
+    case EXPR_UNOP_MEMBER:
         emit_cexpr(expr->info.member.base);
         emit(".%s", tokn(expr->info.member.name));
         break;
@@ -193,17 +199,17 @@ void _emit_cexpr(void* _, expression ref expr, tokt ref tok) { (void)_; (void)to
 void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
 {
     switch (ty->kind) {
-    case KIND_NOTAG:;
+    case DECL_KIND_NOTAG:;
         bool _signed = false, _unsigned = false, _short = false, _long = false;
-        for (size_t k = 0; QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
-            case QUAL_SIGNED:    _signed = true;          break;
-            case QUAL_UNSIGNED:  _unsigned = true;        break;
-            case QUAL_SHORT:     _short = true;           break;
-            case QUAL_LONG:      _long = true;            break;
-            case QUAL_COMPLEX:   exitf("NIY: complex");   break;
-            case QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
+        for (size_t k = 0; DECL_QUAL_END != ty->quals[k]; k++) switch (ty->quals[k]) {
+            case DECL_QUAL_SIGNED:    _signed = true;          break;
+            case DECL_QUAL_UNSIGNED:  _unsigned = true;        break;
+            case DECL_QUAL_SHORT:     _short = true;           break;
+            case DECL_QUAL_LONG:      _long = true;            break;
+            case DECL_QUAL_COMPLEX:   exitf("NIY: complex");   break;
+            case DECL_QUAL_IMAGINARY: exitf("NIY: imaginary"); break;
                 // noop cases
-            case QUAL_END: case QUAL_CONST: case QUAL_RESTRICT: case QUAL_VOLATILE:;
+            case DECL_QUAL_END: case DECL_QUAL_CONST: case DECL_QUAL_RESTRICT: case DECL_QUAL_VOLATILE:;
             }
 
         char const* adptb = NULL;
@@ -226,23 +232,23 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         break;
 
         {
-    case KIND_STRUCT:
-    case KIND_UNION:;
+    case DECL_KIND_STRUCT:
+    case DECL_KIND_UNION:;
             have_tag_name_bufsl(name, ty);
             emit("%s_adapt_tag_type", name);
         }
         break;
 
         // xxx: association with the enumerators gets lost here
-    case KIND_ENUM:
+    case DECL_KIND_ENUM:
         emit("adptb_int_type");
         break;
 
-    case KIND_PTR:
+    case DECL_KIND_PTR:
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emitln(".size= sizeof(void*),");
             emitln(".align= alignof(void*),");
-            emitln(".tyty= TYPE_PTR,");
+            emitln(".tyty= ADPT_TYPE_PTR,");
             emit(".info.ptr= &");
             emit_adpt_type_val(&ty->info.ptr->type, false);
             emit(",");
@@ -250,11 +256,11 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         emit("}");
         break;
 
-    case KIND_FUN:
+    case DECL_KIND_FUN:
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emitln(".size= sizeof(void(*)()),");
             emitln(".align= sizeof(void(*)()),"); // yyy: can't `alignof` here with my janky version of `alignof`
-            emitln(".tyty= TYPE_FUN,");
+            emitln(".tyty= ADPT_TYPE_FUN,");
             indented (".info.fun= {") {
                 emit(".ret= &");
                 emit_adpt_type_val(&ty->info.fun.ret->type, false);
@@ -283,7 +289,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         emit("}");
         break;
 
-    case KIND_ARR:
+    case DECL_KIND_ARR:
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emit(".size= ");
             emitln("0,"); // FIXME:
@@ -296,7 +302,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
             emitln("0,"); // FIXME:
             //emit_adpt_type_val(&ty->info.arr.item->type, false);
             //emitln(".align,");
-            emitln(".tyty= TYPE_ARR,");
+            emitln(".tyty= ADPT_TYPE_ARR,");
             indented (".info.arr= {") {
                 emit(".item= &");
                 emit_adpt_type_val(&ty->info.arr.item->type, false);
@@ -317,11 +323,11 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
 void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
 {
     switch (ty->kind) {
-    case KIND_NOTAG: emit("%s", tokn(ty->name)); break;
+    case DECL_KIND_NOTAG: emit("%s", tokn(ty->name)); break;
 
         {
-    case KIND_STRUCT: emit("struct "); if (0)
-    case KIND_UNION:  emit("union ");
+    case DECL_KIND_STRUCT: emit("struct "); if (0)
+    case DECL_KIND_UNION:  emit("union ");
             if (*tokn(ty->name)) {
                 emit("%s", tokn(ty->name));
                 if (-1ul == ty->info.comp.count) break;
@@ -358,7 +364,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
         break;
 
         {
-    case KIND_ENUM:
+    case DECL_KIND_ENUM:
             if (!emit_decl && !*tokn(ty->name)) {
                 // here: - we can't emit the enumerators (name collision)
                 //       - we can't refere to the enum by it's tag name
@@ -407,10 +413,10 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
         }
         break;
 
-    case KIND_PTR:
+    case DECL_KIND_PTR:
         // FIXME: hate it but idc
-        if (KIND_FUN == ty->info.ptr->type.kind || (KIND_PTR == ty->info.ptr->type.kind && KIND_FUN == ty->info.ptr->type.info.ptr->type.kind)) {
-            bool const twice = KIND_PTR == ty->info.ptr->type.kind;
+        if (DECL_KIND_FUN == ty->info.ptr->type.kind || (DECL_KIND_PTR == ty->info.ptr->type.kind && DECL_KIND_FUN == ty->info.ptr->type.info.ptr->type.kind)) {
+            bool const twice = DECL_KIND_PTR == ty->info.ptr->type.kind;
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.fun.ret->type, NULL, in_cast);
             // const and such (after '*')
@@ -428,8 +434,8 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
             emit(")");
             return; // name already done
         }
-        else if (KIND_ARR == ty->info.ptr->type.kind || (KIND_PTR == ty->info.ptr->type.kind && KIND_ARR == ty->info.ptr->type.info.ptr->type.kind)) {
-            bool const twice = KIND_PTR == ty->info.ptr->type.kind;
+        else if (DECL_KIND_ARR == ty->info.ptr->type.kind || (DECL_KIND_PTR == ty->info.ptr->type.kind && DECL_KIND_ARR == ty->info.ptr->type.info.ptr->type.kind)) {
+            bool const twice = DECL_KIND_PTR == ty->info.ptr->type.kind;
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.arr.item->type, NULL, in_cast);
             if (name) emit(" (*%s)", name);
@@ -446,7 +452,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
         }
         break;
 
-    case KIND_FUN:
+    case DECL_KIND_FUN:
         emit_forward(&ty->info.fun.ret->type, NULL, in_cast);
         if (name) emit(" %s", name);
         emit("(");
@@ -461,7 +467,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
         emit(")");
         return; // name already done
 
-    case KIND_ARR:
+    case DECL_KIND_ARR:
         emit_forward(&ty->info.arr.item->type, NULL, in_cast);
         if (name) emit(" %s", name);
         emit("[");
@@ -471,16 +477,16 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
     }
 
     for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
-    case QUAL_END: break;
-    case QUAL_CONST:                   emit(" const");     break;
-    case QUAL_RESTRICT:  if (!in_cast) emit(" restrict");  break;
-    case QUAL_VOLATILE:                emit(" volatile");  break;
-    case QUAL_SIGNED:                  emit(" signed");    break;
-    case QUAL_UNSIGNED:                emit(" unsigned");  break;
-    case QUAL_SHORT:                   emit(" short");     break;
-    case QUAL_LONG:                    emit(" long");      break;
-    case QUAL_COMPLEX:                 emit(" complex");   break;
-    case QUAL_IMAGINARY:               emit(" imaginary"); break;
+    case DECL_QUAL_END: break;
+    case DECL_QUAL_CONST:                   emit(" const");     break;
+    case DECL_QUAL_RESTRICT:  if (!in_cast) emit(" restrict");  break;
+    case DECL_QUAL_VOLATILE:                emit(" volatile");  break;
+    case DECL_QUAL_SIGNED:                  emit(" signed");    break;
+    case DECL_QUAL_UNSIGNED:                emit(" unsigned");  break;
+    case DECL_QUAL_SHORT:                   emit(" short");     break;
+    case DECL_QUAL_LONG:                    emit(" long");      break;
+    case DECL_QUAL_COMPLEX:                 emit(" complex");   break;
+    case DECL_QUAL_IMAGINARY:               emit(" imaginary"); break;
     }
 
     if (name && *name) emit(" %s", name);
@@ -493,18 +499,18 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
 void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 {
     switch (ty->kind) {
-    case KIND_PTR: emit_named_comps_adpt_type_def(&ty->info.ptr->type);      return;
-    case KIND_FUN: emit_named_comps_adpt_type_def(&ty->info.fun.ret->type);  return;
-    case KIND_ARR: emit_named_comps_adpt_type_def(&ty->info.arr.item->type); return;
+    case DECL_KIND_PTR: emit_named_comps_adpt_type_def(&ty->info.ptr->type);      return;
+    case DECL_KIND_FUN: emit_named_comps_adpt_type_def(&ty->info.fun.ret->type);  return;
+    case DECL_KIND_ARR: emit_named_comps_adpt_type_def(&ty->info.arr.item->type); return;
 
-    case KIND_ENUM:
+    case DECL_KIND_ENUM:
         if (*tokn(ty->name)) emitln("#define %s_adapt_tag_type adptb_int_type", tokn(ty->name));
         return;
 
-    case KIND_STRUCT:
-    case KIND_UNION:
+    case DECL_KIND_STRUCT:
+    case DECL_KIND_UNION:
         if (-1ul == ty->info.comp.count)
-    case KIND_NOTAG:
+    case DECL_KIND_NOTAG:
             return;
     }
 
@@ -518,14 +524,14 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 
     for_linked (ty->info,comp) emit_named_comps_adpt_type_def(&curr->decl->type);
 
-    char const* const comp_kind = KIND_UNION == ty->kind ? "union" : "struct";
+    char const* const comp_kind = DECL_KIND_UNION == ty->kind ? "union" : "struct";
 
     emit("static struct adpt_type const %s_adapt_tag_type = ", name);
 
     indented ("{") {
         emitln(".size= sizeof(%s %s),", comp_kind, name);
         emitln(".align= alignof(%s %s),", comp_kind, name);
-        emitln(".tyty= TYPE_%s,", KIND_UNION == ty->kind ? "UNION" : "STRUCT");
+        emitln(".tyty= ADPT_TYPE_%s,", DECL_KIND_UNION == ty->kind ? "UNION" : "STRUCT");
         indented (".info.comp= {") {
             if (*tokn(ty->name)) emitln(".named= \"%s\",", tokn(ty->name));
             size_t count = 0;
@@ -557,14 +563,14 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 /// ```
 bool adpt_type_val_needs_define(struct decl_type cref ty) {
     switch (ty->kind) {
-    case KIND_NOTAG:
-    case KIND_STRUCT:
-    case KIND_UNION:
-    case KIND_ENUM:
+    case DECL_KIND_NOTAG:
+    case DECL_KIND_STRUCT:
+    case DECL_KIND_UNION:
+    case DECL_KIND_ENUM:
         return true;
-    case KIND_PTR:
-    case KIND_FUN:
-    case KIND_ARR:
+    case DECL_KIND_PTR:
+    case DECL_KIND_FUN:
+    case DECL_KIND_ARR:
         return false;
     }
     // unreachable
@@ -579,18 +585,18 @@ void emit_extern(declaration cref decl)
             emit_forward(&decl->type, tokn(decl->name), false);
             emitln(";");
         } else switch (decl->type.kind) {
-        case KIND_STRUCT:
-        case KIND_UNION:
-        case KIND_ENUM:
+        case DECL_KIND_STRUCT:
+        case DECL_KIND_UNION:
+        case DECL_KIND_ENUM:
             emit_forward(&decl->type, NULL, false);
             emitln(";");
             // unreachable cases
-        case KIND_NOTAG: case KIND_PTR: case KIND_FUN: case KIND_ARR:;
+        case DECL_KIND_NOTAG: case DECL_KIND_PTR: case DECL_KIND_FUN: case DECL_KIND_ARR:;
         }
     }
     emit_named_comps_adpt_type_def(&decl->type);
 
-    if (KIND_FUN == decl->type.kind) {
+    if (DECL_KIND_FUN == decl->type.kind) {
         bool found = false;
         search_namespace (decl->name, seen.funs) { found = true; break; }
         if (found) return;
@@ -605,7 +611,7 @@ void emit_extern(declaration cref decl)
             else {
                 emit("*(");
                 emit_forward(&(struct decl_type){
-                        .kind= KIND_PTR,
+                        .kind= DECL_KIND_PTR,
                         .info.ptr= decl->type.info.fun.ret,
                     }, NULL, true);
                 emit(")ret = ");
@@ -616,7 +622,7 @@ void emit_extern(declaration cref decl)
                 if (!curr->decl) errdie("Variadic functions are not supported");
                 emit("*(");
                 emit_forward(&(struct decl_type){
-                        .kind= KIND_PTR,
+                        .kind= DECL_KIND_PTR,
                         .info.ptr= curr->decl,
                     }, NULL, true);
                 emit(")args[%zu]", k++);
@@ -663,7 +669,7 @@ void emit_typedef(declaration cref decl)
     tdf->name = decl->name;
 
     indented ("static struct adpt_type const %s_adapt_tdf_type = {", tokn(decl->name)) {
-        emitln(".tyty= TYPE_NAMED,");
+        emitln(".tyty= ADPT_TYPE_NAMED,");
         indented (".info.named= {") {
             emit(".def= &");
             emit_adpt_type_val(&decl->type, true);
@@ -700,11 +706,11 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
 
     switch (decl->spec) {
         // unreachable cases
-    case SPEC_AUTO:
-    case SPEC_REGISTER:
+    case DECL_SPEC_AUTO:
+    case DECL_SPEC_REGISTER:
         goto next;
 
-    case SPEC_STATIC: // internal linkage (not visible)
+    case DECL_SPEC_STATIC: // internal linkage (not visible)
         {
             bool found = false;
             search_namespace (decl->name, seen.stas) { found = true; break; }
@@ -736,19 +742,19 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
         emit_empty();
         goto next;
 
-    case SPEC_NONE: // default at file scope is external linkage
+    case DECL_SPEC_NONE: // default at file scope is external linkage
         {
             bool found = false;
             search_namespace (decl->name, seen.stas) { found = true; break; }
             if (found) goto next;
         }
         // fall through
-    case SPEC_EXTERN: // external linkage
+    case DECL_SPEC_EXTERN: // external linkage
         emit_extern(decl);
         emit_empty();
         goto next;
 
-    case SPEC_TYPEDEF:
+    case DECL_SPEC_TYPEDEF:
         emit_typedef(decl);
         emit_empty();
         goto next;
@@ -940,11 +946,11 @@ int do_prepare(int argc, char** argv)
     char cref thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%s[] = {", thisns) {
         // TODO: sorted
-        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ITEM_OBJECT, .as.function= %s_adapt_call},", tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name));
-        for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%s\", .type= &%s_adapt_tag_type, .kind= ITEM_TYPEDEF},", tokn(seen.tags.ptr[k].name), tokn(seen.tags.ptr[k].name));
-        for (size_t k = 0; k < seen.tdfs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ITEM_TYPEDEF},", tokn(seen.tdfs.ptr[k].name), tokn(seen.tdfs.ptr[k].name));
-        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ITEM_OBJECT, .as.object= (void*)&%s},", tokn(seen.objs.ptr[k].name), tokn(seen.objs.ptr[k].name), tokn(seen.objs.ptr[k].name));
-        for (size_t k = 0; k < seen.enus.len; k++) emitln("{.name= \"%s\", .type= &adptb_int_type, .kind= ITEM_VALUE, .as.value= %s},", tokn(seen.enus.ptr[k].name), tokn(seen.enus.ptr[k].name));
+        for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ADPT_ITEM_OBJECT, .as.function= %s_adapt_call},", tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name));
+        for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%s\", .type= &%s_adapt_tag_type, .kind= ADPT_ITEM_TYPEDEF},", tokn(seen.tags.ptr[k].name), tokn(seen.tags.ptr[k].name));
+        for (size_t k = 0; k < seen.tdfs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ADPT_ITEM_TYPEDEF},", tokn(seen.tdfs.ptr[k].name), tokn(seen.tdfs.ptr[k].name));
+        for (size_t k = 0; k < seen.objs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ADPT_ITEM_OBJECT, .as.object= (void*)&%s},", tokn(seen.objs.ptr[k].name), tokn(seen.objs.ptr[k].name), tokn(seen.objs.ptr[k].name));
+        for (size_t k = 0; k < seen.enus.len; k++) emitln("{.name= \"%s\", .type= &adptb_int_type, .kind= ADPT_ITEM_VALUE, .as.value= %s},", tokn(seen.enus.ptr[k].name), tokn(seen.enus.ptr[k].name));
         size_t const count = seen.funs.len+seen.tags.len+seen.tdfs.len+seen.objs.len+seen.enus.len;
         emit("// exporting %zu name%s", count, 1 == count ? "" : "s");
     }

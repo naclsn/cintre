@@ -13,12 +13,12 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     typedef int (*pu_fpty)(char*, unsigned long);
     static tokt ar[3] = {0};
 
-    static struct adpt_item const si_it = {.name= "si", .type= &adptb_int_type, .kind= ITEM_OBJECT, .as.object= &si};
-    static struct adpt_item const ui_it = {.name= "ui", .type= &adptb_uint_type, .kind= ITEM_OBJECT, .as.object= &ui};
+    static struct adpt_item const si_it = {.name= "si", .type= &adptb_int_type, .kind= ADPT_ITEM_OBJECT, .as.object= &si};
+    static struct adpt_item const ui_it = {.name= "ui", .type= &adptb_uint_type, .kind= ADPT_ITEM_OBJECT, .as.object= &ui};
 
     static struct adpt_type const cp_ty = {
         .size= sizeof(char*), .align= alignof(char*),
-        .tyty= TYPE_PTR,
+        .tyty= ADPT_TYPE_PTR,
         .info.ptr= &adptb_char_type,
     };
 
@@ -28,7 +28,7 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     };
     static struct adpt_type const ab_ty = {
         .size= sizeof(tokt), .align= alignof(tokt),
-        .tyty= TYPE_STRUCT,
+        .tyty= ADPT_TYPE_STRUCT,
         .info.comp= {
             .fields= ab_fs,
             .count= countof(ab_fs),
@@ -37,7 +37,7 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     static struct adpt_item const ab_it = {
         .name= "abuf",
         .type= &ab_ty,
-        .kind= ITEM_OBJECT,
+        .kind= ADPT_ITEM_OBJECT,
         .as.object= &ab,
     };
 
@@ -47,7 +47,7 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     };
     static struct adpt_type const pu_ty = {
         .size= sizeof(pu_fpty), .align= alignof(pu_fpty),
-        .tyty= TYPE_FUN,
+        .tyty= ADPT_TYPE_FUN,
         .info.fun= {
             .ret= &adptb_int_type,
             .params= pu_ps,
@@ -57,13 +57,13 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     static struct adpt_item const pu_it = {
         .name= "put",
         .type= &pu_ty,
-        .kind= ITEM_OBJECT,
+        .kind= ADPT_ITEM_OBJECT,
         .as.function= NULL,
     };
 
     static struct adpt_type const ar_ty = {
         .size= sizeof(tokt)*3, .align= alignof(tokt),
-        .tyty= TYPE_ARR,
+        .tyty= ADPT_TYPE_ARR,
         .info.arr= {
             .item= &ab_ty,
             .count= 3,
@@ -72,7 +72,7 @@ struct adpt_item const* test_lookup(void* _, char cref name)
     static struct adpt_item const ar_it = {
         .name= "arry",
         .type= &ar_ty,
-        .kind= ITEM_OBJECT,
+        .kind= ADPT_ITEM_OBJECT,
         .as.object= &ar,
     };
 

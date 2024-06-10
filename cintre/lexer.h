@@ -85,7 +85,8 @@ struct lex_state {
     char nlend, // private; count '\n' as soft EOF (eg. in #define ..)
          noxid, // private; disable expanding identifiers
          nomrg, // private; disable merging string literal
-         nodir; // private; disable '#' from starting a directive
+         nodir, // private; disable '#' from starting a directive
+         dumgc; // private; when 1, _lex_getc is getc (only handle <backslash><newline>)
 
     char const* cstream; // (essentially) private; will read chars from this until '\0' instead of the current source's stream
 
@@ -169,26 +170,28 @@ static char _lex_getc(lex_state* const ls) {
     curr->line+= '\n' == c;
 #   define case2(c1, c2, ret) if (c1 == c) { if (c2 == (c = fgetc(curr->stream))) return ret; else ungetc(c, curr->stream), c = c1; }
     case2('\\', '\n', (++curr->line, _lex_getc(ls)));
-    case2('<', '%', '{');
-    case2('%', '>', '}');
-    case2('<', ':', '[');
-    case2(':', '>', ']');
-    case2('%', ':', '#');
-    size_t const comment_at = ls->work.len;
-    case2('/', '*', (
-        _lex_comment(ls),
-        *push(&ls->work) = '\0',
-        ls->work.len = comment_at,
-        (on_lex_comment(ls, (ls->work.ptr+comment_at))),
-        ' '
-    ));
-    case2('/', '/', (
-        _lex_getdelim(ls, '\n'),
-        *push(&ls->work) = '\0',
-        ls->work.len = comment_at,
-        --curr->line, (on_lex_comment(ls, (ls->work.ptr+comment_at))), ++curr->line,
-        '\n'
-    ));
+    if (!ls->dumgc) {
+        case2('<', '%', '{');
+        case2('%', '>', '}');
+        case2('<', ':', '[');
+        case2(':', '>', ']');
+        case2('%', ':', '#');
+        size_t const comment_at = ls->work.len;
+        case2('/', '*', (
+            ls->dumgc = 1, _lex_comment(ls), ls->dumgc = 0,
+            *push(&ls->work) = '\0',
+            ls->work.len = comment_at,
+            (on_lex_comment(ls, (ls->work.ptr+comment_at))),
+            ' '
+        ));
+        case2('/', '/', (
+            ls->dumgc = 1, _lex_getdelim(ls, '\n'), ls->dumgc = 0,
+            *push(&ls->work) = '\0',
+            ls->work.len = comment_at,
+            --curr->line, (on_lex_comment(ls, (ls->work.ptr+comment_at))), ++curr->line,
+            '\n'
+        ));
+    }
 #   undef case2
     return c;
 }
@@ -228,8 +231,10 @@ static size_t _lex_simple(lex_state* const ls) {
     switch (c0) {
     case '"':
     case '\'':
+        ls->dumgc = 1;
         do if ('\\' == accu()) accu(), accu();
         while (c0 != c && !endd);
+        ls->dumgc = 0;
         break;
 
     case '-':
@@ -590,7 +595,9 @@ static void _lex_directive(lex_state* const ls) {
 
         if ('"' == c) {
             if (!expanded) {
+                ls->dumgc = 1;
                 while ('"' != accu() && !endd);
+                ls->dumgc = 0;
                 ls->work.ptr[ls->work.len-1] = '\0';
                 _lex_getdelim(ls, '\n');
             }
@@ -600,13 +607,14 @@ static void _lex_directive(lex_state* const ls) {
 
             char const* const dirname_end = strrchr(ls->work.ptr+curr->file, '/');
             if (dirname_end) {
-                memcpy(file, ls->work.ptr+curr->file, dirname_end+1 - ls->work.ptr+curr->file);
-                file[dirname_end+1 - ls->work.ptr+curr->file] = '\0';
+                memcpy(file, ls->work.ptr+curr->file, (dirname_end+1) - (ls->work.ptr+curr->file));
+                file[(dirname_end+1) - (ls->work.ptr+curr->file)] = '\0';
             } else file[0] = '\0';
 
             size_t k = 0;
             do {
-                if (file[0] && '/' != file[strlen(file)-1]) file[strlen(file)] = '/';
+                size_t const len = strlen(file);
+                if (len && '/' != file[len-1]) file[len] = '/', file[len+1] = '\0';
                 strcat(file, ls->work.ptr+path_at);
 
                 FILE* const stream = fopen(file, "r");
@@ -615,12 +623,11 @@ static void _lex_directive(lex_state* const ls) {
                     ungetc('\n', curr->stream), --curr->line, ls->gotc = '\0';
                     size_t const file_at = ls->work.len;
                     strcpy(grow(&ls->work, ls->work.len, strlen(file)+1), file);
-                    *push(&ls->sources) = (struct lex_source){.stream= stream, .file= file_at, .line= 1};
+                    *push(&ls->sources) = (struct lex_source){.stream= stream, .file= file_at};
                     break;
                 }
 
                 if (k >= ls->paths.len) {
-                    ls->work.len = dir_at;
                     _lex_ungetc(ls, '\n');
                     on_lex_missinclude(ls, (ls->work.ptr+path_at));
                     break;
@@ -630,7 +637,9 @@ static void _lex_directive(lex_state* const ls) {
         }
 
         else if ('<' == c) {
+            ls->dumgc = 1;
             while ('>' != accu() && !endd);
+            ls->dumgc = 0;
             ls->work.ptr[ls->work.len-1] = '\0';
             _lex_getdelim(ls, '\n');
             ls->work.len = dir_at;
@@ -997,11 +1006,7 @@ void lex_incdir(lex_state* const ls, char const* const path) {
 void lex_entry(lex_state* const ls, FILE* const stream, char const* const file) {
     size_t const file_at = ls->work.len;
     strcpy(grow(&ls->work, ls->work.len, strlen(file)+1), file);
-    *(!ls->sources.len ? push(&ls->sources) : curr) = (struct lex_source){
-        .stream= stream,
-        .file= file_at,
-        .line= 1,
-    };
+    *(!ls->sources.len ? push(&ls->sources) : curr) = (struct lex_source){.stream= stream, .file= file_at};
     *push(&ls->tokens) = '\0';
     *push(&ls->tokens) = '\0';
 }
@@ -1044,7 +1049,8 @@ size_t lext(lex_state* const ls) {
     if (!ls->ahead) {
         if (!ls->cstream && (!ls->sources.len || !curr->stream)) return eof_token;
 
-        size_t const pline = ls->cstream ? 0 : curr->line;
+        size_t const pline = curr->line;
+        if (!ls->cstream && !pline) ++curr->line;
 
         char c;
         char const* const blanks = ls->nlend ? blankchrs : nlchrs blankchrs;
@@ -1058,7 +1064,7 @@ size_t lext(lex_state* const ls) {
             return lext(ls);
         }
 
-        if (pline && '#' == c && !ls->nodir && ('\0' == ls->tokens.ptr[ls->tokens.len-2] || pline != curr->line)) {
+        if ('#' == c && !ls->nodir && (!pline || pline != curr->line)) {
             _lex_directive(ls);
             return lext(ls);
         }

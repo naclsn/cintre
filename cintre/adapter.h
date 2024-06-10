@@ -21,16 +21,16 @@ static struct adpt_type {
     unsigned long const size, align;
 
     enum adpt_type_tag {
-        TYPE_VOID,
-        TYPE_CHAR, TYPE_UCHAR, TYPE_SCHAR,
-        TYPE_SHORT, TYPE_INT, TYPE_LONG,
-        TYPE_USHORT, TYPE_UINT, TYPE_ULONG,
-        TYPE_FLOAT, TYPE_DOUBLE,
-        TYPE_STRUCT, TYPE_UNION,
-        TYPE_FUN,
-        TYPE_PTR,
-        TYPE_ARR,
-        TYPE_NAMED,
+        ADPT_TYPE_VOID,
+        ADPT_TYPE_CHAR, ADPT_TYPE_UCHAR, ADPT_TYPE_SCHAR,
+        ADPT_TYPE_SHORT, ADPT_TYPE_INT, ADPT_TYPE_LONG,
+        ADPT_TYPE_USHORT, ADPT_TYPE_UINT, ADPT_TYPE_ULONG,
+        ADPT_TYPE_FLOAT, ADPT_TYPE_DOUBLE,
+        ADPT_TYPE_STRUCT, ADPT_TYPE_UNION,
+        ADPT_TYPE_FUN,
+        ADPT_TYPE_PTR,
+        ADPT_TYPE_ARR,
+        ADPT_TYPE_NAMED,
     } const tyty;
 
     union adpt_type_info {
@@ -68,27 +68,27 @@ static struct adpt_type {
     } const info;
 }
 const adptb_void_type = {0}
-, adptb_char_type     = {.size= sizeof(char),           .align= sizeof(char),           .tyty= TYPE_CHAR  }
-, adptb_uchar_type    = {.size= sizeof(unsigned char),  .align= sizeof(unsigned char),  .tyty= TYPE_UCHAR }
-, adptb_schar_type    = {.size= sizeof(signed char),    .align= sizeof(signed char),    .tyty= TYPE_SCHAR }
-, adptb_short_type    = {.size= sizeof(short),          .align= sizeof(short),          .tyty= TYPE_SHORT }
-, adptb_int_type      = {.size= sizeof(int),            .align= sizeof(int),            .tyty= TYPE_INT   }
-, adptb_long_type     = {.size= sizeof(long),           .align= sizeof(long),           .tyty= TYPE_LONG  }
-, adptb_ushort_type   = {.size= sizeof(unsigned short), .align= sizeof(unsigned short), .tyty= TYPE_USHORT}
-, adptb_uint_type     = {.size= sizeof(unsigned int),   .align= sizeof(unsigned int),   .tyty= TYPE_UINT  }
-, adptb_ulong_type    = {.size= sizeof(unsigned long),  .align= sizeof(unsigned long),  .tyty= TYPE_ULONG }
-, adptb_float_type    = {.size= sizeof(float),          .align= sizeof(float),          .tyty= TYPE_FLOAT }
-, adptb_double_type   = {.size= sizeof(double),         .align= sizeof(double),         .tyty= TYPE_DOUBLE}
+, adptb_char_type     = {.size= sizeof(char),           .align= sizeof(char),           .tyty= ADPT_TYPE_CHAR  }
+, adptb_uchar_type    = {.size= sizeof(unsigned char),  .align= sizeof(unsigned char),  .tyty= ADPT_TYPE_UCHAR }
+, adptb_schar_type    = {.size= sizeof(signed char),    .align= sizeof(signed char),    .tyty= ADPT_TYPE_SCHAR }
+, adptb_short_type    = {.size= sizeof(short),          .align= sizeof(short),          .tyty= ADPT_TYPE_SHORT }
+, adptb_int_type      = {.size= sizeof(int),            .align= sizeof(int),            .tyty= ADPT_TYPE_INT   }
+, adptb_long_type     = {.size= sizeof(long),           .align= sizeof(long),           .tyty= ADPT_TYPE_LONG  }
+, adptb_ushort_type   = {.size= sizeof(unsigned short), .align= sizeof(unsigned short), .tyty= ADPT_TYPE_USHORT}
+, adptb_uint_type     = {.size= sizeof(unsigned int),   .align= sizeof(unsigned int),   .tyty= ADPT_TYPE_UINT  }
+, adptb_ulong_type    = {.size= sizeof(unsigned long),  .align= sizeof(unsigned long),  .tyty= ADPT_TYPE_ULONG }
+, adptb_float_type    = {.size= sizeof(float),          .align= sizeof(float),          .tyty= ADPT_TYPE_FLOAT }
+, adptb_double_type   = {.size= sizeof(double),         .align= sizeof(double),         .tyty= ADPT_TYPE_DOUBLE}
 ;
 
 static inline struct adpt_type const* _truetype(struct adpt_type const* ty)
 {
-    while (TYPE_NAMED == ty->tyty) ty = ty->info.named.def;
+    while (ADPT_TYPE_NAMED == ty->tyty) ty = ty->info.named.def;
     return ty;
 }
 static inline struct adpt_type const* _tailtype(struct adpt_type const* ty)
 {
-    for (ty = _truetype(ty); TYPE_PTR == ty->tyty; ty = _truetype(ty->info.ptr));
+    for (ty = _truetype(ty); ADPT_TYPE_PTR == ty->tyty; ty = _truetype(ty->info.ptr));
     return ty;
 }
 
@@ -96,10 +96,10 @@ struct adpt_item {
     char const* const name;
     struct adpt_type const* const type;
     enum {
-        ITEM_VALUE, // enumerator values
-        ITEM_OBJECT, // object, function
-        ITEM_TYPEDEF, // typedef
-        ITEM_VARIABLE, // runtime stack variable
+        ADPT_ITEM_VALUE, // enumerator values
+        ADPT_ITEM_OBJECT, // object, function
+        ADPT_ITEM_TYPEDEF, // typedef
+        ADPT_ITEM_VARIABLE, // runtime stack variable
     } kind;
     union {
         long const value; // int is enough, but to be safer

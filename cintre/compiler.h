@@ -280,8 +280,8 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
             _slot_variable == small_src->usage ? atv(small_src) : at(small_src));
 }
 
-#define _cfold_arith_ints(dst, lhs, op, rhs)  \
-    do switch ((dst)->ty->tyty) {  \
+#define _cfold_arith_ints(dst, lhs, op, rhs)                                                      \
+    do switch ((dst)->ty->tyty) {                                                                 \
     case ADPT_TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
     case ADPT_TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
     case ADPT_TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
@@ -291,12 +291,12 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
     case ADPT_TYPE_USHORT: (dst)->as.value.us = (lhs)->as.value.us op (rhs)->as.value.us; break;  \
     case ADPT_TYPE_UINT:   (dst)->as.value.ui = (lhs)->as.value.ui op (rhs)->as.value.ui; break;  \
     case ADPT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
-        /* unreachable cases */  \
+        /* unreachable cases */                                                                   \
     case ADPT_TYPE_VOID: case ADPT_TYPE_FLOAT: case ADPT_TYPE_DOUBLE: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;  \
     } while (0)
 
-#define _cfold_arith(dst, lhs, op, rhs)  \
-    do switch ((dst)->ty->tyty) {  \
+#define _cfold_arith(dst, lhs, op, rhs)                                                           \
+    do switch ((dst)->ty->tyty) {                                                                 \
     case ADPT_TYPE_CHAR:   (dst)->as.value.c  = (lhs)->as.value.c  op (rhs)->as.value.c;  break;  \
     case ADPT_TYPE_UCHAR:  (dst)->as.value.uc = (lhs)->as.value.uc op (rhs)->as.value.uc; break;  \
     case ADPT_TYPE_SCHAR:  (dst)->as.value.sc = (lhs)->as.value.sc op (rhs)->as.value.sc; break;  \
@@ -308,7 +308,7 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
     case ADPT_TYPE_ULONG:  (dst)->as.value.ul = (lhs)->as.value.ul op (rhs)->as.value.ul; break;  \
     case ADPT_TYPE_FLOAT:  (dst)->as.value.f  = (lhs)->as.value.f  op (rhs)->as.value.f;  break;  \
     case ADPT_TYPE_DOUBLE: (dst)->as.value.d  = (lhs)->as.value.d  op (rhs)->as.value.d;  break;  \
-        /* unreachable cases */  \
+        /* unreachable cases */                                                                   \
     case ADPT_TYPE_VOID: case ADPT_TYPE_STRUCT: case ADPT_TYPE_UNION: case ADPT_TYPE_FUN: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;  \
     } while (0)
 

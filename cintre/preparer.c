@@ -47,6 +47,7 @@ struct {
     dyarr(struct seen_enu { tokt name; }) enus;
     dyarr(struct seen_sta { tokt name; }) stas;
 } seen = {0};
+#define find_seen(n, ns) for (size_t k = 0; k < (ns).len; k++) if (!strcmp(tokn((ns).ptr[k].name), tokn((n))))
 
 #define errdie(...) (report_lex_locate(ls, "preparer: " __VA_ARGS__), exit(EXIT_FAILURE))
 
@@ -71,10 +72,11 @@ void (on_lex_missinclude)(char cref path)
 
 /// ty->name if not empty, otherwise a unique stable temporary name
 /// (allocated on the stack)
-#define have_tag_name_bufsl(__ident, __ty)                                        \
-    char __ident_##loc_tmp[35];                                                   \
-    char cref __ident = !*tokn((__ty)->name)                                      \
-        ? sprintf(__ident_##loc_tmp, "_%016zx_%016zx", (size_t)(__ty), ls->tokens.len), __ident_##loc_tmp  \
+#define have_tag_name_bufsl(__ident, __ty)                                               \
+    char __ident_##loc_tmp[35];                                                          \
+    char cref __ident = !*tokn((__ty)->name)                                             \
+        ? sprintf(__ident_##loc_tmp, "_%016zx_%016zx", (size_t)(__ty), ls->tokens.len),  \
+          __ident_##loc_tmp                                                              \
         : tokn((__ty)->name);
 
 /// forwards as-is
@@ -333,7 +335,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
                 if (-1ul == ty->info.comp.count) break;
 
                 bool found = false;
-                search_namespace (ty->name, seen.tags) { found = true; break; }
+                find_seen (ty->name, seen.tags) { found = true; break; }
                 if (found) break;
             } else {
                 have_tag_name_bufsl(name, ty);
@@ -379,7 +381,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
                 emit("%s", tokn(ty->name));
 
                 bool found = false;
-                search_namespace (ty->name, seen.tags) { found = true; break; }
+                find_seen (ty->name, seen.tags) { found = true; break; }
                 if (found) break;
             } else {
                 have_tag_name_bufsl(name, ty);
@@ -598,7 +600,7 @@ void emit_extern(declaration cref decl)
 
     if (DECL_KIND_FUN == decl->type.kind) {
         bool found = false;
-        search_namespace (decl->name, seen.funs) { found = true; break; }
+        find_seen (decl->name, seen.funs) { found = true; break; }
         if (found) return;
 
         struct seen_fun ref fun = dyarr_push(&seen.funs);
@@ -635,7 +637,7 @@ void emit_extern(declaration cref decl)
 
     else if (*tokn(decl->name)) {
         bool found = false;
-        search_namespace (decl->name, seen.objs) { found = true; break; }
+        find_seen (decl->name, seen.objs) { found = true; break; }
         if (found) return;
 
         struct seen_obj ref obj = dyarr_push(&seen.objs);
@@ -713,7 +715,7 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
     case DECL_SPEC_STATIC: // internal linkage (not visible)
         {
             bool found = false;
-            search_namespace (decl->name, seen.stas) { found = true; break; }
+            find_seen (decl->name, seen.stas) { found = true; break; }
             if (found) goto next;
 
             struct seen_sta ref sta = dyarr_push(&seen.stas);
@@ -745,7 +747,7 @@ void emit_top(void* _, declaration cref decl, tokt ref tok)
     case DECL_SPEC_NONE: // default at file scope is external linkage
         {
             bool found = false;
-            search_namespace (decl->name, seen.stas) { found = true; break; }
+            find_seen (decl->name, seen.stas) { found = true; break; }
             if (found) goto next;
         }
         // fall through
@@ -945,7 +947,6 @@ int do_prepare(int argc, char** argv)
 
     char cref thisns = name_space(outfile ? outfile : infile);
     indented ("static struct adpt_item const adptns_%s[] = {", thisns) {
-        // TODO: sorted
         for (size_t k = 0; k < seen.funs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ADPT_ITEM_OBJECT, .as.function= %s_adapt_call},", tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name), tokn(seen.funs.ptr[k].name));
         for (size_t k = 0; k < seen.tags.len; k++) emitln("{.name= \"@%s\", .type= &%s_adapt_tag_type, .kind= ADPT_ITEM_TYPEDEF},", tokn(seen.tags.ptr[k].name), tokn(seen.tags.ptr[k].name));
         for (size_t k = 0; k < seen.tdfs.len; k++) emitln("{.name= \"%s\", .type= &%s_adapt_type, .kind= ADPT_ITEM_TYPEDEF},", tokn(seen.tdfs.ptr[k].name), tokn(seen.tdfs.ptr[k].name));

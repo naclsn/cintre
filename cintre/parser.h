@@ -218,17 +218,17 @@ tokt parse_expression(parse_expr_state ref ps, tokt const tok);
 #define pstokn(__at) (ps->ls->tokens.ptr+(__at))
 
 #define _expect1(_tok)                                                \
-    if (!*pstokn(*(_tok)) && (                                             \
+    if (!*pstokn(*(_tok)) && (                                        \
         report_lex_locate(ps->ls, "Unexpected end of input"), true))  \
         return
-#define _expect(_tok, ...)                                                                               \
-    for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                          \
-        if (*_it) if (!strcmp(*_it, pstokn(*(_tok)))) break; else continue;                                        \
-        else if (                                                                                        \
+#define _expect(_tok, ...)                                                                                  \
+    for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                             \
+        if (*_it) if (!strcmp(*_it, pstokn(*(_tok)))) break; else continue;                                 \
+        else if (                                                                                           \
             report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got %s", quoted(pstokn(*(_tok)))), true)  \
             return
-#define _expectid(_tok)                                                                       \
-    if (!isidstart(*pstokn(*(_tok))) && (                                                         \
+#define _expectid(_tok)                                                                            \
+    if (!isidstart(*pstokn(*(_tok))) && (                                                          \
         report_lex_locate(ps->ls, "Expected identifier, got %s", quoted(pstokn(*(_tok)))), true))  \
         return
 
@@ -969,7 +969,6 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
     //    return;
     //}
 
-    // TODO: join adjacent string literals (would like to say this should be done in the lexer tho-)
     expression atom = {.kind= EXPR_ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
 

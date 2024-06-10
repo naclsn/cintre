@@ -217,15 +217,15 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 #   define fail_got_type(__ty, ...)  return (  \
         fprintf(stderr, __VA_ARGS__),          \
         fprintf(stderr, ", got: "),            \
-        print_type(stderr, (__ty), false),  \
+        print_type(stderr, (__ty), false),     \
         fprintf(stderr, "\n"),                 \
         NULL)
 #   define fail_got_2types(__1, __2, ...)  return (  \
         fprintf(stderr, __VA_ARGS__),                \
         fprintf(stderr, ", got: "),                  \
-        print_type(stderr, (__1), false),         \
+        print_type(stderr, (__1), false),            \
         fprintf(stderr, " and "),                    \
-        print_type(stderr, (__2), false),         \
+        print_type(stderr, (__2), false),            \
         fprintf(stderr, "\n"),                       \
         NULL)
 

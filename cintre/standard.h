@@ -2,8 +2,6 @@
 /// ISO/IEC 9899:1999 ("C99") 7.1.2 "Standard headers"; this is meant to be use
 /// as an entry for the preparer, to generate the "standard" namespace.
 
-// TODO: fix these ptr[void] comming from `typedef`ing all opaque types as void
-
 //#include <assert.h> // nothing interesting
 //#include <complex.h>
 #include <ctype.h>

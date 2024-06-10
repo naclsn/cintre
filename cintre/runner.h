@@ -141,18 +141,18 @@ void run(run_state ref rs, bytecode const code)
 #           define  _xi(op, ty) *at(a, ty) = (ty)b      op *at(c, ty); continue;
 #           define _rxi(op, ty) *at(a, ty) = *at(c, ty) op (ty)b     ; continue;
 #           define dox(n, ...) n(__VA_ARGS__)
-#           define bop_u(x, op)  \
+#           define bop_u(x, op)                       \
                 case 0x0: dox(x, op, unsigned char)   \
                 case 0x1: dox(x, op, unsigned short)  \
                 case 0x2: dox(x, op, unsigned int)    \
                 case 0x3: dox(x, op, unsigned long)
-#           define bop_b(x, op)  \
+#           define bop_b(x, op)                       \
                 case 0x4: dox(x, op, unsigned char)   \
                 case 0x5: dox(x, op, unsigned short)  \
                 case 0x6: dox(x, op, unsigned int)    \
                 case 0x7: dox(x, op, unsigned long)
-#           define bop_f(x, op)  \
-                case 0xd: dox(x, op, double)  \
+#           define bop_f(x, op)                       \
+                case 0xd: dox(x, op, double)          \
                 case 0xf: dox(x, op, float)
         case 0x3: switch (lo) { bop_u( _x , +) bop_b( _x , |)  bop_f( _x , +) } break;
         case 0x4: switch (lo) { bop_u( _x , -) bop_b( _x , ^)  bop_f( _x , -) } break;

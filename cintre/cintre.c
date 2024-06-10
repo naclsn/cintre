@@ -265,12 +265,10 @@ void cintre_cleanup(cintre_state ref gs)
 struct adpt_item const* cintre_lookup(void* usr, char cref name)
 {
     cintre_state cref gs = usr;
-    // TODO: same idea as below, so make sure to insert them sorted
     for (size_t k = 0; k < gs->locs.len; k++) {
         struct adpt_item cref it = gs->locs.ptr+k;
         if (!strcmp(name, it->name)) return it;
     }
-    // TODO: names will be sorted (from preparer), use that to go n -> logn
     for (size_t ns = 0; ns < gs->nsps.count; ns++)
         for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
             struct adpt_item cref it = gs->nsps.spaces[ns].items+k;

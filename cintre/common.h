@@ -55,18 +55,18 @@ static inline char const* lexerline(char cref file, size_t const line)
     return lex_getline(lne, sizeof lne, file, line), lne;
 }
 
-#define report_lex_locate(ls, ...) (                                \
-    fflush(stdout),                                                 \
-    fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %s \x1b[1m##\x1b[m ",  \
-            (ls)->work.ptr+(ls)->sources.ptr[(ls)->sources.len-1].file,  \
-            (ls)->sources.ptr[(ls)->sources.len-1].line,  \
-            lexerline(  \
+#define report_lex_locate(ls, ...) (                                         \
+    fflush(stdout),                                                          \
+    fprintf(stderr, "\x1b[1m[%s:%zu]\x1b[m %s \x1b[1m##\x1b[m ",             \
+            (ls)->work.ptr+(ls)->sources.ptr[(ls)->sources.len-1].file,      \
+            (ls)->sources.ptr[(ls)->sources.len-1].line,                     \
+            lexerline(                                                       \
                 (ls)->work.ptr+(ls)->sources.ptr[(ls)->sources.len-1].file,  \
-                (ls)->sources.ptr[(ls)->sources.len-1].line)),  \
+                (ls)->sources.ptr[(ls)->sources.len-1].line)),               \
     notif(__VA_ARGS__))
 
 
-#define on_lex_preprocerr(ls, err) (  \
+#define on_lex_preprocerr(ls, err) (          \
     report_lex_locate(ls, "Error: %s", err),  \
     exitf("Stopping at preprocessor error"))
 
@@ -76,10 +76,6 @@ static inline void* mallox(size_t n)
     if (!r) exitf("OOM");
     return r;
 }
-
-// used in lexer and preparer
-// TODO: change things so it uses the tbd `dyarr_sortedsearch`, both on search and push
-#define search_namespace(n, ns) for (size_t k = 0; k < (ns).len; k++) if (!strcmp(tokn((ns).ptr[k].name), tokn((n))))
 
 #define isidstart(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || '_' == (__c))
 #define isidcont(__c) (('a' <= ((__c)|32) && ((__c)|32) <= 'z') || ('0' <= (__c) && (__c) <= '9') || '_' == (__c))

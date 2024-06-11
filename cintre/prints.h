@@ -436,7 +436,12 @@ void print_code(FILE ref strm, bytecode const code)
             break;
 
         case 0x00: fprintf(strm, "\x1b[34mnop\x1b[m"); break;
-        case 0x2a: fprintf(strm, "\x1b[34mdebug\x1b[m"); break;
+        case 0x2a:
+            fprintf(strm, "\x1b[34mdebug\x1b[m");
+            imm(sze);
+            fprintf(strm, "\tbytes:\x1b[33m\"%.*s\"\x1b[m", (unsigned)sze, code.ptr+k);
+            k+= sze;
+            break;
 
         case 0x04:
             fprintf(strm, "\x1b[34mnot\x1b[m");
@@ -497,7 +502,9 @@ void print_code(FILE ref strm, bytecode const code)
         } // other
 
         fprintf(strm, "\t\x1b[32m;");
-        while (pk <= k) fprintf(strm, " 0x%02x", code.ptr[pk++]);
+        size_t const tk = 7 < k-pk ? pk+7 : k;
+        while (pk <= tk) fprintf(strm, " 0x%02x", code.ptr[pk++]);
+        if (tk != k) fprintf(strm, "...");
         fprintf(strm, "\x1b[m\n");
 #       undef imm
     }

@@ -54,8 +54,9 @@ typedef struct cintre_state {
 bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 {
     cs->chk_types.len = 0; // xxx: annoying
-    struct slot slot = {.ty= check_expression(cs, expr)};
-    if (!slot.ty) return false;
+    struct adpt_type const* ty = check_expression(cs, expr);
+    if (!ty) return false;
+    struct slot slot = {.ty= _truetype(ty)};
     _alloc_slot(cs, &slot);
 
     compile_expression(cs, expr, &slot);

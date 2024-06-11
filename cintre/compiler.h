@@ -68,6 +68,7 @@ struct slot {
           float f;
           double d;
           char const* p;
+          void (*fn)(char*, char**);
           unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
       } value;
       size_t variable;
@@ -139,7 +140,14 @@ void _rewind_slot(compile_state ref cs, struct slot cref slot)
     cs->vsp = slot->end;
 }
 
-void _emit_data(compile_state ref cs, size_t const dst, size_t const width, unsigned char const* data)
+void _emit_debug(compile_state ref cs, char const text[const])
+{
+    size_t const len = strlen(text);
+    _emit_instr_w_opr(0x2a, len);
+    memcpy(dyarr_insert(&cs->res, cs->res.len, len), text, len);
+}
+
+void _emit_data(compile_state ref cs, size_t const dst, size_t const width, unsigned char const data[const])
 {
     _emit_instr_w_opr(0x1d, dst, width);
     memcpy(dyarr_insert(&cs->res, cs->res.len, width), data, width);
@@ -698,8 +706,13 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             break;
 
         case ADPT_ITEM_OBJECT:
-            _read_object_to_stack(cs, slot, found->as.object);
-            slot->usage = _slot_used;
+            if (ADPT_TYPE_FUN == found->type->tyty) {
+                slot->as.value.fn = found->as.function;
+                slot->usage = _slot_value;
+            } else {
+                _read_object_to_stack(cs, slot, found->as.object);
+                slot->usage = _slot_used;
+            }
             break;
 
         case ADPT_ITEM_TYPEDEF:

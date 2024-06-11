@@ -1049,8 +1049,7 @@ size_t lext(lex_state* const ls) {
     if (!ls->ahead) {
         if (!ls->cstream && (!ls->sources.len || !curr->stream)) return eof_token;
 
-        size_t const pline = curr->line;
-        if (!ls->cstream && !pline) ++curr->line;
+        size_t const pline = ls->cstream ? 0 : !curr->line ? curr->line++ : curr->line;
 
         char c;
         char const* const blanks = ls->nlend ? blankchrs : nlchrs blankchrs;

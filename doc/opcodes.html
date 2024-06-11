@@ -83,7 +83,7 @@
           case 0x25: se('ftod', ['cvt'], "floating point conversion"); continue;
 
           case 0x00: se('nop', ['other'], "do nothing"); continue;
-          case 0x2a: se('debug', ['other'], "facilitate debugger breakpoint"); continue;
+          case 0x2a: se('debug', ['other'], "facilitate debugger breakpoint with <sze> <... sze bytes>"); continue;
 
           case 0x0d: se('pop', ['stack'], "stack dealloc <sze>"); continue;
           case 0x0f: se('push', ['stack'], "stack alloc <sze>"); continue;

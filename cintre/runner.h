@@ -41,7 +41,11 @@ void run(run_state ref rs, bytecode const code)
 
     for (size_t k = 0; k < code.len; k++) switch (code.ptr[k]) {
     case 0x2a:
-        notif("yyy: debug");
+        imm(b);
+        char dbg[256];
+        memcpy(dbg, code.ptr+k+1, b);
+        k+= b;
+        notif("yyy: hit debug \"%.*s\"", (unsigned)b, dbg);
         // fall through
     case 0x00:
         continue;

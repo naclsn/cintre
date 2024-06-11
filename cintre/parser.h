@@ -150,6 +150,7 @@ tokt parse_declaration(parse_decl_state ref ps, tokt tok);
 typedef struct expression {
     enum expr_kind {
         EXPR_ATOM,
+        EXPR_COMPLIT,
 
         EXPR_BINOP_SUBSCR, EXPR_BINOP_CALL,
 
@@ -178,19 +179,50 @@ typedef struct expression {
         EXPR_UNOP_MINUS, EXPR_UNOP_PLUS,
         EXPR_UNOP_PRE_DEC, EXPR_UNOP_PRE_INC,
 
-        //EXPR_UNOP_COMPLIT,
         EXPR_UNOP_PMEMBER, EXPR_UNOP_MEMBER,
         EXPR_UNOP_POST_DEC, EXPR_UNOP_POST_INC,
     } kind;
 
     union expr_info {
         tokt atom;
+
+        struct {
+            struct decl_type const* type; // NULL if not provided at this point of the syntax
+            struct expr_comp_entry {
+                struct expr_comp_desig {
+                    bool is_field, is_subscript;
+                    union {
+                        tokt field;
+                        struct expression* subscript;
+                    } info;
+                    struct expr_comp_desig* next;
+                }* desig; // can be NULL if none (eg. {0})
+                struct expression* value;
+                struct expr_comp_entry* next;
+            }* first;
+        } comp;
+
         struct { struct expression* opr; } unary;
         struct { struct expression* lhs, * rhs; } binary;
-        struct { struct expression* base; struct expr_call_arg { struct expression* expr; struct expr_call_arg* next; }* first; } call;
-        struct { struct expression* base, * off; } subscr;
-        struct { struct expression* opr; struct decl_type const* type; } cast;
-        struct { struct expression* base; tokt name; } member;
+
+        struct {
+            struct expression* base;
+            struct expr_call_arg {
+                struct expression* expr;
+                struct expr_call_arg* next;
+            }* first;
+        } call;
+
+        struct { struct expression* base,* off; } subscr;
+        struct {
+            struct expression* opr;
+            struct decl_type const* type;
+        } cast;
+
+        struct {
+            struct expression* base;
+            tokt name;
+        } member;
     } info;
 
     // reserved for user
@@ -209,6 +241,10 @@ typedef struct parse_expr_state {
     // - conditional alternative branch (eg `a ? b :3, d`)
     // - bitfield width (eg `struct { int a :3, b; }`)
     bool disallow_comma;
+    // type-less compound literal allowed in:
+    // - complete declaration (eg `some a = {0}`)
+    // - compound literal value (eg `..{..= {0}}`)
+    bool allow_topcomplit;
 } parse_expr_state;
 
 tokt parse_expression(parse_expr_state ref ps, tokt const tok);
@@ -802,7 +838,7 @@ struct _parse_expr_capture {
     struct _parse_expr_capture ref next;
     _parse_expr_closure_t ref then; // its `hold` is in `next->hold`
 };
-_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_finish_cast, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
+_parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_finish_cast, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_comp, _parse_expr_comp_desig, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
 
 void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, tokt ref tok)
 {
@@ -814,9 +850,14 @@ void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, tokt ref to
     _expect1(&ps->tok);
 
     if ('{' == *pstokn(ps->tok)) {
-        notif("NIY: compound literal");
-        //expression comp = {.kind= EXPR_UNOP_COMPLIT, .info.comp.type= &decl->type};
         *tok = ps->tok;
+        expression complit = {.kind= EXPR_COMPLIT, .info.comp.type= &decl->type};
+        // yyy: capt->hold = &complit?
+        _parse_expr_comp(ps, &(struct _parse_expr_capture){
+                .hold= &complit,
+                .next= capt->next,
+                .then= capt->then,
+            }, NULL);
         return;
     }
 
@@ -895,6 +936,19 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
 {
     _expect1(&ps->tok);
 
+    if (ps->allow_topcomplit) {
+        if ('{' == *pstokn(ps->tok)) {
+            expression complit = {.kind= EXPR_COMPLIT};
+            // yyy: capt->hold = &complit?
+            _parse_expr_comp(ps, &(struct _parse_expr_capture){
+                    .hold= &complit,
+                    .next= capt->next,
+                    .then= capt->then,
+                }, NULL);
+            return;
+        } else ps->allow_topcomplit = false;
+    }
+
     enum expr_kind const prefix = _parse_is_prefix(pstokn(ps->tok));
     if (prefix) {
         ps->tok = lext(ps->ls);
@@ -953,21 +1007,6 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
             }, (void*)"");
         return;
     }
-
-    // xxx: condition is pretty weak.. this syntax is only valid after an '='
-    // moved back into declaration to handle because it's not quite an expression,
-    // but the parsing will still be the same so idk how it'll be done
-    //if ('{' == *pstokn(ps->tok)) {
-    //    // TODO/XXX
-    //    //notif("NIY: declaration compound literal (skipping for now)");
-    //    for (unsigned depth = 0; (ps->tok = lext(ps->ls)).len; ) {
-    //        bool c = '}' == *pstokn(ps->tok);
-    //        if (!ps->tok.len || (!depth && c)) break;
-    //        depth+= ('{' == *pstokn(ps->tok))-c;
-    //    }
-    //    ps->tok = lext(ps->ls);
-    //    return;
-    //}
 
     expression atom = {.kind= EXPR_ATOM, .info.atom= ps->tok};
     ps->tok = lext(ps->ls);
@@ -1115,6 +1154,121 @@ void _parse_expr_fun_args(parse_expr_state ref ps, struct _parse_expr_capture re
             },
             .then= _parse_expr_continue,
         }, NULL);
+}
+
+/// parse a compound literal starting at the '{'
+void _parse_expr_comp(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr)
+{
+    _expect1(&ps->tok);
+    struct expr_comp_entry niw = {0};
+    expression ref complit = capt->hold;
+
+    if (!expr) {
+        _expect(&ps->tok, "{");
+
+        ps->tok = lext(ps->ls);
+        if ('}' == *pstokn(ps->tok)) {
+            // = {} (C23 but whever)
+            ps->tok = lext(ps->ls);
+            capt->then(ps, capt->next, complit);
+            return;
+        }
+        complit->info.comp.first = &niw;
+
+        complit->usr = ps->disallow_comma ? (void*)"" : NULL;
+        ps->disallow_comma = true;
+        ps->allow_topcomplit = true;
+    }
+
+    else {
+        _expect(&ps->tok, ",", "}");
+
+        for (struct expr_comp_entry* curr = complit->info.comp.first; curr; curr = curr->next) if (!curr->next) {
+            curr->value = expr;
+            curr->next = &niw;
+            break;
+        }
+
+        if (',' == *pstokn(ps->tok)) ps->tok = lext(ps->ls);
+        if ('}' == *pstokn(ps->tok)) {
+            ps->tok = lext(ps->ls);
+
+            // yyy: any non null if disallow comma was set
+            ps->disallow_comma = !!complit->usr;
+            complit->usr = NULL;
+            ps->allow_topcomplit = false;
+            capt->then(ps, capt->next, complit);
+            return;
+        }
+    }
+
+    _parse_expr_comp_desig(ps, capt, NULL);
+}
+
+/// for the chain of designator: {'.' <name> | '[' <expr> ']'}
+void _parse_expr_comp_desig(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref subscr_expr)
+{
+    struct expr_comp_entry* entry;
+    for (entry = capt->hold->info.comp.first; entry; entry = entry->next) if (!entry->next) break;
+
+    if (subscr_expr) {
+        for (struct expr_comp_desig* desig = entry->desig; desig; desig = desig->next) if (!desig->next) {
+            desig->info.subscript = subscr_expr;
+            break;
+        }
+
+        _expect1(&ps->tok);
+        _expect(&ps->tok, "]");
+        ps->disallow_comma = true;
+        ps->allow_topcomplit = true;
+        ps->tok = lext(ps->ls);
+    }
+
+    struct expr_comp_desig niw = {
+        .is_field= '.' == pstokn(ps->tok)[0] && '\0' == pstokn(ps->tok)[1],
+        .is_subscript= '[' == *pstokn(ps->tok),
+    };
+
+    if (!niw.is_field && !niw.is_subscript) {
+        _expect1(&ps->tok);
+        if (entry->desig) { _expect(&ps->tok, "="); }
+
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= capt,
+                    .then= _parse_expr_comp,
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+    }
+
+    if (!entry->desig) entry->desig = &niw;
+    else for (struct expr_comp_desig* desig = entry->desig; desig; desig = desig->next) if (!desig->next) {
+        desig->next = &niw;
+        break;
+    }
+
+    if (niw.is_field) {
+        niw.info.field = lext(ps->ls);
+        ps->tok = lext(ps->ls);
+        _parse_expr_comp_desig(ps, capt, NULL);
+        return;
+    }
+
+    if (niw.is_subscript) {
+        ps->tok = lext(ps->ls);
+        ps->disallow_comma = false;
+        ps->allow_topcomplit = false;
+        _parse_expr_one(ps, &(struct _parse_expr_capture){
+                .next= &(struct _parse_expr_capture){
+                    .next= capt,
+                    .then= _parse_expr_comp_desig,
+                },
+                .then= _parse_expr_continue,
+            }, NULL);
+        return;
+    }
 }
 
 /// parse postfix part after expr: <expr> (<postfix> | '('<arg>')' | '['<off>']' | ('.'|'->')<name>)

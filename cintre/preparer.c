@@ -198,7 +198,8 @@ void _emit_cexpr(void* _, expression ref expr, tokt ref tok) { (void)_; (void)to
 
 /// emit a compile-time &-able value that is the adpt_type for this type
 /// if `in_decl` is true, will not do `(struct adpt_type){..}` but just `{..}`
-void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
+/// if `do_decay` is true, will do array to pointer 'decay'
+void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl, bool const do_decay)
 {
     switch (ty->kind) {
     case DECL_KIND_NOTAG:;
@@ -252,7 +253,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
             emitln(".align= alignof(void*),");
             emitln(".tyty= ADPT_TYPE_PTR,");
             emit(".info.ptr= &");
-            emit_adpt_type_val(&ty->info.ptr->type, false);
+            emit_adpt_type_val(&ty->info.ptr->type, false, false);
             emit(",");
         }
         emit("}");
@@ -265,7 +266,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
             emitln(".tyty= ADPT_TYPE_FUN,");
             indented (".info.fun= {") {
                 emit(".ret= &");
-                emit_adpt_type_val(&ty->info.fun.ret->type, false);
+                emit_adpt_type_val(&ty->info.fun.ret->type, false, false);
                 emitln(",");
                 emit(".params= ");
                 size_t count = 0;
@@ -276,7 +277,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
                         indented ("[%zu]= {", count++) {
                             emitln(".name= \"%s\",", tokn(curr->decl->name));
                             emit(".type= &");
-                            emit_adpt_type_val(&curr->decl->type, false);
+                            emit_adpt_type_val(&curr->decl->type, false, true);
                             emit(",");
                         }
                         if (curr->next) emitln("},");
@@ -292,6 +293,18 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
         break;
 
     case DECL_KIND_ARR:
+        if (do_decay) {
+            indented (in_decl ? "{" : "(struct adpt_type){") {
+                emitln(".size= sizeof(void*),");
+                emitln(".align= alignof(void*),");
+                emitln(".tyty= ADPT_TYPE_PTR,");
+                emit(".info.ptr= &");
+                emit_adpt_type_val(&ty->info.arr.item->type, false, false);
+                emit(",");
+            }
+            emit("}");
+            break;
+        } // else
         indented (in_decl ? "{" : "(struct adpt_type){") {
             emit(".size= ");
             emitln("0,"); // FIXME:
@@ -307,7 +320,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl)
             emitln(".tyty= ADPT_TYPE_ARR,");
             indented (".info.arr= {") {
                 emit(".item= &");
-                emit_adpt_type_val(&ty->info.arr.item->type, false);
+                emit_adpt_type_val(&ty->info.arr.item->type, false, false);
                 emitln(",");
                 emit(".count= ");
                 if (!ty->info.arr.count) emit("1"); // yyy: idk
@@ -440,11 +453,11 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
             bool const twice = DECL_KIND_PTR == ty->info.ptr->type.kind;
             struct decl_type cref ty2 = twice ? &ty->info.ptr->type.info.ptr->type : &ty->info.ptr->type;
             emit_forward(&ty2->info.arr.item->type, NULL, in_cast);
-            if (name) emit(" (*%s)", name);
-            else emit(" (*%s)", twice ? "*" : "");
-            emit("[");
-            if (ty2->info.arr.count) emit_cexpr(ty2->info.arr.count);
-            emit("]");
+            if (name) emit(" (**%s)", name);
+            else emit(" (**%s)", twice ? "*" : "");
+            //emit("[");
+            //if (ty2->info.arr.count) emit_cexpr(ty2->info.arr.count);
+            //emit("]");
             return; // name already done
         }
 
@@ -471,11 +484,16 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
 
     case DECL_KIND_ARR:
         emit_forward(&ty->info.arr.item->type, NULL, in_cast);
-        if (name) emit(" %s", name);
-        emit("[");
-        if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
-        emit("]");
-        return; // name already done
+        if (in_cast) {
+            emit("*");
+            break;
+        } else {
+            if (name) emit(" %s", name);
+            emit("[");
+            if (ty->info.arr.count) emit_cexpr(ty->info.arr.count);
+            emit("]");
+            return; // name already done
+        }
     }
 
     for (unsigned k = 0; ty->quals[k]; k++) switch (ty->quals[k]) {
@@ -541,7 +559,7 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
                 indented ("[%zu]= {", count++) {
                     emitln(".name= \"%s\",", tokn(curr->decl->name));
                     emit(".type= &");
-                    emit_adpt_type_val(&curr->decl->type, false);
+                    emit_adpt_type_val(&curr->decl->type, false, false);
                     emitln(",");
                     emit(".offset= offsetof(%s %s, %s),", comp_kind, name, tokn(curr->decl->name));
                 }
@@ -651,7 +669,7 @@ void emit_extern(declaration cref decl)
         bool const use_def = adpt_type_val_needs_define(&decl->type);
         if (use_def) emit("#define %s_adapt_type ", tokn(decl->name));
         else emit("static struct adpt_type const %s_adapt_type = ", tokn(decl->name));
-        emit_adpt_type_val(&decl->type, true);
+        emit_adpt_type_val(&decl->type, true, false);
         if (use_def) emit_empty();
         else emitln(";");
     }
@@ -674,7 +692,7 @@ void emit_typedef(declaration cref decl)
         emitln(".tyty= ADPT_TYPE_NAMED,");
         indented (".info.named= {") {
             emit(".def= &");
-            emit_adpt_type_val(&decl->type, true);
+            emit_adpt_type_val(&decl->type, true, false);
             emitln(",");
             emit(".name= \"%s\",", tokn(decl->name));
         }

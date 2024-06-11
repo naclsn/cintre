@@ -63,15 +63,12 @@ Assumes platform is:
 ## (wip and such)
 
 ### breaking
-- compiling with `some.c` crashes; find why
-- running the `sayhi(2)` example crashes; find why function calls fail
-- pr: `.._call` param[n] in cast
 - pr: bitfields here and there
 - pr: array size/align
-- `(int-1)` or `(int++)` or ... crashes
 
 ### progress
-- parser: comp lits, (idk because it's at boundary between decl and expr parsing)
+- parser: comp lits
+- parser: statements
 - pr: macros, like Err codes
 - pr: emit compound literals (somewhat breaking technically)
 - more conversions in `_fit_expr_to_slot`
@@ -84,6 +81,7 @@ Assumes platform is:
 - go through tokn(...) to reduce expansion in favor of locals
 - more coverage
 - pr: "ptr tail" in `emit_forward` => is a hack on fun/arr declarator, so do it proper
+- pr: is getting weird again (eg. `emit_forward` for ptr to x, `emit_adpt_type_val` for param[n], size/align situation for arrays, ..)
 - n -> logn ns search
 
 ---

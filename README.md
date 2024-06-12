@@ -67,7 +67,6 @@ Assumes platform is:
 - pr: array size/align
 
 ### progress
-- parser: comp lits
 - parser: statements
 - pr: macros, like Err codes
 - pr: emit compound literals (somewhat breaking technically)

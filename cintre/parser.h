@@ -33,14 +33,25 @@
 /// the cast operator, the C syntax is ambiguous:
 /// ```c
 /// void size_t(int); // (say)
-/// (size_t)(1+2*3);
+/// (size_t)(1+2*3); // should be a function call
 ///
 /// int size_t; // (say)
-/// (size_t)-1;
+/// (size_t)-1; // should be a cast
 /// ```
-/// This is the only cases I could come up with, and it will be "sanely" handled
-/// as a cast operation, which means `(puts)("hi :3")` is also a cast to a type
-/// named `puts`.
+/// This case will be "sanely" handled as a cast operation, which means
+/// `(puts)("hi :3")` is also a cast to a type named `puts`.
+///
+/// Also the for loop:
+/// ```c
+/// typedef long unsigned size_t; // (say)
+/// for (size_t* k;;); // should be a declaration
+///
+/// int size_t; // (say)
+/// for (size_t * k;;); // should be an expression
+/// ```
+/// Idk what to do about it yet, but it should probably be parsed as
+/// declaration because it is very uselessly insane to have a pure 'name*name'
+/// expression here.
 
 
 // TODO: once thoroughly tested, look for avoidable capture-copying (that could
@@ -248,6 +259,83 @@ typedef struct parse_expr_state {
 } parse_expr_state;
 
 tokt parse_expression(parse_expr_state ref ps, tokt const tok);
+
+// struct statement {{{
+typedef struct statement {
+    enum stmt_kind {
+        STTM_KIND_COMP, // { ... }
+        STTM_KIND_EXPR, // ... ;
+        STTM_KIND_IF,
+        STTM_KIND_SWITCH,
+        STTM_KIND_WHILE,
+        STTM_KIND_DOWHILE,
+        STTM_KIND_FORDECL,
+        STTM_KIND_FOREXPR,
+        STTM_KIND_BREAK,
+        STTM_KIND_CONTINUE,
+        STTM_KIND_RETURN,
+        STTM_KIND_GOTO,
+    } kind;
+
+    union stmt_info {
+        struct stmt_comp_one {
+            struct statement* stmt;
+            struct stmt_comp_one* next;
+        }* comp;
+
+        struct expression* expr;
+
+        struct {
+            struct expression* ctrl;
+            struct statement* body;
+            struct statement* else_;
+        } if_;
+        struct {
+            struct expression* ctrl;
+            struct statement* body;
+        } switch_;
+
+        struct {
+            struct expression* ctrl;
+            struct statement* body;
+        } while_;
+        struct {
+            struct expression* ctrl;
+            struct statement* body;
+        } dowhile;
+        struct {
+            struct declaration* init;
+            struct expression* ctrl;
+            struct expression* iter;
+            struct statement* body;
+        } for_decl;
+        struct {
+            struct expression* init;
+            struct expression* ctrl;
+            struct expression* iter;
+            struct statement* body;
+        } for_expr;
+
+        struct expression* return_;
+
+        tokt goto_;
+    } info;
+
+    struct {
+        tokt name;
+        struct expression* case_;
+    } labels[4]; // arbitrary limit for sanity (that is only 3, the 4th and + are dropped)
+} statement;
+// }}}
+
+typedef struct parse_stmt_state {
+    lex_state* ls;
+    void* usr;
+    void (*on)(void ref usr, expression ref expr, tokt ref tok);
+    tokt tok;
+} parse_stmt_state;
+
+tokt parse_statement(parse_stmt_state ref ps, tokt const tok);
 
 // ---
 
@@ -1616,6 +1704,22 @@ tokt parse_expression(parse_expr_state ref ps, tokt tok)
     ps->tok = tok;
     _parse_expr_one(ps, &(struct _parse_expr_capture){.then= _parse_expr_entry}, NULL);
     return ps->tok;
+}
+// }}}
+
+// parse statement {{{
+struct _parse_stmt_capture;
+typedef void _parse_stmt_closure_t(parse_stmt_state ref ps, struct _parse_stmt_capture ref capt, statement ref stmt);
+struct _parse_stmt_capture {
+    statement* hold;
+    struct _parse_stmt_capture ref next;
+    _parse_stmt_closure_t ref then;
+};
+//_parse_stmt_closure_t ...;
+
+tokt parse_statement(parse_stmt_state ref ps, tokt const tok)
+{
+    exitf("NIY: parse_statement");
 }
 // }}}
 

@@ -543,12 +543,16 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         }, sizeof *it);
 
     if ('=' == *gstokn(*tok)) {
+        // FIXME: hack won't hold for 'type-less compound literal'
+        //        (by that I mean compound initializer or whatsitsface-)
         lex_rewind(&gs->lexr, 1);
         lex_inject(&gs->lexr, dyarr_top(&gs->locs)->name);
 
         gs->expr.disallow_comma = true;
+        gs->expr.allow_topcomplit = true;
         *tok = parse_expression(&gs->expr, lext(&gs->lexr));
         gs->expr.disallow_comma = false;
+        gs->expr.allow_topcomplit = false;
     }
 
     if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, *tok);

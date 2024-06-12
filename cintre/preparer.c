@@ -88,6 +88,10 @@ void emit_cexpr(expression cref expr)
         emit("%s", tokn(expr->info.atom));
         break;
 
+    case EXPR_COMPLIT:
+        emit("{0/*NIY*/}");
+        break;
+
     case EXPR_BINOP_SUBSCR:
         emit_cexpr(expr->info.subscr.base);
         emit("[");

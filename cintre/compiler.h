@@ -726,6 +726,10 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
         return;
 
+    case EXPR_COMPLIT:
+        notif("NIY: (compiler) compound literal");
+        return;
+
     case EXPR_BINOP_SUBSCR: {
             struct slot base = {.ty= _truetype(expr->info.subscr.base->usr)};
 

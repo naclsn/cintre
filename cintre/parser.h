@@ -1183,14 +1183,16 @@ void _parse_expr_comp(parse_expr_state ref ps, struct _parse_expr_capture ref ca
     else {
         _expect(&ps->tok, ",", "}");
 
+        if (',' == *pstokn(ps->tok)) ps->tok = lext(ps->ls);
+        bool const last = '}' == *pstokn(ps->tok);
+
         for (struct expr_comp_entry* curr = complit->info.comp.first; curr; curr = curr->next) if (!curr->next) {
             curr->value = expr;
-            curr->next = &niw;
+            if (!last) curr->next = &niw;
             break;
         }
 
-        if (',' == *pstokn(ps->tok)) ps->tok = lext(ps->ls);
-        if ('}' == *pstokn(ps->tok)) {
+        if (last) {
             ps->tok = lext(ps->ls);
 
             // yyy: any non null if disallow comma was set
@@ -1231,7 +1233,10 @@ void _parse_expr_comp_desig(parse_expr_state ref ps, struct _parse_expr_capture 
 
     if (!niw.is_field && !niw.is_subscript) {
         _expect1(&ps->tok);
-        if (entry->desig) { _expect(&ps->tok, "="); }
+        if (entry->desig) {
+            _expect(&ps->tok, "=");
+            ps->tok = lext(ps->ls);
+        }
 
         _parse_expr_one(ps, &(struct _parse_expr_capture){
                 .next= &(struct _parse_expr_capture){

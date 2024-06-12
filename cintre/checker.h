@@ -331,6 +331,10 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (ADPT_ITEM_TYPEDEF == found->kind) fail("Unexpected type name %s", quoted(cstokn(expr->info.atom)));
         return expr->usr = (void*)found->type;
 
+    case EXPR_COMPLIT:
+        notif("NIY: (checker) compound literal");
+        return NULL;
+
     case EXPR_BINOP_SUBSCR:
         failforward(base, expr->info.subscr.base);
         failforward(off, expr->info.subscr.off);

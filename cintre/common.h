@@ -83,6 +83,7 @@ static inline void* mallox(size_t n)
 struct lex_state;
 struct declaration;
 struct expression;
+struct statement;
 struct adpt_type;
 struct adpt_item;
 struct slot;
@@ -92,6 +93,7 @@ struct run_state;
 void print_decl(FILE ref strm, struct lex_state cref ls, struct declaration cref decl);
 void print_expr(FILE ref strm, struct lex_state cref ls, struct expression cref expr, unsigned const depth);
 void print_cxpr(FILE ref strm, struct lex_state cref ls, struct expression cref expr);
+void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, struct bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);

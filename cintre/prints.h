@@ -26,6 +26,7 @@
 void print_decl(FILE ref strm, struct lex_state cref ls, declaration cref decl);
 void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr, unsigned const depth);
 void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr);
+void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, bytecode const code);
 void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsigned const depth);
@@ -356,6 +357,13 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         break;
     }
     fprintf(strm, ")");
+}
+
+void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth)
+{
+    (void)ls;
+    (void)depth;
+    fprintf(strm, "\x1b[31mNIY: print statement (%p)\x1b[m\n", (void*)stmt);
 }
 
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top)

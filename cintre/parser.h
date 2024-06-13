@@ -27,6 +27,13 @@
 /// and the result needs to be handled in the "accept" callback (or copied over
 /// to the heap at this point).
 ///
+/// For simplicity, a `for`'s init is any statement and jump statements are
+/// allowed anywhere; this means the parser will accept valid C but also some
+/// invalid C such as:
+/// ```c
+/// for (break;;) // (which.. doesn't mean anything)
+/// ```
+///
 /// Parsing (especially of declarations and expressions) does not need to know
 /// the kind of an identifier (in `size_t len`, the kind of `len` is "object"
 /// while the kind of `size_t` is "type"); however, beacause of the syntax of
@@ -263,18 +270,19 @@ tokt parse_expression(parse_expr_state ref ps, tokt const tok);
 // struct statement {{{
 typedef struct statement {
     enum stmt_kind {
-        STTM_KIND_COMP, // { ... }
-        STTM_KIND_EXPR, // ... ;
-        STTM_KIND_IF,
-        STTM_KIND_SWITCH,
-        STTM_KIND_WHILE,
-        STTM_KIND_DOWHILE,
-        STTM_KIND_FORDECL,
-        STTM_KIND_FOREXPR,
-        STTM_KIND_BREAK,
-        STTM_KIND_CONTINUE,
-        STTM_KIND_RETURN,
-        STTM_KIND_GOTO,
+        STMT_KIND_EMPTY, // ;
+        STMT_KIND_COMP, // { ... }
+        STMT_KIND_EXPR,
+        STMT_KIND_DECL,
+        STMT_KIND_IF,
+        STMT_KIND_SWITCH,
+        STMT_KIND_WHILE,
+        STMT_KIND_DOWHILE,
+        STMT_KIND_FOR,
+        STMT_KIND_BREAK,
+        STMT_KIND_CONTINUE,
+        STMT_KIND_RETURN,
+        STMT_KIND_GOTO,
     } kind;
 
     union stmt_info {
@@ -286,9 +294,17 @@ typedef struct statement {
         struct expression* expr;
 
         struct {
+            struct declaration* decl;
+            struct expression* expr; // NULL if not given
+        }* decl;
+
+        // (/!\\ the if/switch/while/dowhile/for have to keep the same layout
+        // for ctrl and body - there's some duck-typing around somewhere)
+
+        struct {
             struct expression* ctrl;
             struct statement* body;
-            struct statement* else_;
+            struct statement* else_; // NULL if not given
         } if_;
         struct {
             struct expression* ctrl;
@@ -304,35 +320,34 @@ typedef struct statement {
             struct statement* body;
         } dowhile;
         struct {
-            struct declaration* init;
             struct expression* ctrl;
-            struct expression* iter;
             struct statement* body;
-        } for_decl;
-        struct {
-            struct expression* init;
-            struct expression* ctrl;
+            struct statement* init; // _should_ only be declaration or expression (in valid C)
             struct expression* iter;
-            struct statement* body;
-        } for_expr;
+        } for_;
 
         struct expression* return_;
 
         tokt goto_;
     } info;
 
-    struct {
-        tokt name;
-        struct expression* case_;
-    } labels[4]; // arbitrary limit for sanity (that is only 3, the 4th and + are dropped)
+    struct stmt_label {
+        struct expression* case_; // NULL if not a case label
+        tokt name; // only if not a case label
+        struct stmt_label* next;
+    }* labels;
 } statement;
 // }}}
 
 typedef struct parse_stmt_state {
     lex_state* ls;
     void* usr;
-    void (*on)(void ref usr, expression ref expr, tokt ref tok);
+    void (*on)(void ref usr, statement ref expr, tokt ref tok);
     tokt tok;
+    // declaration not allowed in:
+    // - a body (must be in a compound statement)
+    // - a label's statement (usually an empty statement is used)
+    bool disallow_decl; // TODO: use
 } parse_stmt_state;
 
 tokt parse_statement(parse_stmt_state ref ps, tokt const tok);
@@ -341,10 +356,12 @@ tokt parse_statement(parse_stmt_state ref ps, tokt const tok);
 
 #define pstokn(__at) (ps->ls->tokens.ptr+(__at))
 
+// TODO: phase out probably
 #define _expect1(_tok)                                                \
     if (!*pstokn(*(_tok)) && (                                        \
         report_lex_locate(ps->ls, "Unexpected end of input"), true))  \
         return
+// TODO: make it not a pointer
 #define _expect(_tok, ...)                                                                                  \
     for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                             \
         if (*_it) if (!strcmp(*_it, pstokn(*(_tok)))) break; else continue;                                 \
@@ -371,8 +388,9 @@ _parse_decl_closure_t _parse_decl_ator, _parse_decl_close, _parse_decl_fixup, _p
 #define _linked_it_type_fun struct decl_type_param
 #define for_linked(__info, __ty) for (_linked_it_type_##__ty* curr = (__info).__ty.first; curr; curr = curr->next)
 
-void _parse_on_array_size(void ref decl_ps_capt[3], expression ref expr, tokt ref tok)
+void _parse_on_array_size(void ref usr, expression ref expr, tokt ref tok)
 {
+    void ref ref decl_ps_capt = usr;
     declaration ref arr = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
     _expect1(tok);
     _expect(tok, "]");
@@ -380,8 +398,9 @@ void _parse_on_array_size(void ref decl_ps_capt[3], expression ref expr, tokt re
     ps->tok = lext(ps->ls);
     _parse_decl_post(ps, capt, arr);
 }
-void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, tokt ref tok)
+void _parse_on_enumer_value(void ref usr, expression ref expr, tokt ref tok)
 {
+    void ref ref decl_ps_capt = usr;
     declaration ref enu = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
     _expect1(tok);
     for_linked (enu->type.info,enu) if (!curr->next) {
@@ -397,8 +416,9 @@ void _parse_on_enumer_value(void ref decl_ps_capt[3], expression ref expr, tokt 
         _parse_decl_ator(ps, capt, enu);
     } else _parse_decl_enumer(ps, capt, NULL);
 }
-void _parse_on_bitfield_width(void ref decl_ps_capt[4], expression ref expr, tokt ref tok)
+void _parse_on_bitfield_width(void ref usr, expression ref expr, tokt ref tok)
 {
+    void ref ref decl_ps_capt = usr;
     declaration ref comp = decl_ps_capt[0], ref base = decl_ps_capt[1]; parse_decl_state ref ps = decl_ps_capt[2]; struct _parse_decl_capture ref capt = decl_ps_capt[3];
     _expect1(tok);
     _expect(tok, ",", ";");
@@ -598,7 +618,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
                 .usr= (void*[3]){&arr, ps, capt},
-                .on= (void(*)())_parse_on_array_size,
+                .on= _parse_on_array_size,
             }, ps->tok);
         return;
     }
@@ -699,7 +719,7 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
                 .usr= (void*[3]){enu, ps, capt},
-                .on= (void(*)())_parse_on_enumer_value,
+                .on= _parse_on_enumer_value,
                 .disallow_comma= true,
             }, ps->tok);
         return;
@@ -746,7 +766,7 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
             parse_expression(&(parse_expr_state){
                     .ls= ps->ls,
                     .usr= (void*[4]){comp, *base, ps, capt},
-                    .on= (void(*)())_parse_on_bitfield_width,
+                    .on= _parse_on_bitfield_width,
                     .disallow_comma= true,
                 }, ps->tok);
             return;
@@ -928,8 +948,9 @@ struct _parse_expr_capture {
 };
 _parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_finish_cast, _parse_expr_one_lext_parenth, _parse_expr_one_lext_oneafter, _parse_expr_fun_args, _parse_expr_comp, _parse_expr_comp_desig, _parse_expr_one_after, _parse_expr_tern_cond, _parse_expr_tern_branch, _parse_expr_two, _parse_expr_two_after, _parse_expr_entry, _parse_expr_continue, _parse_expr_exit;
 
-void _parse_on_cast_type(void ref capt_ps[2], declaration cref decl, tokt ref tok)
+void _parse_on_cast_type(void ref usr, declaration cref decl, tokt ref tok)
 {
+    void ref ref capt_ps = usr;
     struct _parse_expr_capture ref capt = capt_ps[0]; parse_expr_state ref ps = capt_ps[1];
     _expect1(tok);
     _expect(tok, ")");
@@ -1077,7 +1098,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
             parse_declaration(&(parse_decl_state){
                     .ls= ps->ls,
                     .usr= (void*[2]){capt, ps},
-                    .on= (void(*)())_parse_on_cast_type,
+                    .on= _parse_on_cast_type,
                 }, ps->tok);
             return;
         }
@@ -1120,7 +1141,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
             parse_declaration(&(parse_decl_state){
                     .ls= ps->ls,
                     .usr= (void*[2]){capt->next->next, ps},
-                    .on= (void(*)())_parse_on_cast_type,
+                    .on= _parse_on_cast_type,
                 }, atom.info.atom);
             return;
         }
@@ -1151,7 +1172,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
                 parse_declaration(&(parse_decl_state){
                         .ls= ps->ls,
                         .usr= (void*[2]){capt->next->next, ps},
-                        .on= (void(*)())_parse_on_cast_type,
+                        .on= _parse_on_cast_type,
                         .base= &(declaration){.type.name= atom.info.atom},
                     }, ps->tok);
                 return;
@@ -1715,11 +1736,277 @@ struct _parse_stmt_capture {
     struct _parse_stmt_capture ref next;
     _parse_stmt_closure_t ref then;
 };
-//_parse_stmt_closure_t ...;
+_parse_stmt_closure_t _parse_stmt_top, _parse_stmt_comp, _parse_stmt_attach_body, _parse_stmt_exit;
+
+/// after the expression in parenthesis in (and including dowhile): ('if'|'switch'|'while') '(' <expr> ')'
+void _parse_on_ctrl_expr(void ref usr, expression ref expr, tokt ref tok)
+{
+    void ref ref ps_capt = usr;
+    parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
+
+    _expect1(tok);
+    _expect(tok, ")");
+    ps->tok = lext(ps->ls);
+
+    // (yyy: this is duck-typing -ish for any of if/switch/while/dowhile - same layout)
+    capt->hold->info.while_.ctrl = expr;
+
+    if (STMT_KIND_DOWHILE == capt->hold->kind) {
+        _expect(&ps->tok, ";");
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, capt->hold);
+        return;
+    }
+
+    ps->disallow_decl = true;
+    _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+            .next= capt,
+            .then= _parse_stmt_attach_body,
+        }, &(statement){0});
+}
+
+void _parse_on_ret_expr(void ref usr, expression ref expr, tokt ref tok)
+{
+    void ref ref ps_capt = usr;
+    parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
+    _expect1(tok);
+    _expect(tok, ";");
+    ps->tok = lext(ps->ls);
+    capt->hold->info.return_ = expr;
+    capt->then(ps, capt->next, capt->hold);
+}
+
+void _parse_on_case_expr(void ref usr, expression ref expr, tokt ref tok)
+{
+    void ref ref ps_capt = usr;
+    parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
+    _expect1(tok);
+    _expect(tok, ":");
+    ps->tok = lext(ps->ls);
+    struct stmt_label niw = {.case_= expr};
+    if (!capt->hold->labels) capt->hold->labels = &niw;
+    else for (struct stmt_label* curr = capt->hold->labels; curr; curr = curr->next) if (!curr->next) {
+        curr->next = &niw;
+        break;
+    }
+    _parse_stmt_top(ps, capt, capt->hold);
+}
+
+/// top level, so any statement (with optional labels) or a declaration (if not disallowed)
+void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref capt, statement ref r)
+{
+    capt->hold = r; // yyy: capt non copy re-use thingy notice
+
+    _expect1(&ps->tok);
+    char const* tok = pstokn(ps->tok);
+
+    switch (*tok) {
+    case ';':
+        r->kind = STMT_KIND_EMPTY;
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, r);
+        return;
+
+    case '{':
+        r->kind = STMT_KIND_COMP;
+        ps->tok = lext(ps->ls);
+        ps->disallow_decl = false;
+        if ('}' == *pstokn(ps->tok)) capt->then(ps, capt->next, r);
+        else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+                .hold= NULL,
+                .next= capt,
+                .then= _parse_stmt_comp,
+            }, NULL);
+        return;
+    }
+
+    if (!strcmp("if", tok) || !strcmp("switch", tok) || !strcmp("while", tok)) {
+        switch (*tok) {
+        case 'i': r->kind = STMT_KIND_IF;     break;
+        case 's': r->kind = STMT_KIND_SWITCH; break;
+        case 'w': r->kind = STMT_KIND_WHILE;  break;
+        }
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, "(");
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                .usr= (void*[2]){ps, capt},
+                .on= _parse_on_ctrl_expr,
+            }, lext(ps->ls));
+        return;
+    }
+
+    if (!strcmp("do", tok)) {
+        r->kind = STMT_KIND_DOWHILE;
+        ps->tok = lext(ps->ls);
+        ps->disallow_decl = true;
+        _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+                .next= capt,
+                .then= _parse_stmt_attach_body,
+            }, &(statement){0});
+        return;
+    }
+
+    if (!strcmp("for", tok)) {
+        notif("NIY: parse for loop");
+        // the controlling thingies
+        // then virtually:
+        //ps->tok = lext(ps->ls);
+        //_expect(&ps->tok, ")");
+        //ps->tok = lext(ps->ls);
+        //ps->disallow_decl = true;
+        //_parse_stmt_top(ps, &(struct _parse_stmt_capture){
+        //        .next= capt,
+        //        .then= _parse_stmt_attach_body,
+        //    }, &(statement){0});
+        return;
+    }
+
+    if (!strcmp("break", tok)) {
+        r->kind = STMT_KIND_BREAK;
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, ";");
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, r);
+        return;
+    }
+
+    if (!strcmp("continue", tok)) {
+        r->kind = STMT_KIND_CONTINUE;
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, ";");
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, r);
+        return;
+    }
+
+    if (!strcmp("return", tok)) {
+        r->kind = STMT_KIND_RETURN;
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                .usr= (void*[2]){ps, capt},
+                .on= _parse_on_ret_expr,
+            }, lext(ps->ls));
+        return;
+    }
+
+    if (!strcmp("goto", tok)) {
+        r->kind = STMT_KIND_GOTO;
+        ps->tok = lext(ps->ls);
+        _expectid(&ps->tok);
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, ";");
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, r);
+        return;
+    }
+
+    if (isidstart(*tok)) {
+        if (!strcmp("case", tok)) {
+            parse_expression(&(parse_expr_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){ps, capt},
+                    .on= _parse_on_case_expr,
+                }, lext(ps->ls));
+            return;
+        }
+        tokt const ntok = lext(ps->ls);
+        if (!strcmp("default", tok)) { _expect(&ntok, ":"); }
+        if (':' == *pstokn(ntok)) {
+            struct stmt_label niw = {.name= ps->tok};
+            if (!r->labels) r->labels = &niw;
+            else for (struct stmt_label* curr = r->labels; curr; curr = curr->next) if (!curr->next) {
+                curr->next = &niw;
+                break;
+            }
+            ps->tok = lext(ps->ls);
+            _parse_stmt_top(ps, capt, r);
+            return;
+        }
+
+        lex_rewind(ps->ls, 1);
+    }
+
+    if (!ps->disallow_decl) {
+        notif("NIY: maybe STMT_KIND_DECL");
+        // then virtually:
+        //if ('=' == *pstokn(tok)) { .. }
+    }
+
+    notif("NIY: maybe STMT_KIND_EXPR");
+
+    report_lex_locate(ps->ls, "Expected statement or declaration, got %s", quoted(pstokn(ps->tok)));
+}
+
+/// the content and closing of: '{' {<stmt>} '}'
+void _parse_stmt_comp(parse_stmt_state ref ps, struct _parse_stmt_capture ref capt, statement ref stmt)
+{
+    statement ref comp = capt->hold;
+    struct stmt_comp_one niw = {.stmt= stmt};
+
+    if (!comp->info.comp) comp->info.comp = &niw;
+    for (struct stmt_comp_one* curr = comp->info.comp; curr; curr = curr->next) if (!curr->next) {
+        curr->next = &niw;
+        break;
+    }
+
+    if ('}' == *pstokn(ps->tok)) capt->then(ps, capt->next, comp);
+    else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+            .next= capt,
+            .then= _parse_stmt_comp,
+        }, &(statement){0});
+}
+
+/// attaches the body in each of:
+/// - 'if' '(' <expr> ')' <body> ['else' <body>]
+/// - 'switch' '(' <expr> ')' <body>
+/// - 'while' '(' <expr> ')' <body>
+/// - 'do' <body> 'while' '(' <expr> ')' ';'
+/// - 'for' '(' .. ')' <body>
+/// then decide whether to look for an 'else' or requier a 'while' based on `capt->hold`'s kind
+void _parse_stmt_attach_body(parse_stmt_state ref ps, struct _parse_stmt_capture ref capt, statement ref stmt)
+{
+    if (STMT_KIND_IF == capt->hold->kind) {
+        if (!capt->hold->info.if_.body) {
+            capt->hold->info.if_.body = stmt;
+            if (!strcmp("else", pstokn(ps->tok))) {
+                ps->tok = lext(ps->ls);
+                _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+                        .next= capt,
+                        .then= _parse_stmt_attach_body,
+                    }, &(statement){0});
+            }
+        } else capt->hold->info.if_.else_ = stmt;
+        return;
+    }
+
+    // (yyy: this is duck-typing -ish for any of if/switch/while/dowhile/for - same layout)
+    capt->hold->info.while_.body = stmt;
+
+    if (STMT_KIND_DOWHILE == capt->hold->kind) {
+        _expect(&ps->tok, "while");
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, "(");
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                .usr= (void*[2]){ps, capt},
+                .on= _parse_on_ctrl_expr,
+            }, lext(ps->ls));
+    }
+}
+
+/// callback chain tail end which call user code
+void _parse_stmt_exit(parse_stmt_state ref ps, struct _parse_stmt_capture ref _, statement ref stmt)
+{
+    (void)_;
+    if (ps->on) ps->on(ps->usr, stmt, &ps->tok);
+}
 
 tokt parse_statement(parse_stmt_state ref ps, tokt const tok)
 {
-    exitf("NIY: parse_statement");
+    ps->tok = tok;
+    _parse_stmt_top(ps, &(struct _parse_stmt_capture){.then= _parse_stmt_exit}, &(statement){0});
+    return ps->tok;
 }
 // }}}
 

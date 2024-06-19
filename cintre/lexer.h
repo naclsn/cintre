@@ -836,7 +836,7 @@ static void _lex_expand_id_here(lex_state* const ls, size_t const token_at) {
             //             (^r)   ^ [ doesn't exists -]
 
             ls->noxid = ls->nodir = 1;
-            size_t comma_at;
+            size_t comma_at = 0;
             char c = 0;
             for (size_t p = 0; ')' != c && !endd; ++p) {
                 size_t const since_at = ls->tokens.len - ls->ahead - 2; // ( @
@@ -863,7 +863,7 @@ static void _lex_expand_id_here(lex_state* const ls, size_t const token_at) {
             }
             ls->noxid = ls->nodir = 0;
             // ls->tokens: name @ ) @ ...
-            grow(&ls->tokens, comma_at+2, -2);
+            if (comma_at) grow(&ls->tokens, comma_at+2, -2);
             // ls->tokens: name @ ...
         }
 
@@ -1154,12 +1154,12 @@ size_t lex_struqo(char* const unquoted, size_t const size, char const* const quo
             unsigned n;
 
         case 'x':
-            r = 0;
             n = -1u;
             if (0)
         case 'u':
         case 'U':
                 n = 4+(1-(c>>5&1))*4;
+            r = 0;
 
             static char const dgts[] = "0123456789abcdef";
             char const* v = strchr(dgts, quoted[s]|32);

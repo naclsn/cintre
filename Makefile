@@ -11,6 +11,7 @@ tests =         \
     type-check  \
     comp-code   \
     prep-adapt  \
+    stmt-graph  \
 
 test-%:; test/run test/$* check && printf '\x1b[32m$@ success\x1b[m\n' || printf "\x1b[31m$@ $$? failure(s)\x1b[m\n"
 testup-%:; test/run test/$* update

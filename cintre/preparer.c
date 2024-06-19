@@ -564,8 +564,10 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
                     emitln(".name= \"%s\",", tokn(curr->decl->name));
                     emit(".type= &");
                     emit_adpt_type_val(&curr->decl->type, false, false);
-                    emitln(",");
-                    emit(".offset= offsetof(%s %s, %s),", comp_kind, name, tokn(curr->decl->name));
+                    if (!curr->bitw) {
+                        emitln(",");
+                        emit(".offset= offsetof(%s %s, %s),", comp_kind, name, tokn(curr->decl->name));
+                    } else emit(","); // TODO: still need the bit offset or something similar at compile time
                 }
                 if (curr->next) emitln("},");
                 else emit("},");
@@ -585,7 +587,8 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 /// ```c
 /// static struct adpt_type const aa_adapt_type = adptb_int_type;
 /// ```
-bool adpt_type_val_needs_define(struct decl_type cref ty) {
+bool adpt_type_val_needs_define(struct decl_type cref ty)
+{
     switch (ty->kind) {
     case DECL_KIND_NOTAG:
     case DECL_KIND_STRUCT:

@@ -1,16 +1,9 @@
-/// `int main()` of the REPL; typically included as the entry point in the
-/// <c-main.c> file generated from `$ preparer -m`:
+/// `int main()` of the REPL; typically used as the "cintre.o" when linking with a "c-some.o"
+///
+/// it expects the two following symbols:
 /// ```c
-/// #include "build/a-standard.h"
-///
-/// static struct adpt_namespace const namespaces[] = {
-///     {.name= "standard", .count= countof(adptns_standard), .items= adptns_standard},
-/// };
-///
-/// extern struct adpt_namespace cref namespaces_first = &namespaces[0];
-/// extern unsigned long const namespaces_count = sizeof namespaces/sizeof*namespaces;
-///
-/// #include "cintre.c"
+/// extern struct adpt_namespace cref namespaces_first;
+/// extern unsigned long const namespaces_count;
 /// ```
 ///
 /// see `$ preparer -h`
@@ -79,7 +72,7 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 }
 
 // readline {{{
-#ifdef USE_READLINE
+#if 1//def USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <signal.h>
@@ -111,9 +104,10 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
         while (';' != getchar());
         char c;
         while ('R' != (c = getchar())) term_width = term_width*10 + c-'0';
+        printf("=== term_width: %d ===\n", term_width);
     }
-    int const cols_count = term_width/(max_length+2) - 1;
-    int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count;
+    int const cols_count = term_width/(max_length+2);
+    int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count+1;
     for (int j = 0; j < rows_count; j++) {
         for (int i = 0; i < cols_count+1; i++) {
             if (i*rows_count+j >= num_matches) break;
@@ -152,7 +146,7 @@ char* _prompt_compl(char cref text, int const state)
         static char cref cmds[] = {"help", "locales", "namespaces", "stacktop", "clstack", "save \"", "load \"", "ast", "type", "bytecode"};
         while (k < countof(cmds)) if (!memcmp(cmds[k++], text, len)) {
             size_t const len = strlen(cmds[k-1]);
-            char ref r = malloc(len+2);
+            char ref r = malloc(len+1);
             if (!r) return NULL;
             strcpy(r, cmds[k-1]);
             return r;
@@ -168,7 +162,7 @@ char* _prompt_compl(char cref text, int const state)
                 bool const tdf = ADPT_ITEM_TYPEDEF == it->kind;
                 bool const fun = ADPT_TYPE_FUN == _tailtype(it->type)->tyty;
                 bool const arr = ADPT_TYPE_ARR == _truetype(it->type)->tyty;
-                char ref r = malloc(len + (tdf|fun|arr));
+                char ref r = malloc(len+1 + (tdf|fun|arr));
                 if (!r) return NULL;
                 strcpy(r, it->name);
                 if (tdf|fun|arr) r[len] =

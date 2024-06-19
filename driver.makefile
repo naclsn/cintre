@@ -1,14 +1,13 @@
 ## example:
 # prog    := simple
-# entries := simple.c
-# objs    := simple.o
+# entries := somewhere/simple.c
+# objs    := $(build)/simple.o
 # opts    := # supported: -nostd (disables standard.h), -norl (disables readline)
 # include driver.makefile
 #
 # - it defines the rules `build/simple` and `clean-simple`
-# - it will not try to build the objects, this is left to user (in `build/..`)
-# - to change the build directory, define `$(build)`
-# - for entry-specific CFLAGS, define `$(CFLAGS-a-..)` (so in this example `$(CFLAGS-a-simple)`)
+# - it will not try to build the objects, this is left to user
+# - for entry-specific CFLAGS, define `$(CFLAGS-a-..)` (so in this example would be `$(CFLAGS-a-simple)`)
 
 build ?= build
 CFLAGS ?= -O2
@@ -21,7 +20,7 @@ PR := $(build)/preparer.exe
 #---
 
 build/a-headers := $(if $(findstring -nostd,$(opts)),,$(build)/a-standard.h) $(patsubst %,$(build)/a-%.h,$(basename $(notdir $(entries))))
-build/objs := $(addprefix $(build)/,$(objs))
+build/objs := $(objs)
 build/c-prog := $(build)/c-$(prog)
 
 ifneq (-norl,$(findstring -norl,$(opts)))

@@ -320,13 +320,13 @@ typedef struct statement {
             struct statement* body;
         } dowhile;
         struct {
-            struct expression* ctrl;
+            struct expression* ctrl; // NULL if not given
             struct statement* body;
-            struct statement* init; // _should_ only be declaration or expression (in valid C)
-            struct expression* iter;
+            struct statement* init; // NULL if not given, _should_ only be declaration or expression (in valid C)
+            struct expression* iter; // NULL if not given
         } for_;
 
-        struct expression* return_;
+        struct expression* return_; // NULL if not given
 
         tokt goto_;
     } info;
@@ -1882,11 +1882,13 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
 
     if (!strcmp("return", tok)) {
         r->kind = STMT_KIND_RETURN;
-        parse_expression(&(parse_expr_state){
+        ps->tok = lext(ps->ls);
+        if (';' == *pstokn(ps->tok)) capt->then(ps, capt->next, r);
+        else parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
                 .usr= (void*[2]){ps, capt},
                 .on= _parse_on_ret_expr,
-            }, lext(ps->ls));
+            }, ps->tok);
         return;
     }
 

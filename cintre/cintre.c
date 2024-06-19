@@ -24,30 +24,30 @@ typedef struct cintre_state {
     compile_state comp;
     run_state runr;
 
-    dyarr(struct adpt_item) locs;
+    dyarr(struct adpt_item) locals;
     struct {
         size_t count;
         struct adpt_namespace const* spaces;
-    } nsps;
+    } namespaces;
 
     FILE* save;
     dyarr(struct snap {
         char name[8];
         run_state stack;
-        dyarr(struct adpt_item) locs;
-        dyarr(buf) chk_interned; // xxx: annoying
+        dyarr(struct adpt_item) locals;
     }) snaps;
 
+    // needed for `check_expression`
+    dyarr(struct comp_checked) chk_work;
     // needed for `decl_to_adpt_type`
     dyarr(struct adpt_type) ty_work;
 } cintre_state;
 
 #define gstokn(__at) (gs->lexr.tokens.ptr+(__at))
 
-bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
+bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr, comp_alloc_checked_ator const alloc_checked)
 {
-    cs->chk_types.len = 0; // xxx: annoying
-    struct adpt_type const* ty = check_expression(cs, expr);
+    struct adpt_type const* ty = check_expression(cs, expr, alloc_checked);
     if (!ty) return false;
     struct slot slot = {.ty= _truetype(ty)};
     _alloc_slot(cs, &slot);
@@ -72,12 +72,16 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr)
 }
 
 // readline {{{
-#if 1//def USE_READLINE
+#ifdef USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <signal.h>
+
 #define hist_file ".ignore/history"
 static struct cintre_state const* _prompt_rl_gs;
+static char cref _prompt_compl_cmds[] = {"help", "locals", "namespaces", "stacktop", "clstack", "save \"", "load \"", "qq", "qsave", "qload", "ast", "type", "bytecode"};
+static char cref _prompt_compl_kws[] = {"auto ", /*"bool ",*/ "break ", "case ", "char ", "const ", "continue ", "default ", "do ", "double ", "else ", "enum ", "extern ", /*"false ",*/ "float ", "for ", "goto ", "if ", /*"inline ",*/ "int ", "long ", /*"register ",*/ /*"restrict ",*/ "return ", "short ", "signed ", "sizeof ", /*"static ",*/ "struct ", "switch ", /*"true ",*/ "typedef ", /*"typeof ",*/ "union ", "unsigned ", "void ", /*"volatile ",*/ "while "};
+
 void _prompt_cc(int sigint)
 {
     rl_crlf();
@@ -87,6 +91,7 @@ void _prompt_cc(int sigint)
     rl_forced_update_display();
     signal(sigint, _prompt_cc);
 }
+
 void _prompt_list_compl(char** const matches, int const num_matches, int const max_length)
 {
     if (rl_completion_query_items < num_matches) {
@@ -99,6 +104,7 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
             return;
         }
     }
+
     int term_width = 0; {
         printf("\x1b[9999G\x1b[6n\r\n");
         while (';' != getchar());
@@ -108,13 +114,23 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
     }
     int const cols_count = term_width/(max_length+2);
     int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count+1;
+
     for (int j = 0; j < rows_count; j++) {
         for (int i = 0; i < cols_count+1; i++) {
             if (i*rows_count+j >= num_matches) break;
+
             char cref it = matches[i*rows_count+j+1];
             unsigned const len = strlen(it);
+
             if ('(' == it[len-1]) printf("\x1b[33m%.*s\x1b[m(%*s", len-1, it, max_length+2-len, "");
-            else if (' ' == it[len-1]) printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
+
+            else if (' ' == it[len-1]) {
+                bool is_kw = false;
+                for (size_t k = 0; k < countof(_prompt_compl_kws); k++) if ((is_kw = !memcmp(_prompt_compl_kws[k], it, len))) break;
+                if (is_kw) printf("\x1b[34m%-*s\x1b[m", max_length+2, it);
+                else printf("\x1b[32m%-*s\x1b[m", max_length+2, it);
+            }
+
             else {
                 bool all_cap = true;
                 for (unsigned k = 0; k < len; k++) if (!(all_cap = '_' == it[k] || ('A' <= it[k] && it[k] <= 'Z'))) break;
@@ -126,37 +142,56 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
     }
     rl_forced_update_display();
 }
+
 char* _prompt_compl(char cref text, int const state)
 {
     rl_completion_suppress_append = 1; // yyy: disable the automatic trailing space
+
     if (rl_completion_found_quote) {
         rl_completion_display_matches_hook = NULL;
         return rl_filename_completion_function(text, state);
     } else rl_completion_display_matches_hook = _prompt_list_compl;
-    static size_t ns, k;
-    static bool is_xcmd = false;
+
+    static size_t ns = 0, k = 0;
+    static bool is_xcmd = false, did_kw = false;
     if (0 == state) {
         for (int p = rl_point; p && !(is_xcmd = ';' == rl_line_buffer[p-1]); p--);
         ns = k = 0;
+        did_kw = false;
     }
+
     size_t const len = strlen(text);
-    // todo: could have completion based on type
+
+    // todo(maybe): could have completion based on type
     //if (ADPT_TYPE_STRUCT || ADPT_TYPE_UNION) .. rl_point, rl_line_buffer ..;
+
     if (is_xcmd) {
-        static char cref cmds[] = {"help", "locales", "namespaces", "stacktop", "clstack", "save \"", "load \"", "ast", "type", "bytecode"};
-        while (k < countof(cmds)) if (!memcmp(cmds[k++], text, len)) {
-            size_t const len = strlen(cmds[k-1]);
+        while (k < countof(_prompt_compl_cmds)) if (!memcmp(_prompt_compl_cmds[k++], text, len)) {
+            size_t const len = strlen(_prompt_compl_cmds[k-1]);
             char ref r = malloc(len+1);
             if (!r) return NULL;
-            strcpy(r, cmds[k-1]);
+            strcpy(r, _prompt_compl_cmds[k-1]);
             return r;
         }
         return NULL;
-    } // else
+    }
+
+    if (!did_kw) {
+        while (k < countof(_prompt_compl_kws)) if (!memcmp(_prompt_compl_kws[k++], text, len)) {
+            size_t const len = strlen(_prompt_compl_kws[k-1]);
+            char ref r = malloc(len+1);
+            if (!r) return NULL;
+            strcpy(r, _prompt_compl_kws[k-1]);
+            return r;
+        }
+        did_kw = true;
+        k = 0;
+    }
+
     cintre_state cref gs = _prompt_rl_gs;
-    for (; ns < gs->nsps.count+1; ns++, k = 0)
-        for (; k < (!ns ? gs->locs.len : gs->nsps.spaces[ns-1].count); k++) {
-            struct adpt_item cref it = !ns ? gs->locs.ptr+k : gs->nsps.spaces[ns-1].items+k;
+    for (; ns < gs->namespaces.count+1; ns++, k = 0)
+        for (; k < (!ns ? gs->locals.len : gs->namespaces.spaces[ns-1].count); k++) {
+            struct adpt_item cref it = !ns ? gs->locals.ptr+k : gs->namespaces.spaces[ns-1].items+k;
             if (!memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
                 bool const tdf = ADPT_ITEM_TYPEDEF == it->kind;
@@ -176,6 +211,7 @@ char* _prompt_compl(char cref text, int const state)
         }
     return NULL;
 }
+
 bool prompt(char const* prompt, char** res, cintre_state cref gs)
 {
     if (!*res) {
@@ -186,18 +222,21 @@ bool prompt(char const* prompt, char** res, cintre_state cref gs)
         read_history(hist_file);
         signal(SIGINT, _prompt_cc);
     } else free(*res);
+
     _prompt_rl_gs = gs;
     if (!(*res = readline(prompt))) {
         write_history(hist_file);
         clear_history();
         return false;
     }
+
     if (strspn(*res, " \t\n") != strlen(*res)) {
         HIST_ENTRY* h = history_get(history_length);
         if (!h || strcmp(h->line, *res)) add_history(*res);
     }
     return true;
 }
+
 #undef hist_file
 #else
 bool prompt(char const* prompt, char** res, cintre_state cref gs)
@@ -217,19 +256,16 @@ void cintre_cleanup(cintre_state ref gs)
 {
     lex_free(&gs->lexr);
 
-    for (size_t k = 0; k < gs->locs.len; k++)
-        free((void*)gs->locs.ptr[k].name);
-    free(gs->locs.ptr);
+    for (size_t k = 0; k < gs->locals.len; k++)
+        free((void*)gs->locals.ptr[k].name);
+    free(gs->locals.ptr);
 
     if (gs->save) fclose(gs->save);
 
     for (size_t k = 0; k < gs->snaps.len; k++) {
-        for (size_t kk = 0; kk < gs->snaps.ptr[k].locs.len; kk++)
-            free((void*)gs->snaps.ptr[k].locs.ptr[kk].name);
-        free(gs->snaps.ptr[k].locs.ptr);
-        for (size_t kk = 0; kk < gs->snaps.ptr[k].chk_interned.len; kk++)
-            free((void*)gs->snaps.ptr[k].chk_interned.ptr[kk].ptr);
-        free(gs->snaps.ptr[k].chk_interned.ptr);
+        for (size_t kk = 0; kk < gs->snaps.ptr[k].locals.len; kk++)
+            free((void*)gs->snaps.ptr[k].locals.ptr[kk].name);
+        free(gs->snaps.ptr[k].locals.ptr);
     }
 
     for (size_t k = 0; k < gs->ty_work.len; k++) switch (gs->ty_work.ptr[k].tyty) {
@@ -248,28 +284,29 @@ void cintre_cleanup(cintre_state ref gs)
     case ADPT_TYPE_VOID: case ADPT_TYPE_CHAR: case ADPT_TYPE_UCHAR: case ADPT_TYPE_SCHAR: case ADPT_TYPE_SHORT: case ADPT_TYPE_INT: case ADPT_TYPE_LONG: case ADPT_TYPE_USHORT: case ADPT_TYPE_UINT: case ADPT_TYPE_ULONG: case ADPT_TYPE_FLOAT: case ADPT_TYPE_DOUBLE: case ADPT_TYPE_PTR: case ADPT_TYPE_ARR: case ADPT_TYPE_NAMED:;
     }
     free(gs->ty_work.ptr);
-
-    // xxx: annoying
-    free(gs->comp.chk_types.ptr);
-    for (size_t k = 0; k < gs->comp.chk_interned.len; k++)
-        free(gs->comp.chk_interned.ptr[k].ptr);
-    free(gs->comp.chk_interned.ptr);
 }
 
 // compile time (lookup and random helpers) {{{
 struct adpt_item const* cintre_lookup(void* usr, char cref name)
 {
     cintre_state cref gs = usr;
-    for (size_t k = 0; k < gs->locs.len; k++) {
-        struct adpt_item cref it = gs->locs.ptr+k;
+    for (size_t k = 0; k < gs->locals.len; k++) {
+        struct adpt_item cref it = gs->locals.ptr+k;
         if (!strcmp(name, it->name)) return it;
     }
-    for (size_t ns = 0; ns < gs->nsps.count; ns++)
-        for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
-            struct adpt_item cref it = gs->nsps.spaces[ns].items+k;
+    for (size_t ns = 0; ns < gs->namespaces.count; ns++)
+        for (size_t k = 0; k < gs->namespaces.spaces[ns].count; k++) {
+            struct adpt_item cref it = gs->namespaces.spaces[ns].items+k;
             if (!strcmp(name, it->name)) return it;
         }
     return NULL;
+}
+
+struct comp_checked const* cintre_alloc_checked(void* usr, struct comp_checked const niw)
+{
+    cintre_state cref gs = usr;
+    (void)gs;
+    return memcpy(mallox(sizeof niw), &niw, sizeof niw);
 }
 
 bool _is_decl_keyword(cintre_state cref gs, char cref tok)
@@ -434,7 +471,8 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
                     .type= &(struct decl_type){.quals= {DECL_QUAL_LONG}},
                 },
             };
-            if (!check_expression(&gs->comp, &cast)) return NULL;
+            gs->chk_work.len = 0;
+            if (!check_expression(&gs->comp, &cast, cintre_alloc_checked)) return NULL;
 
             struct slot slot = {.ty= &adptb_ulong_type};
             _alloc_slot(&gs->comp, &slot);
@@ -528,7 +566,7 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         gs->runr.sp = ((gs->runr.sp-tty->size) / tty->align) * tty->align;
     }
 
-    struct adpt_item ref it = dyarr_push(&gs->locs);
+    struct adpt_item ref it = dyarr_push(&gs->locals);
     memcpy(it, &(struct adpt_item){
             .name= strcpy(mallox(strlen(decl_name)+1), decl_name),
             .type= ty,
@@ -540,7 +578,7 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         // FIXME: hack won't hold for 'type-less compound literal'
         //        (by that I mean compound initializer or whatsitsface-)
         lex_rewind(&gs->lexr, 1);
-        lex_inject(&gs->lexr, dyarr_top(&gs->locs)->name);
+        lex_inject(&gs->lexr, dyarr_top(&gs->locals)->name);
 
         gs->expr.disallow_comma = true;
         gs->expr.allow_topcomplit = true;
@@ -561,12 +599,12 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         tokt const xcmd_at = lext(&gs->lexr);
         xcmd = gstokn(xcmd_at);
     }
-#   define xcmdis(s)  (!strcmp(s, xcmd))
+#   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
         printf("   h[elp]                  -  print this help and no more\n");
-        printf("   loc[ales]               -  list local names\n");
+        printf("   loc[als]                -  list local names\n");
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
@@ -584,8 +622,8 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     if (xcmdis("loc")) {
         printf("List of locals:\n");
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
-        for (size_t k = 0; k < gs->locs.len; k++) {
-            struct adpt_item cref it = gs->locs.ptr+k;
+        for (size_t k = 0; k < gs->locals.len; k++) {
+            struct adpt_item cref it = gs->locals.ptr+k;
             if (ADPT_ITEM_TYPEDEF == it->kind) printf("   [typedef] %-8s\t", it->name);
             else printf("   [top-%zu] %-8s\t", sz-it->as.variable, it->name);
             print_type(stdout, it->type, false);
@@ -599,14 +637,14 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         char cref name = gstokn(name_at);
         if (!*name) {
             printf("List of namespaces:\n");
-            for (size_t ns = 0; ns < gs->nsps.count; ns++)
-                printf("   %s (%zu names)\n", gs->nsps.spaces[ns].name, gs->nsps.spaces[ns].count);
+            for (size_t ns = 0; ns < gs->namespaces.count; ns++)
+                printf("   %s (%zu names)\n", gs->namespaces.spaces[ns].name, gs->namespaces.spaces[ns].count);
             return;
         }
-        for (size_t ns = 0; ns < gs->nsps.count; ns++) if (!strcmp(name, gs->nsps.spaces[ns].name)) {
-            printf("List of names in %s:\n", gs->nsps.spaces[ns].name);
-            for (size_t k = 0; k < gs->nsps.spaces[ns].count; k++) {
-                struct adpt_item cref it = gs->nsps.spaces[ns].items+k;
+        for (size_t ns = 0; ns < gs->namespaces.count; ns++) if (!strcmp(name, gs->namespaces.spaces[ns].name)) {
+            printf("List of names in %s:\n", gs->namespaces.spaces[ns].name);
+            for (size_t k = 0; k < gs->namespaces.spaces[ns].count; k++) {
+                struct adpt_item cref it = gs->namespaces.spaces[ns].items+k;
                 switch (it->kind) {
                 case ADPT_ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
                 case ADPT_ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
@@ -626,18 +664,15 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     if (xcmdis("sta")) {
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
         printf("Stack top %p (sp= %zx /%zx @-%zu):\n", gs->runr.stack, gs->runr.sp, sz, sz-gs->runr.sp);
-        print_tops(stdout, &gs->runr, gs->locs.ptr, gs->locs.len);
+        print_tops(stdout, &gs->runr, gs->locals.ptr, gs->locals.len);
         return;
     }
 
     if (xcmdis("cls")) {
         size_t const sz = sizeof gs->runr.stack; // (xxx: sizeof stack)
         gs->runr.sp = sz;
-        for (size_t k = 0; k < gs->locs.len; k++) free((void*)gs->locs.ptr[k].name); // yyy: cast const
-        gs->locs.len = 0;
-        // xxx: annoying, don't like this random thing here, same vibe as chk_work
-        for (size_t k = 0; k < gs->comp.chk_interned.len; k++) free(gs->comp.chk_interned.ptr[k].ptr);
-        gs->comp.chk_interned.len = 0;
+        for (size_t k = 0; k < gs->locals.len; k++) free((void*)gs->locals.ptr[k].name);
+        gs->locals.len = 0;
         return;
     }
 
@@ -650,76 +685,53 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
 
     if (xcmdis("qs") || xcmdis("ql")) {
         bool const saving = 's' == xcmd[1];
-        struct snap* found = NULL;
 
-        tokt const name_at = lext(&gs->lexr);
-        char name[sizeof(found->name)] = {0};
-        {
-            char cref x = gstokn(name_at);
-            if (!*x) strcpy(name, "_");
-            else memcpy(name, x, sizeof name-1);
-        }
-
-        for (size_t k = 0; k < gs->snaps.len; k++) if (!strcmp(name, gs->snaps.ptr[k].name)) {
-            found = gs->snaps.ptr+k;
-            break;
-        }
-        if (!found) {
-            if (saving) {
-                found = dyarr_push(&gs->snaps);
-                strcpy(found->name, name);
-                found->locs.ptr = NULL, found->locs.cap = 0;
-                found->chk_interned.ptr = NULL, found->chk_interned.cap = 0;
-                printf("New state: %s\n", quoted(found->name));
-            } else {
-                printf("No state named %s\n", quoted(name));
-                return;
+        struct snap* found = NULL; {
+            char name[sizeof found->name] = {0}; {
+                tokt const name_at = lext(&gs->lexr);
+                char cref x = gstokn(name_at);
+                if (!*x) strcpy(name, "_");
+                else memcpy(name, x, sizeof name-1);
             }
-        }
 
-        // XXX: i oh so truly hate it
+            for (size_t k = 0; k < gs->snaps.len; k++) if (!strcmp(name, gs->snaps.ptr[k].name)) {
+                found = gs->snaps.ptr+k;
+                break;
+            }
+            if (!found) {
+                if (saving) {
+                    found = dyarr_push(&gs->snaps);
+                    strcpy(found->name, name);
+                    found->locals.ptr = NULL, found->locals.cap = 0;
+                    printf("New state: %s\n", quoted(found->name));
+                } else {
+                    printf("No state named %s\n", quoted(name));
+                    return;
+                }
+            } else if (saving) printf("Old state: %s\n", quoted(found->name));
+        }
 
         if (saving) {
             found->stack = gs->runr;
 
-            for (size_t k = 0; k < found->locs.len; k++) free((void*)found->locs.ptr[k].name); // yyy: cast const
-            found->locs.len = 0;
-            if (gs->locs.len) {
-                dyarr_cpy(&found->locs, &gs->locs);
-                for (size_t k = 0; k < gs->locs.len; k++)
-                    *(char**)&found->locs.ptr[k].name = strcpy(mallox(strlen(gs->locs.ptr[k].name)+1), gs->locs.ptr[k].name); // yyy: cast const
-            }
-
-            for (size_t k = 0; k < found->chk_interned.len; k++) free(found->chk_interned.ptr[k].ptr);
-            found->chk_interned.len = 0;
-            if (gs->comp.chk_interned.len) {
-                dyarr_resize(&found->chk_interned, found->chk_interned.len = gs->comp.chk_interned.len);
-                for (size_t k = 0; k < gs->comp.chk_interned.len; k++) {
-                    found->chk_interned.ptr[k] = (buf){0};
-                    dyarr_cpy(&found->chk_interned.ptr[k], &gs->comp.chk_interned.ptr[k]);
-                }
+            for (size_t k = 0; k < found->locals.len; k++) free((void*)found->locals.ptr[k].name);
+            found->locals.len = 0;
+            if (gs->locals.len) {
+                dyarr_cpy(&found->locals, &gs->locals);
+                for (size_t k = 0; k < gs->locals.len; k++)
+                    *(char**)&found->locals.ptr[k].name = strcpy(mallox(strlen(gs->locals.ptr[k].name)+1), gs->locals.ptr[k].name);
             }
         }
 
         else {
             gs->runr = found->stack;
 
-            for (size_t k = 0; k < gs->locs.len; k++) free((void*)gs->locs.ptr[k].name); // yyy: cast const
-            gs->locs.len = 0;
-            if (found->locs.len) {
-                dyarr_cpy(&gs->locs, &found->locs);
-                for (size_t k = 0; k < found->locs.len; k++)
-                    *(char**)&gs->locs.ptr[k].name = strcpy(mallox(strlen(found->locs.ptr[k].name)+1), found->locs.ptr[k].name); // yyy: cast const
-            }
-
-            for (size_t k = 0; k < gs->comp.chk_interned.len; k++) free(gs->comp.chk_interned.ptr[k].ptr);
-            gs->comp.chk_interned.len = 0;
-            if (found->chk_interned.len) {
-                dyarr_resize(&gs->comp.chk_interned, gs->comp.chk_interned.len = found->chk_interned.len);
-                for (size_t k = 0; k < found->chk_interned.len; k++) {
-                    gs->comp.chk_interned.ptr[k] = (buf){0};
-                    dyarr_cpy(&gs->comp.chk_interned.ptr[k], &found->chk_interned.ptr[k]);
-                }
+            for (size_t k = 0; k < gs->locals.len; k++) free((void*)gs->locals.ptr[k].name);
+            gs->locals.len = 0;
+            if (found->locals.len) {
+                dyarr_cpy(&gs->locals, &found->locals);
+                for (size_t k = 0; k < found->locals.len; k++)
+                    *(char**)&gs->locals.ptr[k].name = strcpy(mallox(strlen(found->locals.ptr[k].name)+1), found->locals.ptr[k].name);
             }
         }
     }
@@ -750,13 +762,11 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     }
 
     if (!expr) return;
-    size_t const psp = gs->comp.vsp = gs->runr.sp;
     gs->comp.res.len = 0;
+    gs->chk_work.len = 0;
 
     if (xcmdis("ty")) {
-        gs->comp.chk_types.len = 0; // xxx: annoying
-        struct adpt_type cref ty = check_expression(&gs->comp, expr);
-        gs->runr.sp = psp; // yyy: free string/comp literals
+        struct adpt_type cref ty = check_expression(&gs->comp, expr, cintre_alloc_checked);
         if (!ty) return;
         printf("Expression is of type: ");
         if (ADPT_TYPE_NAMED == ty->tyty)
@@ -766,7 +776,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         return;
     }
 
-    bool const r = _compile_expression_tmp_wrap(&gs->comp, expr);
+    bool const r = _compile_expression_tmp_wrap(&gs->comp, expr, cintre_alloc_checked);
     if (!r) return;
 
     if (xcmdis("bytec") || xcmdis("bc")) {
@@ -786,7 +796,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     printf("Result:\n");
     print_item(stdout, &res, gs->runr.stack, 0);
 
-    gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho, some alignment padding sticks..)
+    gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho, some alignment padding sticks around..)
 } // accept_expr
 // }}}
 
@@ -801,8 +811,8 @@ int main(int argc, char cref* argv)
     {
         extern struct adpt_namespace cref namespaces_first;
         extern unsigned long const namespaces_count;
-        _gs.nsps.spaces = namespaces_first;
-        _gs.nsps.count = namespaces_count;
+        _gs.namespaces.spaces = namespaces_first;
+        _gs.namespaces.count = namespaces_count;
     }
     cintre_state ref gs = &_gs;
 

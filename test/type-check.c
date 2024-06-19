@@ -87,10 +87,16 @@ struct adpt_item const* test_lookup(void* _, char cref name)
 }
 // }}}
 
+
+struct comp_checked const* alloc_checked(void* usr, struct comp_checked const niw)
+{
+    return memcpy(mallox(sizeof niw), &niw, sizeof niw);
+}
+
 void check(void ref usr, expression ref expr, tokt ref tok)
 {
     lex_state cref ls = usr;
-    struct adpt_type cref ty = check_expression(&(compile_state){.ls= ls, .lookup= test_lookup}, expr);
+    struct adpt_type cref ty = check_expression(&(compile_state){.ls= ls, .lookup= test_lookup}, expr, alloc_checked);
     print_type(stdout, ty, true);
     printf("\n");
     report_lex_locate(ls, " -- tok: %s", tokn(*tok));

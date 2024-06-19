@@ -529,7 +529,7 @@ void _parse_decl_fixup(parse_decl_state ref ps, struct _parse_decl_capture ref c
 
     // 'visit' hold; until find before; replace with after
     declaration** it = &hold;
-    do switch ((*it)->type.kind) { // xxx: casts are to discard const qualifier
+    do switch ((*it)->type.kind) {
         case DECL_KIND_PTR: it = (declaration**)&(*it)->type.info.ptr;      break;
         case DECL_KIND_FUN: it = (declaration**)&(*it)->type.info.fun.ret;  break;
         case DECL_KIND_ARR: it = (declaration**)&(*it)->type.info.arr.item; break;

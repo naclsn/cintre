@@ -29,25 +29,26 @@ typedef struct compile_state {
     void* usr;
     struct adpt_item const* (*lookup)(void* usr, char cref name);
 
-    // needed for cases:
-    // - ptr decay (arr type to ptr)
-    // - address of (ptr around type)
-    // - cast (type to itself)
-    dyarr(struct comp_checked {
-        struct adpt_type const type;
-        union comp_chk_info {
-            size_t str_variable; // if str, the location on stack ('variable') where the array is allocated
-            // TODO: union {} num_value; // if num, the value
-            // TODO: struct adpt_item ident_lookup; // if ident, the result of `lookup`
-        } info;
-    }) chk_types;
-
     // used to deduplicat string literals
-    dyarr(buf) chk_interned;
+    //dyarr(buf) checker_alloc_interned;
 } compile_state;
 
+// needed for cases:
+// - ptr decay (arr type to ptr)
+// - address of (ptr around type)
+// - cast (type to itself)
+// all can be freed right after the corresponding call to `compile_expression`
+typedef struct comp_checked {
+    struct adpt_type const type;
+    union comp_chk_info {
+        size_t str_variable; // if str, the location on stack ('variable') where the array is allocated
+        // TODO(maybe): union {} num_value; // if num, the value
+        // TODO(maybe): struct adpt_item ident_lookup; // if ident, the result of `lookup`
+    } info;
+} const* (*comp_alloc_checked_ator)(void* usr, struct comp_checked const niw);
+
 /// does modify the expression by at least adding a typing info in the usr fields
-struct adpt_type const* check_expression(compile_state ref cs, expression ref expr);
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr, comp_alloc_checked_ator const alloc_checked);
 
 #define cstokn(__at) (cs->ls->tokens.ptr+(__at))
 
@@ -135,7 +136,7 @@ bool _is_expr_lvalue(compile_state cref cs, expression cref expr)
     }
 }
 
-struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref ty)
+struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref ty, comp_alloc_checked_ator const alloc_checked)
 {
     switch (ty->kind) {
     case DECL_KIND_NOTAG:;
@@ -176,15 +177,15 @@ struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref t
     case DECL_KIND_ENUM: return &adptb_int_type;
 
     case DECL_KIND_PTR:;
-        struct adpt_type cref ptr = _cast_type(cs, &ty->info.ptr->type);
+        struct adpt_type cref ptr = _cast_type(cs, &ty->info.ptr->type, alloc_checked);
         if (!ptr) return NULL;
 
-        return memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
+        return (void*)alloc_checked(cs->usr, (struct comp_checked){.type= {
                 .size= sizeof(void*),
                 .align= sizeof(void*),
                 .tyty= ADPT_TYPE_PTR,
                 .info.ptr= ptr,
-            }, sizeof(struct adpt_type));
+            }});
 
     case DECL_KIND_STRUCT:
     case DECL_KIND_UNION:
@@ -200,10 +201,10 @@ struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref t
 struct slot;
 void compile_expression(compile_state ref cs, expression cref expr, struct slot ref slot);
 
-struct adpt_type const* check_expression(compile_state ref cs, expression ref expr)
+struct adpt_type const* check_expression(compile_state ref cs, expression ref expr, comp_alloc_checked_ator const alloc_checked)
 {
 #   define fail(...)  return notif(__VA_ARGS__), NULL
-#   define failforward(id, from)  for (id = check_expression(cs, from); !id; ) return NULL; //fail("here") // yyy: could do 'in blabla expr'
+#   define failforward(id, from)  for (id = check_expression(cs, from, alloc_checked); !id; ) return NULL; //fail("here") // yyy: could do 'in blabla expr'
 #   define isint(__ty)  (ADPT_TYPE_CHAR <= (__ty)->tyty && (__ty)->tyty <= ADPT_TYPE_ULONG)
 #   define issgn(__ty)  (ADPT_TYPE_SCHAR <= (__ty)->tyty && (__ty)->tyty <= ADPT_TYPE_LONG)
 #   define isflt(__ty)  (ADPT_TYPE_FLOAT <= (__ty)->tyty && (__ty)->tyty <= ADPT_TYPE_DOUBLE)
@@ -236,22 +237,22 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case EXPR_ATOM:;
         char cref atom = cstokn(expr->info.atom);
         if ('"' == *atom) {
-            // xxx: may not be enough because of \u and \U it can be longer than the atom
+            /* version with interning; removed for now until deemed necessary and done better
             buf data = {
                 .ptr= mallox(data.cap = strlen(atom)),
                 .len= lex_struqo(data.ptr, data.cap, atom),
             };
 
             size_t found_at, found_off, str_variable;
-            for (found_at = 0; found_at < cs->chk_interned.len; found_at++) {
-                buf cref it = cs->chk_interned.ptr+found_at;
+            for (found_at = 0; found_at < cs->checker_alloc_interned.len; found_at++) {
+                buf cref it = cs->checker_alloc_interned.ptr+found_at;
                 char cref first = memchr(it->ptr, data.ptr[0], it->len);
                 found_off = first-it->ptr;
                 if (first && data.len <= it->len-found_off && !memcmp(first, data.ptr, data.len))
                     break;
             }
-            if (found_at < cs->chk_interned.len) {
-                size_t const cs_vsp_back_then = cs->chk_interned.ptr[found_at].cap;
+            if (found_at < cs->checker_alloc_interned.len) {
+                size_t const cs_vsp_back_then = cs->checker_alloc_interned.ptr[found_at].cap;
                 str_variable = cs_vsp_back_then+found_off;
                 free(data.ptr);
             }
@@ -279,27 +280,50 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 
                 str_variable = cs->vsp;
 
-                buf ref intern = dyarr_push(&cs->chk_interned);
+                buf ref intern = dyarr_push(&cs->checker_alloc_interned);
                 *intern = data;
                 // yyy: store the location of the array here, it is retrived
                 // when matching a new string literal at some other call. 2:
                 // - buffers in `chk_interned` should not be changed
                 // - `cs->vsp` should not be 0 so it won't mess with frry
                 intern->cap = cs->vsp;
-            }
+            }*/
 
-            return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct comp_checked){
+            // xxx: may not be enough because of \u and \U it can be longer than the atom
+            char* const ptr = mallox(strlen(atom));
+            size_t const len = lex_struqo(ptr, strlen(atom), atom);
+
+            // xxx: not pretty; cut down version of _alloc_slot with just the
+            // _emit_instr_w_opr for the push then call to _emit_data based on
+            // the assumption that compiler.h is included anyways
+            cs->vsp-= len;
+
+            unsigned count = 1;
+            for (size_t it = len; it; count++) it>>= 7;
+
+            unsigned char* op = dyarr_insert(&cs->res, cs->res.len, count);
+            *op = 0x0f;
+            size_t it = len;
+            do {
+                unsigned char l = it&127;
+                *++op = !!(it>>= 7)<<7 | l;
+            } while (it);
+
+            void _emit_data(compile_state ref cs, size_t dst, size_t width, unsigned char const* data);
+            _emit_data(cs, 0, len, (unsigned char*)ptr);
+
+            return expr->usr = (void*)alloc_checked(cs->usr, (struct comp_checked){
                     .type= {
                         .size= sizeof(char*),
                         .align= sizeof(char*),
                         .tyty= ADPT_TYPE_ARR,
                         .info.arr= {
                             .item= &adptb_char_type,
-                            .count= data.len,
+                            .count= len,
                         },
                     },
-                    .info.str_variable= str_variable,
-                }, sizeof(struct comp_checked));
+                    .info.str_variable= cs->vsp,
+                });
         }
 
         // xxx: not supposed to be of type `char` but `int`
@@ -476,21 +500,21 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         if (EXPR_BINOP_SUB == expr->kind || EXPR_BINOP_ADD == expr->kind) {
             if (isint(tlhs)) {
                 if (isptr(trhs)) return expr->usr = (void*)rhs;
-                if (isarr(trhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
+                if (isarr(trhs)) return expr->usr = (void*)alloc_checked(cs->usr, (struct comp_checked){.type= {
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= ADPT_TYPE_PTR,
                             .info.ptr= trhs->info.arr.item,
-                        }, sizeof(struct adpt_type));
+                        }});
             }
             if (isint(trhs)) {
                 if (isptr(tlhs)) return expr->usr = (void*)tlhs;
-                if (isarr(tlhs)) return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
+                if (isarr(tlhs)) return expr->usr = (void*)alloc_checked(cs->usr, (struct comp_checked){.type= {
                             .size= sizeof(void*),
                             .align= sizeof(void*),
                             .tyty= ADPT_TYPE_PTR,
                             .info.ptr= tlhs->info.arr.item,
-                        }, sizeof(struct adpt_type));
+                        }});
             }
         } // ptr arith
         if (isnum(tlhs) && isnum(trhs)) {
@@ -507,12 +531,12 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
     case EXPR_UNOP_ADDR:
         if (_is_expr_lvalue(cs, expr->info.unary.opr)) {
             failforward(opr, expr->info.unary.opr);
-            return expr->usr = memcpy(dyarr_push(&cs->chk_types), &(struct adpt_type){
+            return expr->usr = (void*)alloc_checked(cs->usr, (struct comp_checked){.type= {
                     .size= sizeof(void*),
                     .align= sizeof(void*),
                     .tyty= ADPT_TYPE_PTR,
                     .info.ptr= opr,
-                }, sizeof(struct adpt_type));
+                }});
         }
         fail("Cannot take the address of expression");
     case EXPR_UNOP_DEREF:
@@ -523,7 +547,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
 
     case EXPR_UNOP_CAST:
         failforward(opr, expr->info.cast.opr);
-        struct adpt_type cref tyto = _cast_type(cs, expr->info.cast.type);
+        struct adpt_type cref tyto = _cast_type(cs, expr->info.cast.type, alloc_checked);
         if (!tyto) fail("Type invalid in cast expression");
         topr = _truetype(opr);
         struct adpt_type cref ttyto = _truetype(tyto);

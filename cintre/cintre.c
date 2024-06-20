@@ -468,7 +468,10 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
                 .kind= EXPR_UNOP_CAST,
                 .info.cast= {
                     .opr= ty->info.arr.count,
-                    .type= &(struct decl_type){.quals= {DECL_QUAL_LONG}},
+                    .type= &(struct decl_type){
+                        .quals= {DECL_QUAL_LONG},
+                        .name= (lex_inject(&gs->lexr, "int"), lext(&gs->lexr)), // the token stream will get all messed up from these :/ anyways
+                    },
                 },
             };
             gs->chk_work.len = 0;
@@ -536,10 +539,13 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
 
     size_t const pwork = gs->ty_work.len;
     struct adpt_type cref ty = _decl_to_adpt_type(gs, &decl->type);
+    if (!ty) {
+        notif("Could not understand type");
+        gs->ty_work.len = pwork;
+    }
     struct adpt_type cref tty = _truetype(ty);
-    if (!ty || !tty->size) {
-        if (!ty) notif("Could not understand type");
-        else notif("Zero-sized variable type");
+    if (!tty->size) {
+        notif("Zero-sized variable type");
         gs->ty_work.len = pwork;
         return;
     }
@@ -587,7 +593,7 @@ void accept_decl(void ref usr, declaration cref decl, tokt ref tok)
         gs->expr.allow_topcomplit = false;
     }
 
-    if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, *tok);
+    if (',' == *gstokn(*tok)) *tok = parse_declaration(&gs->decl, lext(&gs->lexr));
 }
 
 void accept_expr(void ref usr, expression ref expr, tokt ref tok)
@@ -762,6 +768,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     }
 
     if (!expr) return;
+    gs->comp.vsp = gs->runr.sp;
     gs->comp.res.len = 0;
     gs->chk_work.len = 0;
 

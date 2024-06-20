@@ -768,16 +768,17 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         break;
 
     case ADPT_TYPE_ARR:
-        fprintf(strm, "[\n");
-        for (size_t k = 0; k < tty->info.arr.count; k++) {
-            fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
-            print_item(strm, &(struct adpt_item){
-                    .type= tty->info.arr.item,
-                    .as.object= (char*)p+k*tty->info.arr.item->size, // xxx: discards const
-                }, stack, depth+1);
-            fprintf(strm, "\n");
-        }
-        fprintf(strm, "%*s]", depth*3, "");
+        fprintf(strm, "[- x%zu -]", tty->info.arr.count);
+        //fprintf(strm, "[\n");
+        //for (size_t k = 0; k < tty->info.arr.count; k++) {
+        //    fprintf(strm, "%*s[%zu]= ", (depth+1)*3, "", k);
+        //    print_item(strm, &(struct adpt_item){
+        //            .type= tty->info.arr.item,
+        //            .as.object= (char*)p+k*tty->info.arr.item->size, // xxx: discards const
+        //        }, stack, depth+1);
+        //    fprintf(strm, "\n");
+        //}
+        //fprintf(strm, "%*s]", depth*3, "");
         break;
 
         // unreachable case

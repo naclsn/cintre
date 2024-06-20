@@ -73,7 +73,6 @@ Assumes platform is:
 - handle bitfields in runtime types
 
 ### opti/cleanup
-- `chk_work` and `chk_interned` roamming around in cintre.c (// xxx: annoying) (aka. rework memory/structures in places (think the mess around qs/ql))
 - maybe reverse the sp and vsp to have sane zero init (// xxx: sizeof stack)
 - (limit avoidable capture-copying)
 - go through tokn(...) to reduce expansion in favor of locals

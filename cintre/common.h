@@ -34,10 +34,6 @@ static bool _try_jmp_flg = false;
 
 #define _dyarr_allocfail  (exitf("OOM"), NULL)
 #include "dyarr.h"
-//typedef dyarr(char) buf;
-//typedef struct { char const* ptr; size_t len; } bufsl;
-//#define bufmt(x) (unsigned)(x).len, (x).ptr
-//#define bufis(x, c) (strlen((c)) == (x).len && !memcmp(c, (x).ptr, strlen((c))))
 
 typedef size_t tokt;
 #define tokn(__at) (ls->tokens.ptr+(__at))

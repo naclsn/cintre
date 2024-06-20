@@ -1,8 +1,18 @@
 warnings := -Wall -Wextra -Wpedantic -Werror
 override CFLAGS := -ggdb -O0 -DLOC_NOTIF -std=c99 $(warnings) $(CFLAGS)
 
+# dev&debug
+ifneq (,$(wildcard some.c))
+entries := some.c
+objs := some.o
+endif
+_CFLAGS := $(CFLAGS)
+
+# ./build/cintre
 prog := cintre
 include driver.makefile
+
+# --- test&covr
 
 tests =         \
     tok-stream  \

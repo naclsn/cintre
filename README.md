@@ -63,6 +63,8 @@ Assumes platform is:
 ## (wip and such)
 
 ### breaking
+- never compatible with a typedef (eg. `xxd(buf, sz)`)
+- something's not right when doing `file_read(buf)`, the result has `.cap = 0`...
 - pr: bitfields here and there
 - pr: array size/align
 

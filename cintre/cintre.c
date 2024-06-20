@@ -189,7 +189,7 @@ char* _prompt_compl(char cref text, int const state)
                 struct adpt_item cref it = !ns ? gs->locals.ptr+k : gs->namespaces.spaces[ns-1].items+k;
                 if ('@' == *it->name && !memcmp(it->name+1, text, len)) {
                     size_t const len = strlen(it->name+1);
-                    char ref r = malloc(len);
+                    char ref r = malloc(len+2);
                     if (!r) return NULL;
                     strcpy(r, it->name+1);
                     r[len] = ' ', r[len+1] = '\0';

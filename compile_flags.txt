@@ -1,2 +1,3 @@
 -Icintre
 -std=c99
+-DUSE_READLINE

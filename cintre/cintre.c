@@ -110,7 +110,6 @@ void _prompt_list_compl(char** const matches, int const num_matches, int const m
         while (';' != getchar());
         char c;
         while ('R' != (c = getchar())) term_width = term_width*10 + c-'0';
-        printf("=== term_width: %d ===\n", term_width);
     }
     int const cols_count = term_width/(max_length+2);
     int const rows_count = num_matches < cols_count ? 1 : num_matches/cols_count+1;
@@ -153,14 +152,22 @@ char* _prompt_compl(char cref text, int const state)
     } else rl_completion_display_matches_hook = _prompt_list_compl;
 
     static size_t ns = 0, k = 0;
-    static bool is_xcmd = false, did_kw = false;
+    static bool is_xcmd = false, did_kw = false, is_tagged = false;
     if (0 == state) {
         for (int p = rl_point; p && !(is_xcmd = ';' == rl_line_buffer[p-1]); p--);
+
+        char const* beg = rl_line_buffer+rl_point;
+        while (rl_line_buffer < beg && ' ' != beg[-1]) --beg;
+        while (rl_line_buffer < beg && ' ' == beg[-1]) --beg;
+        while (rl_line_buffer < beg && ' ' != beg[-1]) --beg;
+        is_tagged = !memcmp("struct ", beg, strlen("struct ")) || !memcmp("union ", beg, strlen("union ")) || !memcmp("enum ", beg, strlen("enum "));
+
         ns = k = 0;
         did_kw = false;
     }
 
     size_t const len = strlen(text);
+    cintre_state cref gs = _prompt_rl_gs;
 
     // todo(maybe): could have completion based on type
     //if (ADPT_TYPE_STRUCT || ADPT_TYPE_UNION) .. rl_point, rl_line_buffer ..;
@@ -176,6 +183,23 @@ char* _prompt_compl(char cref text, int const state)
         return NULL;
     }
 
+    if (is_tagged) {
+        for (; ns < gs->namespaces.count+1; ns++, k = 0)
+            for (; k < (!ns ? gs->locals.len : gs->namespaces.spaces[ns-1].count); k++) {
+                struct adpt_item cref it = !ns ? gs->locals.ptr+k : gs->namespaces.spaces[ns-1].items+k;
+                if ('@' == *it->name && !memcmp(it->name+1, text, len)) {
+                    size_t const len = strlen(it->name+1);
+                    char ref r = malloc(len);
+                    if (!r) return NULL;
+                    strcpy(r, it->name+1);
+                    r[len] = ' ', r[len+1] = '\0';
+                    k++;
+                    return r;
+                }
+            }
+        return NULL;
+    }
+
     if (!did_kw) {
         while (k < countof(_prompt_compl_kws)) if (!memcmp(_prompt_compl_kws[k++], text, len)) {
             size_t const len = strlen(_prompt_compl_kws[k-1]);
@@ -188,11 +212,10 @@ char* _prompt_compl(char cref text, int const state)
         k = 0;
     }
 
-    cintre_state cref gs = _prompt_rl_gs;
     for (; ns < gs->namespaces.count+1; ns++, k = 0)
         for (; k < (!ns ? gs->locals.len : gs->namespaces.spaces[ns-1].count); k++) {
             struct adpt_item cref it = !ns ? gs->locals.ptr+k : gs->namespaces.spaces[ns-1].items+k;
-            if (!memcmp(it->name, text, len)) {
+            if ('@' != *it->name && !memcmp(it->name, text, len)) {
                 size_t const len = strlen(it->name);
                 bool const tdf = ADPT_ITEM_TYPEDEF == it->kind;
                 bool const fun = ADPT_TYPE_FUN == _tailtype(it->type)->tyty;

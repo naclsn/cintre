@@ -632,13 +632,13 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
 
     if (xcmdis("h")) {
         printf("List of commands:\n");
-        printf("   h[elp]                  -  print this help and no more\n");
+        printf("   h[elp]                  -  print this help\n");
         printf("   loc[als]                -  list local names\n");
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
         printf("   cls[tack]               -  clear the stack (set sp back to top) and locals\n");
-        printf("   save \"file\"             -  save each next lines to the file\n");
-        printf("   load \"file\"             -  load the file, running each lines\n");
+        printf("   save \"file\"             -  save following lines to the file\n");
+        printf("   load \"file\"             -  load the file, executing content\n");
         printf("   qs[ave]                 -  save a snapshot of the state (list with qq)\n");
         printf("   ql[oad]                 -  load a snapshot of the state (list with qq)\n");
         printf("   ast                     -  ast of the expression\n");
@@ -766,19 +766,32 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     }
 
     if (xcmdis("save") || xcmdis("load")) {
-        bool const saving = 's' == xcmd[1];
+        bool const saving = 's' == xcmd[0];
         tokt const file_at = lext(&gs->lexr);
         char cref file = gstokn(file_at);
         if ('"' != *file) printf("Expected a name for the file to %s\n", saving ? "save" : "load");
         else {
             char filename[256];
+            lex_struqo(filename, sizeof filename, file);
             FILE ref f = fopen(filename, saving ? "w" : "r");
             if (!f) printf("Could not open file '%s'\n", filename);
             else {
                 if (saving) {
                     if (gs->save) fclose(gs->save);
                     gs->save = f;
-                } else notif("NIY: run loaded file");
+                } else {
+                    // xxx: lexer internal; now we would like to read from
+                    //      a stream normally so reset cstream to NULL; the
+                    //      last token we pulled was a string literal which
+                    //      means it looked ahead to merge with a following
+                    //      one, so there is an unavoidable ahead of at least
+                    //      1 (the empty EOF token), force it to 0
+                    gs->lexr.cstream = NULL;
+                    gs->lexr.ahead = 0;
+                    lex_entry(&gs->lexr, f, filename);
+                    for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); tok_at = lext(&gs->lexr))
+                        _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+                }
             }
         }
         return;
@@ -858,11 +871,15 @@ int main(int argc, char cref* argv)
         if (!gs->save) {
             gs->save = fopen(argv[-1], "w");
             if (!gs->save) printf("Could not opent file '%s'\n", argv[-1]);
-        } else notif("NIY: run loaded file");
+        } else {
+            lex_entry(&gs->lexr, gs->save, argv[-1]);
+            for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); tok_at = lext(&gs->lexr))
+                _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+        }
         break;
 
     } else {
-        printf("Unexpected argument %s, see -h, continuing", *argv);
+        printf("Unexpected argument '%s', see -h, continuing\n", *argv);
         break;
     }
 
@@ -872,7 +889,8 @@ int main(int argc, char cref* argv)
     printf("Type `;help` for a list of command\n");
 
     char* line = NULL;
-    while (prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line, gs)) {
+    while (gs->lexr.cstream = NULL, gs->lexr.ahead = 0, // xxx: lexer internal, see note in "load" xcmd
+            prompt("\1\x1b[35m\2(*^^),u~~\1\x1b[m\2 ", &line, gs)) {
         // xxx: somewhat lexer internal
         gs->lexr.cstream = line;
         ++gs->lexr.sources.ptr[gs->lexr.sources.len-1].line;
@@ -881,11 +899,11 @@ int main(int argc, char cref* argv)
         char const* tok = gstokn(tok_at);
         if (!*tok) continue;
 
+        if (gs->save) fprintf(gs->save, "%s\n", line);
+
         if (';' == *tok) accept_expr(gs->expr.usr, NULL, &tok_at);
         else if (_is_decl_keyword(gs, tok)) parse_declaration(&gs->decl, tok_at);
         else parse_expression(&gs->expr, tok_at);
-
-        if (gs->save && *line) fprintf(gs->save, "%s\n", line);
     }
 
     cintre_cleanup(gs);

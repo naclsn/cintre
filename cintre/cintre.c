@@ -79,7 +79,7 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr, com
 
 #define hist_file ".ignore/history"
 static struct cintre_state const* _prompt_rl_gs;
-static char cref _prompt_compl_cmds[] = {"help", "locals", "namespaces", "stacktop", "clstack", "save \"", "load \"", "qq", "qsave", "qload", "ast", "type", "bytecode"};
+static char cref _prompt_compl_cmds[] = {"help", "locals", "namespaces", "stacktop", "clstack", "save \"", "load \"", "qq", "qsave", "qload", "ast", "type", "bytecode", "silent"};
 static char cref _prompt_compl_kws[] = {"auto ", /*"bool ",*/ "break ", "case ", "char ", "const ", "continue ", "default ", "do ", "double ", "else ", "enum ", "extern ", /*"false ",*/ "float ", "for ", "goto ", "if ", /*"inline ",*/ "int ", "long ", /*"register ",*/ /*"restrict ",*/ "return ", "short ", "signed ", "sizeof ", /*"static ",*/ "struct ", "switch ", /*"true ",*/ "typedef ", /*"typeof ",*/ "union ", "unsigned ", "void ", /*"volatile ",*/ "while "};
 
 void _prompt_cc(int sigint)
@@ -625,8 +625,8 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
 
     char const* xcmd = "";
     if (';' == *gstokn(*tok)) {
-        tokt const xcmd_at = lext(&gs->lexr);
-        xcmd = gstokn(xcmd_at);
+        *tok = lext(&gs->lexr);
+        xcmd = gstokn(*tok);
     }
 #   define xcmdis(s)  (!memcmp(s, xcmd, strlen(s)))
 
@@ -644,6 +644,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         printf("   ast                     -  ast of the expression\n");
         printf("   ty[pe]                  -  type of the expression, eg. `strlen; ty`\n");
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
+        printf("   sil[ent]                -  do not print the result of the expression\n");
         printf("no command after the ; (or no ;) will simply execute the expression\n");
         return;
     }
@@ -789,11 +790,13 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
                     gs->lexr.cstream = NULL;
                     gs->lexr.ahead = 0;
                     lex_entry(&gs->lexr, f, filename);
-                    for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); tok_at = lext(&gs->lexr))
-                        _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+                    for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); ) {
+                        tok_at = _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+                        if (';' == *gstokn(tok_at)) tok_at = lext(&gs->lexr);
+                    }
                 }
-            }
-        }
+            } // did open file
+        } // did provide file name
         return;
     }
 
@@ -830,14 +833,16 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
 
     run(&gs->runr, gs->comp.res);
     struct adpt_item const res = {
-        .name= "_",
+        .name= "",
         .type= expr->usr,
         .kind= ADPT_ITEM_VARIABLE,
         .as.variable= gs->runr.sp,
     };
 
-    printf("Result:\n");
-    print_item(stdout, &res, gs->runr.stack, 0);
+    if (!xcmdis("sil")) {// && res.type->size) { // FIXME: something is broken I have types of size 0 somehow
+        printf("Result");
+        print_item(stdout, &res, gs->runr.stack, 0);
+    }
 
     gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho, some alignment padding sticks around..)
 } // accept_expr
@@ -866,15 +871,15 @@ int main(int argc, char cref* argv)
         printf("Usage: %s [-f file]\n", prog);
         return 1;
 
-    case 'f':
-        gs->save = fopen((argc--, *argv++), "r+");
-        if (!gs->save) {
-            gs->save = fopen(argv[-1], "w");
-            if (!gs->save) printf("Could not opent file '%s'\n", argv[-1]);
-        } else {
-            lex_entry(&gs->lexr, gs->save, argv[-1]);
-            for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); tok_at = lext(&gs->lexr))
-                _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+    case 'f':;
+        FILE* const f = fopen((argc--, *argv++), "r");
+        if (!f) printf("Could not opent file '%s'\n", argv[-1]);
+        else {
+            lex_entry(&gs->lexr, f, argv[-1]);
+            for (tokt tok_at = lext(&gs->lexr); *gstokn(tok_at); ) {
+                tok_at = _is_decl_keyword(gs, gstokn(tok_at)) ? parse_declaration(&gs->decl, tok_at) : parse_expression(&gs->expr, tok_at);
+                if (';' == *gstokn(tok_at)) tok_at = lext(&gs->lexr);
+            }
         }
         break;
 

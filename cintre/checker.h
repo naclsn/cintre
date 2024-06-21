@@ -123,6 +123,7 @@ bool _is_expr_lvalue(compile_state cref cs, expression cref expr)
     case EXPR_ATOM:
         if (!isidstart(*cstokn(expr->info.atom))) return false;
         struct adpt_item const* found = cs->lookup(cs->usr, cstokn(expr->info.atom));
+        if (!found) return notif("Unknown name: %s", quoted(cstokn(expr->info.atom))), false; // XXX: double error message
         return ADPT_ITEM_OBJECT == found->kind || ADPT_ITEM_VARIABLE == found->kind;
 
     case EXPR_BINOP_SUBSCR:
@@ -167,7 +168,8 @@ struct adpt_type const* _cast_type(compile_state ref cs, struct decl_type cref t
 #       undef nameis
 
         struct adpt_item cref it = cs->lookup(cs->usr, cstokn(ty->name));
-        if (it && ADPT_ITEM_TYPEDEF == it->kind) {
+        if (!it) return notif("Unknown type name: %s", quoted(cstokn(ty->name))), NULL; // XXX: double error message
+        if (ADPT_ITEM_TYPEDEF == it->kind) {
             struct adpt_type cref ty = _truetype(it->type);
             if (ADPT_TYPE_VOID <= ty->tyty && ty->tyty <= ADPT_TYPE_DOUBLE)
                 return it->type;

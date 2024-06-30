@@ -362,13 +362,13 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
 void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth)
 {
     if (!stmt) {
-        fprintf(strm, "%*s\x1b[31m(void);\x1b[m\n", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[31m(void)\"\x1b[31m!?\x1b[m\";\x1b[m\n", depth*4, "");
         return;
     }
 
     switch (stmt->kind) {
     case STMT_KIND_EMPTY:
-        fprintf(strm, "%*s;\n", (depth+1)*4, "");
+        fprintf(strm, "%*s/*-*/;\n", depth*4, "");
         break;
 
     case STMT_KIND_COMP:
@@ -379,13 +379,13 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_EXPR:
-        fprintf(strm, "%*s", (depth+1)*4, "");
+        fprintf(strm, "%*s", depth*4, "");
         print_cxpr(strm, ls, stmt->info.expr);
         fprintf(strm, ";\n");
         break;
 
     case STMT_KIND_DECL:
-        fprintf(strm, "%*s", (depth+1)*4, "");
+        fprintf(strm, "%*s", depth*4, "");
         print_decl(strm, ls, stmt->info.decl->decl);
         if (stmt->info.decl->expr) {
             fprintf(strm, " = ");
@@ -395,32 +395,32 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_IF:
-        fprintf(strm, "%*s\x1b[34mif\x1b[m (", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mif\x1b[m (", depth*4, "");
         print_cxpr(strm, ls, stmt->info.if_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.if_.body, depth+1);
         if (stmt->info.if_.else_) {
-            fprintf(strm, "%*s\x1b[34melse\x1b[m\n", (depth+1)*4, "");
-            print_stmt(strm, ls, stmt->info.if_.body, depth+1);
+            fprintf(strm, "%*s\x1b[34melse\x1b[m\n", depth*4, "");
+            print_stmt(strm, ls, stmt->info.if_.else_, depth+1);
         }
         break;
 
     case STMT_KIND_SWITCH:
-        fprintf(strm, "%*s\x1b[34mswitch\x1b[m (", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mswitch\x1b[m (", depth*4, "");
         print_cxpr(strm, ls, stmt->info.switch_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.switch_.body, depth+1);
         break;
 
     case STMT_KIND_WHILE:
-        fprintf(strm, "%*s\x1b[34mwhile\x1b[m (", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mwhile\x1b[m (", depth*4, "");
         print_cxpr(strm, ls, stmt->info.while_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.while_.body, depth+1);
         break;
 
     case STMT_KIND_DOWHILE:
-        fprintf(strm, "%*s\x1b[34mdo\x1b[m", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mdo\x1b[m", depth*4, "");
         print_stmt(strm, ls, stmt->info.dowhile.body, depth+1);
         fprintf(strm, "%*s\x1b[34mwhile (", depth, "");
         print_cxpr(strm, ls, stmt->info.dowhile.ctrl);
@@ -428,7 +428,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_FOR:
-        fprintf(strm, "%*s\x1b[34mfor\x1b[m (", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mfor\x1b[m (", depth*4, "");
         switch (stmt->info.for_.init->kind) {
         case STMT_KIND_EXPR:
             print_cxpr(strm, ls, stmt->info.expr);
@@ -459,15 +459,15 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_BREAK:
-        fprintf(strm, "%*s\x1b[34mbreak\x1b[m;\n", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mbreak\x1b[m;\n", depth*4, "");
         break;
 
     case STMT_KIND_CONTINUE:
-        fprintf(strm, "%*s\x1b[34mcontinue\x1b[m;\n", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mcontinue\x1b[m;\n", depth*4, "");
         break;
 
     case STMT_KIND_RETURN:
-        fprintf(strm, "%*s\x1b[34mreturn\x1b[m", (depth+1)*4, "");
+        fprintf(strm, "%*s\x1b[34mreturn\x1b[m", depth*4, "");
         if (stmt->info.return_) {
             fprintf(strm, " ");
             print_cxpr(strm, ls, stmt->info.return_);
@@ -476,7 +476,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_GOTO:
-        fprintf(strm, "%*s\x1b[34mgoto %s\x1b[m;\n", (depth+1)*4, "", tokn(stmt->info.goto_));
+        fprintf(strm, "%*s\x1b[34mgoto %s\x1b[m;\n", depth*4, "", tokn(stmt->info.goto_));
         break;
     }
 }

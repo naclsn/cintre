@@ -1811,12 +1811,14 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
         r->kind = STMT_KIND_COMP;
         ps->tok = lext(ps->ls);
         ps->disallow_decl = false;
-        if ('}' == *pstokn(ps->tok)) capt->then(ps, capt->next, r);
-        else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+        if ('}' == *pstokn(ps->tok)) {
+            ps->tok = lext(ps->ls);
+            capt->then(ps, capt->next, r);
+        } else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
                 .hold= NULL,
                 .next= capt,
                 .then= _parse_stmt_comp,
-            }, NULL);
+            }, &(statement){0});
         return;
     }
 
@@ -1947,13 +1949,15 @@ void _parse_stmt_comp(parse_stmt_state ref ps, struct _parse_stmt_capture ref ca
     struct stmt_comp_one niw = {.stmt= stmt};
 
     if (!comp->info.comp) comp->info.comp = &niw;
-    for (struct stmt_comp_one* curr = comp->info.comp; curr; curr = curr->next) if (!curr->next) {
+    else for (struct stmt_comp_one* curr = comp->info.comp; curr; curr = curr->next) if (!curr->next) {
         curr->next = &niw;
         break;
     }
 
-    if ('}' == *pstokn(ps->tok)) capt->then(ps, capt->next, comp);
-    else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+    if ('}' == *pstokn(ps->tok)) {
+        ps->tok = lext(ps->ls);
+        capt->then(ps, capt->next, comp);
+    } else _parse_stmt_top(ps, &(struct _parse_stmt_capture){
             .next= capt,
             .then= _parse_stmt_comp,
         }, &(statement){0});
@@ -1977,8 +1981,11 @@ void _parse_stmt_attach_body(parse_stmt_state ref ps, struct _parse_stmt_capture
                         .next= capt,
                         .then= _parse_stmt_attach_body,
                     }, &(statement){0});
+                return;
             }
         } else capt->hold->info.if_.else_ = stmt;
+
+        capt->then(ps, capt->next, capt->hold);
         return;
     }
 
@@ -1994,7 +2001,10 @@ void _parse_stmt_attach_body(parse_stmt_state ref ps, struct _parse_stmt_capture
                 .usr= (void*[2]){ps, capt},
                 .on= _parse_on_ctrl_expr,
             }, lext(ps->ls));
+        return;
     }
+
+    capt->then(ps, capt->next, capt->hold);
 }
 
 /// callback chain tail end which call user code

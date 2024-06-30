@@ -48,6 +48,7 @@ Bluntly the steps are:
 - `pr -m` merge and list namespaces in a way `cintre.o` can use
 - build `c-mylib.c`
 - build `cintre.o`, the `main()` of the REPL (here with readline) _(one time)_
+- link `mylib.o` `c-mylib.o` and `cintre.o`
 
 The `driver.Makefile` does exactly that, see `example/Makefile`.
 
@@ -63,7 +64,6 @@ Assumes platform is:
 ## (wip and such)
 
 ### breaking
-- never compatible with a typedef (eg. `xxd(buf, sz)`)
 - something's not right when doing `file_read(buf)`, the result has `.cap = 0`...
 - pr: bitfields here and there
 - pr: array size/align

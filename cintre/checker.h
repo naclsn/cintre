@@ -381,7 +381,9 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
             struct adpt_type cref param = tbase->info.fun.params[k].type;
             struct adpt_type const* arg;
             failforward(arg, cons->expr);
-            if (!_are_types_compatible(param, arg)) fail_got_2types(arg, param, "Argument and parameter %zu are not compatible", k+1);
+            struct adpt_type cref tparam = _truetype(param);
+            struct adpt_type cref targ = _truetype(arg);
+            if (!_are_types_compatible(tparam, targ)) fail_got_2types(arg, param, "Argument and parameter %zu are not compatible", k+1);
         }
         if (cons) {
             while (cons) k++, cons = cons->next;

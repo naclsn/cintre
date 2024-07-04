@@ -12,12 +12,12 @@
 #define ref * const
 #define cref const* const
 
+#define _HERE_STR(__ln) #__ln
+#define _HERE_XSTR(__ln) _HERE_STR(__ln)
 #ifdef LOC_NOTIF
-# define _HERE_STR(__ln) #__ln
-# define _HERE_XSTR(__ln) _HERE_STR(__ln)
-# define HERE "(" __FILE__ ":" _HERE_XSTR(__LINE__) ") "
+# define HERE(__fmt, ...) __FILE__ ":" _HERE_XSTR(__LINE__) ": (in %s) " __fmt "%c", __func__, __VA_ARGS__ '\n'
 #else
-# define HERE
+# define HERE(__fmt, ...) __fmt "%c", __VA_ARGS__ '\n'
 #endif
 
 #ifdef TRY_EXITF
@@ -30,7 +30,7 @@ static bool _try_jmp_flg = false;
 # define try if (1)
 # define exitf(...) (notif(__VA_ARGS__), exit(EXIT_FAILURE))
 #endif
-#define notif(...) (fflush(stdout), fprintf(stderr, HERE __VA_ARGS__), fputc(10, stderr))
+#define notif(...) (fflush(stdout), fprintf(stderr, HERE(__VA_ARGS__,)))
 
 #define _dyarr_allocfail  (exitf("OOM"), NULL)
 #include "dyarr.h"

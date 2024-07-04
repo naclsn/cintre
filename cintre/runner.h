@@ -12,6 +12,9 @@
 #ifndef CINTRE_RUNNER_H
 #define CINTRE_RUNNER_H
 
+// emit a bunch of verbose runtime
+#define _RUNR_VERBOSE_INSTRUCT 0
+
 #include "common.h"
 #include "adapter.h"
 #include "compiler.h"
@@ -39,57 +42,61 @@ void run(run_state ref rs, bytecode const code)
         nm = nm | (code.ptr[++k]&0x7f)<<(xx+= 7))
 #   define at(off, ty) ((ty*)(rs->stack+rs->sp+off))
 
+#   if _RUNR_VERBOSE_INSTRUCT
+#    define verbose(does, ...) (notif(#does " // " __VA_ARGS__), does)
+#   else
+#    define verbose(does, ...) (does)
+#   endif
+
     for (size_t k = 0; k < code.len; k++) switch (code.ptr[k]) {
     case 0x2a:
         imm(b);
-        char dbg[256];
-        memcpy(dbg, code.ptr+k+1, b);
+        notif("yyy: hit debug \"%.*s\"", (unsigned)b, code.ptr+k+1);
         k+= b;
-        notif("yyy: hit debug \"%.*s\"", (unsigned)b, dbg);
         // fall through
     case 0x00:
         continue;
 
-    case 0x0d: imm(a); rs->sp+= a; continue; // pop
-    case 0x0f: imm(a); rs->sp-= a; continue; // push
+    case 0x0d: imm(a); verbose(rs->sp+= a, "%zu, %zu", rs->sp, a); continue; // pop
+    case 0x0f: imm(a); verbose(rs->sp-= a, "%zu, %zu", rs->sp, a); continue; // push
 
     case 0x1d: // data
         imm(a);
         imm(b);
-        memcpy(at(a, char), code.ptr+k+1, b);
+        verbose(memcpy(at(a, char), code.ptr+k+1, b), "%zu, %zu, %zu", rs->sp+a, k+1, b);
         k+= b;
         continue;
     case 0x1f: // move
         imm(a);
         imm(b);
         imm(c);
-        memmove(at(a, char), at(c, char), b);
+        verbose(memmove(at(a, char), at(c, char), b), "%zu, %zu, %zu", rs->sp+a, rs->sp+c, b);
         continue;
 
     case 0x2d: // write
         imm(a);
         imm(b);
         imm(c);
-        memmove(*at(a, char*), at(c, char), b);
+        verbose(memmove(*at(a, char*), at(c, char), b), "%zu(%p), %zu, %zu", rs->sp+a, *at(a, void*), rs->sp+c, b);
         continue;
     case 0x2f: // read
         imm(a);
         imm(b);
         imm(c);
-        memmove(at(c, char), *at(a, char*), b);
+        verbose(memmove(at(c, char), *at(a, char*), b), "%zu, %zu(%p), %zu", rs->sp+c, rs->sp+a, *at(a, void*), b);
         continue;
 
     case 0x20: // lea
         imm(a);
         imm(b);
-        *at(a, char*) = at(b, char);
+        verbose(*at(a, char*) = at(b, char), "%zu(%p), %zu", rs->sp+a, *at(a, void*), rs->sp+b);
         continue;
 
 #       define cvt(code, from, to)  \
     case code:                      \
         imm(a);                     \
         imm(b);                     \
-        *at(a, to) = *at(b, from);  \
+        verbose(*at(a, to) = *at(b, from), "(%s -> %s) %zu, %zu", #from, #to, rs->sp+a, rs->sp+b);  \
         continue;
 #       define extend_cvt(from_w, from, to_w, to)      \
         cvt(from_w<<4 | to_w, signed from, signed to)  \
@@ -131,15 +138,16 @@ void run(run_state ref rs, bytecode const code)
             char* args[15];
             for (unsigned l = 0; l < hi; l++) {
                 imm(c);
-                args[l] = at(c, char);
+                verbose(args[l] = at(c, char), "[%u], %zu", l, rs->sp+c);
             }
-            fun(ret, args);
+            verbose(fun(ret, args), "(%zu)%p, (%zu), ...", rs->sp+b, *(void**)&fun, rs->sp+a);
             continue;
         }
 
         imm(a);
         imm(b);
         imm(c);
+        verbose((void)(a == b * c), "%zu, %zu~%zu, %zu~%zu", rs->sp+a, rs->sp+b, b, rs->sp+c, c);
         switch (hi) {
 #           define  _x( op, ty) *at(a, ty) = *at(b, ty) op *at(c, ty); continue;
 #           define  _xi(op, ty) *at(a, ty) = (ty)b      op *at(c, ty); continue;
@@ -183,6 +191,8 @@ void run(run_state ref rs, bytecode const code)
         notif("Unknown op code 0x%02x", code.ptr[k]);
         return;
     }
+
+#   undef verbose
 
 #   undef at
 #   undef imm

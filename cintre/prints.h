@@ -614,7 +614,7 @@ void print_code(FILE ref strm, bytecode const code)
         case 0x2a:
             fprintf(strm, "\x1b[34mdebug\x1b[m");
             imm(sze);
-            fprintf(strm, "\tbytes:\x1b[33m\"%.*s\"\x1b[m", (unsigned)sze, code.ptr+k);
+            fprintf(strm, "\tbytes:\x1b[33m\"%.*s\"\x1b[m", (unsigned)sze, code.ptr+k+1);
             k+= sze;
             break;
 

@@ -64,7 +64,6 @@ Assumes platform is:
 ## (wip and such)
 
 ### breaking
-- something's not right when doing `file_read(buf)`, the result has `.cap = 0`...
 - pr: bitfields here and there
 - pr: array size/align
 

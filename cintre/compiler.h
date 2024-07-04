@@ -39,6 +39,9 @@
 #include "adapter.h"
 #include "checker.h"
 
+// emit a bunch of random debugs
+#define _COMP_EMIT_EXTRA_DEBUG 0
+
 // yyy: the `compile_state` is actually defined in "checker.h"
 
 struct slot {
@@ -287,6 +290,20 @@ void _emit_extend(compile_state ref cs, struct slot cref big_dst, struct slot cr
             _slot_variable == big_dst->usage ? atv(big_dst) : at(big_dst),
             _slot_variable == small_src->usage ? atv(small_src) : at(small_src));
 }
+
+#if _COMP_EMIT_EXTRA_DEBUG
+# define _alloc_slot(cs, ...)     (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _alloc_slot(" #__VA_ARGS__ ")"),     _alloc_slot((cs), __VA_ARGS__))
+# define _cancel_slot(cs, ...)    (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _cancel_slot(" #__VA_ARGS__ ")"),    _cancel_slot((cs), __VA_ARGS__))
+# define _rewind_slot(cs, ...)    (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _rewind_slot(" #__VA_ARGS__ ")"),    _rewind_slot((cs), __VA_ARGS__))
+# define _emit_data(cs, ...)      (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_data(" #__VA_ARGS__ ")"),      _emit_data((cs), __VA_ARGS__))
+# define _emit_move(cs, ...)      (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_move(" #__VA_ARGS__ ")"),      _emit_move((cs), __VA_ARGS__))
+# define _emit_write(cs, ...)     (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_write(" #__VA_ARGS__ ")"),     _emit_write((cs), __VA_ARGS__))
+# define _emit_read(cs, ...)      (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_read(" #__VA_ARGS__ ")"),      _emit_read((cs), __VA_ARGS__))
+# define _emit_lea(cs, ...)       (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_lea(" #__VA_ARGS__ ")"),       _emit_lea((cs), __VA_ARGS__))
+# define _emit_call_base(cs, ...) (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_call_base(" #__VA_ARGS__ ")"), _emit_call_base((cs), __VA_ARGS__))
+# define _emit_arith(cs, ...)     (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_arith(" #__VA_ARGS__ ")"),     _emit_arith((cs), __VA_ARGS__))
+# define _emit_extend(cs, ...)    (_emit_debug((cs), _HERE_XSTR(__LINE__) ": _emit_extend(" #__VA_ARGS__ ")"),    _emit_extend((cs), __VA_ARGS__))
+#endif
 
 #define _cfold_arith_ints(dst, lhs, op, rhs)                                                      \
     do switch ((dst)->ty->tyty) {                                                                 \
@@ -845,7 +862,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             struct expr_call_arg const* cons = expr->info.call.first;
             size_t count = fun.ty->info.fun.count;
             for (size_t k = 0; k < count; k++, cons = cons->next) {
-                args[k].ty = fun.ty->info.fun.params[k].type;
+                args[k].ty = _truetype(fun.ty->info.fun.params[k].type);
                 _alloc_slot(cs, args+k);
 
                 _fit_expr_to_slot(cs, cons->expr, args+k);

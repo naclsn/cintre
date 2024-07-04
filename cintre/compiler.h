@@ -1334,16 +1334,18 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 return;
 
             case _slot_variable:
+                slot->usage = _slot_variable;
+                slot->as.variable = dst.as.variable;
                 break;
             }
 
             if (post) {
-                _emit_move(cs, at(slot), slot->ty->size, atv(slot));
+                _emit_move(cs, at(slot), slot->ty->size, atv(&dst));
                 slot->usage = _slot_used;
             }
-            _emit_arith(cs, op, _slot_arith_w(slot), atv(slot),
+            _emit_arith(cs, op, _slot_arith_w(&dst), atv(&dst),
                     ADPT_TYPE_PTR == slot->ty->tyty ? slot->ty->info.ptr->size : 1,
-                    atv(slot));
+                    atv(&dst));
 
             return;
         }

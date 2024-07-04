@@ -1249,17 +1249,25 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             }
 
             struct slot base = {.ty= base_ty};
+            _alloc_slot(cs, &base);
             compile_expression(cs, base_ex, &base);
-            // can be stack variable or static global object or a function's return;
-            // for now only support stack variable
-            if (_slot_variable != base.usage) {
-                notif("NIY: only supports stack variables for now");
-                slot->usage = _slot_used;
-                return;
-            }
 
-            slot->as.variable = base.as.variable+off;
-            slot->usage = _slot_variable;
+            switch (base.usage) {
+            case _slot_used:
+                slot->as.variable = base.loc+off;
+                slot->usage = _slot_variable;
+                //_rewind_slot(cs, &base); XXX: intentional leak, ideally handled by caller (didn't I have that somewhere else?)
+                break;
+
+            case _slot_variable:
+                _cancel_slot(cs, &base);
+                slot->as.variable = base.as.variable+off;
+                slot->usage = _slot_variable;
+                break;
+
+                // unreachable case
+            case _slot_value: break;
+            }
         }
         return;
 

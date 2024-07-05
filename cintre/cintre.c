@@ -45,32 +45,6 @@ typedef struct cintre_state {
 
 #define gstokn(__at) (gs->lexr.tokens.ptr+(__at))
 
-bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr, comp_alloc_checked_ator const alloc_checked)
-{
-    struct adpt_type const* ty = check_expression(cs, expr, alloc_checked);
-    if (!ty) return false;
-    struct slot slot = {.ty= _truetype(ty)};
-    _alloc_slot(cs, &slot);
-
-    compile_expression(cs, expr, &slot);
-    switch (slot.usage) {
-    case _slot_value:
-        _emit_data(cs, slot.loc-cs->vsp, slot.ty->size, slot.as.value.bytes);
-        break;
-
-    case _slot_used:
-        break;
-
-    case _slot_variable:
-        _emit_move(cs, slot.loc-cs->vsp, slot.ty->size, slot.as.variable-cs->vsp);
-        // yyy: result is a variable, show it and not "_"?
-        break;
-    }
-    slot.usage = _slot_used;
-
-    return true;
-}
-
 // readline {{{
 #ifdef USE_READLINE
 #include <readline/readline.h>
@@ -79,7 +53,7 @@ bool _compile_expression_tmp_wrap(compile_state ref cs, expression ref expr, com
 
 #define hist_file ".ignore/history"
 static struct cintre_state const* _prompt_rl_gs;
-static char cref _prompt_compl_cmds[] = {"help", "locals", "namespaces", "stacktop", "clstack", "save \"", "load \"", "qq", "qsave", "qload", "ast", "type", "bytecode", "silent"};
+static char cref _prompt_compl_cmds[] = {"help", "quit", "locals", "namespaces", "stacktop", "clstack", "save \"", "load \"", "qq", "qsave", "qload", "ast", "type", "bytecode", "silent"};
 static char cref _prompt_compl_kws[] = {"auto ", /*"bool ",*/ "break ", "case ", "char ", "const ", "continue ", "default ", "do ", "double ", "else ", "enum ", "extern ", /*"false ",*/ "float ", "for ", "goto ", "if ", /*"inline ",*/ "int ", "long ", /*"register ",*/ /*"restrict ",*/ "return ", "short ", "signed ", "sizeof ", /*"static ",*/ "struct ", "switch ", /*"true ",*/ "typedef ", /*"typeof ",*/ "union ", "unsigned ", "void ", /*"volatile ",*/ "while "};
 
 void _prompt_cc(int sigint)
@@ -633,6 +607,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     if (xcmdis("h")) {
         printf("List of commands:\n");
         printf("   h[elp]                  -  print this help\n");
+        printf("   q[uit]                  -  quits\n");
         printf("   loc[als]                -  list local names\n");
         printf("   names[paces] or ns      -  list names in namespace\n");
         printf("   sta[cktop]              -  top of the stack, ie everything allocated onto it\n");
@@ -646,6 +621,13 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         printf("   bytec[ode] or bc        -  internal bytecode from compilation\n");
         printf("   sil[ent]                -  do not print the result of the expression\n");
         printf("no command after the ; (or no ;) will simply execute the expression\n");
+        return;
+    }
+
+    if (xcmdis("q")) {
+        // XXX: not everything is freed, but whatever
+        cintre_cleanup(gs);
+        exit(EXIT_SUCCESS);
         return;
     }
 
@@ -811,8 +793,10 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
     gs->comp.res.len = 0;
     gs->chk_work.len = 0;
 
+    struct adpt_type cref ty = check_expression(&gs->comp, expr, cintre_alloc_checked);
+    if (!ty) return;
+
     if (xcmdis("ty")) {
-        struct adpt_type cref ty = check_expression(&gs->comp, expr, cintre_alloc_checked);
         if (!ty) return;
         printf("Expression is of type: ");
         if (ADPT_TYPE_NAMED == ty->tyty)
@@ -822,21 +806,46 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         return;
     }
 
-    bool const r = _compile_expression_tmp_wrap(&gs->comp, expr, cintre_alloc_checked);
-    if (!r) return;
+    struct slot slot = {.ty= _truetype(ty)};
+    _alloc_slot(&gs->comp, &slot);
+
+    compile_expression(&gs->comp, expr, &slot);
+    // XXX: mouai :/
+    if (_slot_value == slot.usage) {
+        _emit_data(&gs->comp, slot.loc - gs->comp.vsp, slot.ty->size, slot.as.value.bytes);
+        slot.usage = _slot_used;
+    }
+
+///    switch (slot.usage) {
+///    case _slot_value:
+///        _emit_data(&gs->comp, slot.loc - gs->comp.vsp, slot.ty->size, slot.as.value.bytes);
+///        break;
+///
+///    case _slot_used:
+///        break;
+///
+///    case _slot_variable:
+///        _emit_move(&gs->comp, slot.loc - gs->comp.vsp, slot.ty->size, slot.as.variable - gs->comp.vsp);
+///        // yyy: result is a variable, show it and not "_"?
+///        break;
+///    }
+///    slot.usage = _slot_used;
 
     if (xcmdis("bytec") || xcmdis("bc")) {
         printf("Resulting bytecode (%zuB):\n", gs->comp.res.len);
         print_code(stdout, gs->comp.res);
         return;
     }
+        printf("Resulting bytecode (%zuB):\n", gs->comp.res.len);
+        print_code(stdout, gs->comp.res);
 
     run(&gs->runr, gs->comp.res);
     struct adpt_item const res = {
         .name= "",
-        .type= expr->usr,
+        .type= slot.ty,
         .kind= ADPT_ITEM_VARIABLE,
-        .as.variable= gs->runr.sp,
+        // (YYY: atv/at)
+        .as.variable= gs->runr.sp + (_slot_variable == slot.usage ? slot.as.variable : slot.loc) - gs->comp.vsp,
     };
 
     if (!xcmdis("sil")) {// && res.type->size) { // FIXME: something is broken I have types of size 0 somehow
@@ -844,7 +853,11 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
         print_item(stdout, &res, gs->runr.stack, 0);
     }
 
+    // XXX: not great, not enough
     gs->runr.sp+= res.type->size; // yyy: free only result (keeps lits, bit loose tho, some alignment padding sticks around..)
+
+    // XXX: all this jazz ^^^ is somewhat temporary anyways until we have
+    //      a proper statement parser and compiler
 } // accept_expr
 // }}}
 

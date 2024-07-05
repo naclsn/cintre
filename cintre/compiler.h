@@ -819,17 +819,19 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 _alloc_slot(cs, &off);
                 _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
 
+                struct adpt_type cref item_tty = _truetype(base.ty->info.ptr);
+
                 if (_slot_value == off.usage) {
                     _cancel_slot(cs, &off);
                     _emit_arith(cs, _ops_addi, _slot_arith_w(&off),
                             at(&base),
-                            _slot_arith_v(&off)*base.ty->info.ptr->size,
+                            _slot_arith_v(&off)*item_tty->size,
                             at(&base));
                 } else {
                     if (1 != base.ty->info.arr.item->size) {
                         _emit_arith(cs, _ops_muli, _slot_arith_w(&off),
                                 at(&off),
-                                base.ty->info.ptr->size,
+                                item_tty->size,
                                 _slot_variable == off.usage ? atv(&off) : at(&off));
                         off.usage = _slot_used;
                     } else if (_slot_variable == off.usage) _cancel_slot(cs, &off);
@@ -1046,16 +1048,18 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 // which, granted, is likely the most common case, but not
                 // worth 'optimizing'
 
+                struct adpt_type cref item_tty = _truetype(slot->ty->info.ptr);
+
                 rhs.ty = &adptb_long_type;
                 _alloc_slot(cs, &rhs);
                 _fit_expr_to_slot(cs, off, &rhs);
                 if (_slot_value == rhs.usage) {
                     _cancel_slot(cs, &rhs);
-                    rhs.as.value.sl*= slot->ty->info.ptr->size;
+                    rhs.as.value.sl*= item_tty->size;
                 } else {
                     _emit_arith(cs, _ops_muli, _slot_arith_w(&rhs),
                             at(&rhs),
-                            slot->ty->info.ptr->size,
+                            item_tty->size,
                             _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
                     rhs.usage = _slot_used;
                 }
@@ -1232,16 +1236,61 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         _fit_expr_to_slot(cs, expr->info.cast.opr, slot);
         return;
 
-    case EXPR_UNOP_PMEMBER:
-        notif("NIY: pmember");
-        slot->usage = _slot_used;
+    case EXPR_UNOP_PMEMBER: {
+            expression cref base_ex = expr->info.member.base;
+            char cref name = cstokn(expr->info.member.name);
+            struct adpt_type cref base_ty = _truetype(base_ex->usr);
+
+            if (ADPT_TYPE_ARR == base_ty->tyty) {
+                notif("NIY: pmember with array");
+                slot->usage = _slot_used;
+                return;
+            }
+            struct adpt_type cref item_tty = _truetype(base_ty->info.ptr);
+
+            struct adpt_comp_desc cref comp = &item_tty->info.comp;
+            size_t off = 0;
+            for (size_t k = 0; k < comp->count; k++) if (!strcmp(name, comp->fields[k].name)) {
+                off = comp->fields[k].offset;
+                break;
+            }
+
+            struct slot base = {.ty= base_ty};
+            _alloc_slot(cs, &base);
+            compile_expression(cs, base_ex, &base);
+
+            if (_slot_value == base.usage) {
+                notif("IDK: pmember on a compile time - this is surely very wrong");
+                _cancel_slot(cs, &base);
+                slot->usage = _slot_used;
+                return;
+            }
+
+            if (_slot_variable == base.usage) _emit_move(cs, at(&base), base.ty->size, atv(&base));
+
+            // on the stack is the ptr (base)
+            // off is comp-time
+            // add onto base
+            // read from at base into slot over slot size
+
+            _emit_arith(cs, _ops_addi, _slot_arith_w(&(struct slot){.ty= &adptb_long_type}),
+                    at(&base),
+                    off,
+                    at(&base));
+
+            _emit_read(cs, at(&base), slot);
+            slot->usage = _slot_used;
+
+            _rewind_slot(cs, &base);
+        }
         return;
+
     case EXPR_UNOP_MEMBER: {
             expression cref base_ex = expr->info.member.base;
             char cref name = cstokn(expr->info.member.name);
             struct adpt_type cref base_ty = _truetype(base_ex->usr);
-            struct adpt_comp_desc cref comp = &base_ty->info.comp;
 
+            struct adpt_comp_desc cref comp = &base_ty->info.comp;
             size_t off = 0;
             for (size_t k = 0; k < comp->count; k++) if (!strcmp(name, comp->fields[k].name)) {
                 off = comp->fields[k].offset;
@@ -1256,7 +1305,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case _slot_used:
                 slot->as.variable = base.loc+off;
                 slot->usage = _slot_variable;
-                //_rewind_slot(cs, &base); XXX: intentional leak, ideally handled by caller (didn't I have that somewhere else?)
+                //_rewind_slot(cs, &base); XXX: intentional leak, typically handled by the next rewind in caller (didn't I have that somewhere else?)
                 break;
 
             case _slot_variable:

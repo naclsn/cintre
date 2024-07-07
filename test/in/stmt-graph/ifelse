@@ -1,0 +1,18 @@
+if (1 == k);
+if (2 == k); else;
+if (3 == k); else if (3 == k);
+
+if ("one") one: ; else
+if ("two") two: ; else
+if ("three") three: ; else
+more: ;
+
+maybe_one: if ("one") ; else
+maybe_two: if ("two") ; else
+maybe_three: if ("three") ; else
+more: ;
+
+if (1)
+    if (2) ;
+else ;
+    else ;

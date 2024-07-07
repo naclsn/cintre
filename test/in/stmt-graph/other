@@ -1,0 +1,7 @@
+;
+{}
+0;
+{;}
+char a;
+int b = 0;
+//float x, y; // TODO

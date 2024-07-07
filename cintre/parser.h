@@ -21,49 +21,44 @@
 ///     parse_expr_state expr_ps = {.ls= &ls, .usr= &my_state, .on= accept_expr};
 ///     tokt after = parse_expression(&expr_ps, lext(&ls));
 /// }
+///
+/// // (same with parse_stmt_state and parse_statement)
 /// ```
 ///
-/// It makes use of the call stack, meaning nothing is allocated on the heap
-/// and the result needs to be handled in the "accept" callback (or copied over
-/// to the heap at this point).
+/// It makes heavy use of the call stack, meaning nothing is allocated on the
+/// heap and the result needs to be handled in the "accept" callback (or copied
+/// over to the heap at this point).
 ///
-/// For simplicity, a `for`'s init is any statement and jump statements are
-/// allowed anywhere; this means the parser will accept valid C but also some
-/// invalid C such as:
+/// In parsing statements, jumps are allowed anywhere (think break, continue)
+/// same with labels (case and default), that is syntactically valid code will
+/// be parsed without thinking.
+///
+/// C's syntax is inherently ambiguous in a few points; in particular the
+/// followings can only be resolved by knowing the *kind* (such as 'type' or
+/// 'variable') of the identifier `some`:
 /// ```c
-/// for (break;;) // (which.. doesn't mean anything)
+/// void some(int); // (say)
+/// (some)(-1); // (then) should be a function call (because 'some' is of kind variable of type function)
+///
+/// typedef unsigned some; // (say)
+/// (some)(-1); // (then) should be a cast (because 'some' is of kind type)
+/// some* a; // (then) should be a declaration ('')
+///
+/// float some; // (say)
+/// some* a; // (then) should be a product (because 'some' is of kind variable of type arithmetic)
 /// ```
 ///
-/// Parsing (especially of declarations and expressions) does not need to know
-/// the kind of an identifier (in `size_t len`, the kind of `len` is "object"
-/// while the kind of `size_t` is "type"); however, beacause of the syntax of
-/// the cast operator, the C syntax is ambiguous:
-/// ```c
-/// void size_t(int); // (say)
-/// (size_t)(1+2*3); // should be a function call
-///
-/// int size_t; // (say)
-/// (size_t)-1; // should be a cast
-/// ```
-/// This case will be "sanely" handled as a cast operation, which means
-/// `(puts)("hi :3")` is also a cast to a type named `puts`.
-///
-/// Also the for loop:
-/// ```c
-/// typedef long unsigned size_t; // (say)
-/// for (size_t* k;;); // should be a declaration
-///
-/// int size_t; // (say)
-/// for (size_t * k;;); // should be an expression
-/// ```
-/// Idk what to do about it yet, but it should probably be parsed as
-/// declaration because it is very uselessly insane to have a pure 'name*name'
-/// expression here.
-
+/// This parser works without the kind of any symbol. It tries to go for the
+/// most 'sane' possibilities (in the examples above it would be the cast and
+/// the declaration) which _could_ be wrong. It also won't backtrack, so valid
+/// but 'unexpectedly weird' code will be considered erroneous erroneously.
 
 // TODO: once thoroughly tested, look for avoidable capture-copying (that could
 // be replaced with mutating an existing capture) and extraneous calls
 // (especially to _parse_expr_one_after)
+// XXX: a failing `_expect(tok, ..)` causes a shift in where the lexer is and
+// the token the user recieves after the call; because it is in a failed state
+// user code isn't expected to interpret anything anymore, but it is still weird
 
 #ifndef CINTRE_PARSER_H
 #define CINTRE_PARSER_H
@@ -293,8 +288,10 @@ typedef struct statement {
 
         struct expression* expr;
 
-        struct {
-            struct declaration* decl;
+        // TODO: needs to be changed to a linked list too
+        //       (because can have multiple declarators)
+        struct stmt_decl_expr {
+            struct declaration const* decl;
             struct expression* expr; // NULL if not given
         }* decl;
 
@@ -322,7 +319,7 @@ typedef struct statement {
         struct {
             struct expression* ctrl; // NULL if not given
             struct statement* body;
-            struct statement* init; // NULL if not given, _should_ only be declaration or expression (in valid C)
+            struct statement* init; // only empty or declaration or expression
             struct expression* iter; // NULL if not given
         } for_;
 
@@ -950,8 +947,8 @@ _parse_expr_closure_t _parse_expr_one, _parse_expr_one_post, _parse_expr_finish_
 
 void _parse_on_cast_type(void ref usr, declaration cref decl, tokt ref tok)
 {
-    void ref ref capt_ps = usr;
-    struct _parse_expr_capture ref capt = capt_ps[0]; parse_expr_state ref ps = capt_ps[1];
+    void ref ref ps_capt = usr;
+    parse_expr_state ref ps = ps_capt[0]; struct _parse_expr_capture ref capt = ps_capt[1];
     _expect1(tok);
     _expect(tok, ")");
 
@@ -1097,7 +1094,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
                 !strcmp("const",    pstokn(ps->tok)) )) {
             parse_declaration(&(parse_decl_state){
                     .ls= ps->ls,
-                    .usr= (void*[2]){capt, ps},
+                    .usr= (void*[2]){ps, capt},
                     .on= _parse_on_cast_type,
                 }, ps->tok);
             return;
@@ -1140,7 +1137,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
             lex_rewind(ps->ls, 1);
             parse_declaration(&(parse_decl_state){
                     .ls= ps->ls,
-                    .usr= (void*[2]){capt->next->next, ps},
+                    .usr= (void*[2]){ps, capt->next->next},
                     .on= _parse_on_cast_type,
                 }, atom.info.atom);
             return;
@@ -1154,7 +1151,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
             //          ^
             if (strchr("{(~!-+", *pstokn(ahead)) || firstcharlit(ahead) || firstcharid(ahead)) {
                 _parse_on_cast_type(
-                        (void*[2]){capt->next->next, ps},
+                        (void*[2]){ps, capt->next->next},
                         &(declaration){.type.name= atom.info.atom},
                         &ps->tok
                     );
@@ -1171,7 +1168,7 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
                     !strcmp("volatile", pstokn(ahead)) )) ) {
                 parse_declaration(&(parse_decl_state){
                         .ls= ps->ls,
-                        .usr= (void*[2]){capt->next->next, ps},
+                        .usr= (void*[2]){ps, capt->next->next},
                         .on= _parse_on_cast_type,
                         .base= &(declaration){.type.name= atom.info.atom},
                     }, ps->tok);
@@ -1736,26 +1733,48 @@ struct _parse_stmt_capture {
     struct _parse_stmt_capture ref next;
     _parse_stmt_closure_t ref then;
 };
-_parse_stmt_closure_t _parse_stmt_top, _parse_stmt_comp, _parse_stmt_attach_body, _parse_stmt_exit;
+_parse_stmt_closure_t _parse_stmt_top, _parse_stmt_comp, _parse_stmt_forinit, _parse_stmt_attach_body, _parse_stmt_exit;
 
-/// after the expression in parenthesis in (and including dowhile): ('if'|'switch'|'while') '(' <expr> ')'
+/// after the expression in parenthesis in (and including dowhile):
+/// - ('if'|'switch'|'while') '(' <expr> ')'
+/// - 'for' '(' .. <expr> ';' <expr> ')
 void _parse_on_ctrl_expr(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
 
     _expect1(tok);
-    _expect(tok, ")");
-    ps->tok = lext(ps->ls);
 
-    // (yyy: this is duck-typing -ish for any of if/switch/while/dowhile - same layout)
-    capt->hold->info.while_.ctrl = expr;
+    if (STMT_KIND_FOR == capt->hold->kind) {
+        char const c = *pstokn(*tok);
+        if (';' == c) {
+            capt->hold->info.for_.ctrl = expr;
+            parse_expression(&(parse_expr_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){ps, capt},
+                    .on= _parse_on_ctrl_expr,
+                }, lext(ps->ls));
+            return;
+        }
 
-    if (STMT_KIND_DOWHILE == capt->hold->kind) {
-        _expect(&ps->tok, ";");
+        _expect(tok, ")");
         ps->tok = lext(ps->ls);
-        capt->then(ps, capt->next, capt->hold);
-        return;
+        capt->hold->info.for_.iter = expr;
+    }
+
+    else {
+        _expect(tok, ")");
+        ps->tok = lext(ps->ls);
+
+        // (yyy: this is duck-typing -ish for any of if/switch/while/dowhile - same layout)
+        capt->hold->info.while_.ctrl = expr;
+
+        if (STMT_KIND_DOWHILE == capt->hold->kind) {
+            _expect(&ps->tok, ";");
+            ps->tok = lext(ps->ls);
+            capt->then(ps, capt->next, capt->hold);
+            return;
+        }
     }
 
     ps->disallow_decl = true;
@@ -1790,6 +1809,49 @@ void _parse_on_case_expr(void ref usr, expression ref expr, tokt ref tok)
         break;
     }
     _parse_stmt_top(ps, capt, capt->hold);
+}
+
+void _parse_on_stmt_expr(void ref usr, expression ref expr, tokt ref tok)
+{
+    void ref ref ps_capt = usr;
+    parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
+    _expect1(tok);
+    ps->tok = lext(ps->ls);
+    if (STMT_KIND_DECL == capt->hold->kind) {
+        capt->hold->info.decl->expr = expr;
+        if (',' == *pstokn(*tok)) {
+            // TODO
+            notif("NIY: multiple declarators in statement");
+            return;
+        }
+    } else capt->hold->info.expr = expr;
+    _expect(tok, ";");
+    capt->then(ps, capt->next, capt->hold);
+}
+
+void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok)
+{
+    void ref ref ps_capt = usr;
+    parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
+    _expect1(tok);
+    capt->hold->info.decl = &(struct stmt_decl_expr){.decl= decl};
+    if ('=' == *pstokn(*tok)) {
+        parse_expression(&(parse_expr_state){
+                .ls= ps->ls,
+                .usr= (void*[2]){ps, capt},
+                .on= _parse_on_stmt_expr,
+                .disallow_comma= true,
+            }, lext(ps->ls));
+        return;
+    }
+    if (',' == *pstokn(*tok)) {
+        // TODO
+        notif("NIY: multiple declarators in statement");
+        return;
+    }
+    _expect(tok, ";");
+    ps->tok = lext(ps->ls);
+    capt->then(ps, capt->next, capt->hold);
 }
 
 /// top level, so any statement (with optional labels) or a declaration (if not disallowed)
@@ -1850,17 +1912,15 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     }
 
     if (!strcmp("for", tok)) {
-        notif("NIY: parse for loop");
-        // the controlling thingies
-        // then virtually:
-        //ps->tok = lext(ps->ls);
-        //_expect(&ps->tok, ")");
-        //ps->tok = lext(ps->ls);
-        //ps->disallow_decl = true;
-        //_parse_stmt_top(ps, &(struct _parse_stmt_capture){
-        //        .next= capt,
-        //        .then= _parse_stmt_attach_body,
-        //    }, &(statement){0});
+        r->kind = STMT_KIND_FOR;
+        ps->tok = lext(ps->ls);
+        _expect(&ps->tok, "(");
+        ps->tok = lext(ps->ls);
+        ps->disallow_decl = false;
+        _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+                .next= capt,
+                .then= _parse_stmt_forinit
+            }, &(statement){0});
         return;
     }
 
@@ -1931,15 +1991,51 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
         lex_rewind(ps->ls, 1);
     }
 
-    if (!ps->disallow_decl) {
-        notif("NIY: maybe STMT_KIND_DECL");
-        // then virtually:
-        //if ('=' == *pstokn(tok)) { .. }
+    if (!ps->disallow_decl && !r->labels) {
+        if (isidstart(*tok) && (
+                !strcmp("char",     tok) ||
+                !strcmp("short",    tok) ||
+                !strcmp("int",      tok) ||
+                !strcmp("long",     tok) ||
+                !strcmp("signed",   tok) ||
+                !strcmp("unsigned", tok) ||
+                !strcmp("float",    tok) ||
+                !strcmp("double",   tok) ||
+                !strcmp("void",     tok) ||
+                !strcmp("struct",   tok) ||
+                !strcmp("union",    tok) ||
+                !strcmp("enum",     tok) ||
+                !strcmp("typedef",  tok) ||
+                !strcmp("static",  tok)  ||
+                !strcmp("extern",  tok)  ||
+                !strcmp("const",    tok) )) {
+            r->kind = STMT_KIND_DECL;
+            parse_declaration(&(parse_decl_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){ps, capt},
+                    .on= _parse_on_stmt_decl,
+                }, ps->tok);
+            return;
+        }
+        // TODO: some other cases that can be identified:
+        // - ident const
+        // - ident**
+        // - ident* (
+        // - actually, will simply consider ident* to be a declaration
+        // - ident (*
+        // - ident ident
+        // so that is:
+        // - ident ident
+        // - ident*
+        // - ident (*
     }
 
-    notif("NIY: maybe STMT_KIND_EXPR");
-
-    report_lex_locate(ps->ls, "Expected statement or declaration, got %s", quoted(pstokn(ps->tok)));
+    r->kind = STMT_KIND_EXPR;
+    parse_expression(&(parse_expr_state){
+            .ls= ps->ls,
+            .usr= (void*[2]){ps, capt},
+            .on= _parse_on_stmt_expr,
+        }, ps->tok);
 }
 
 /// the content and closing of: '{' {<stmt>} '}'
@@ -1961,6 +2057,43 @@ void _parse_stmt_comp(parse_stmt_state ref ps, struct _parse_stmt_capture ref ca
             .next= capt,
             .then= _parse_stmt_comp,
         }, &(statement){0});
+}
+
+/// sets the 'init' of a for, then parses the <expr> ';' <expr> ')' (also with _parse_on_ctrl_expr)
+void _parse_stmt_forinit(parse_stmt_state ref ps, struct _parse_stmt_capture ref capt, statement ref stmt)
+{
+    if (STMT_KIND_EMPTY != stmt->kind && STMT_KIND_EXPR != stmt->kind && STMT_KIND_DECL != stmt->kind) {
+        report_lex_locate(ps->ls, "Expected statement or declaration in for loop init statement");
+        return;
+    }
+    if (stmt->labels) {
+        report_lex_locate(ps->ls, "Unexpected label in for loop init statement");
+        return;
+    }
+
+    capt->hold->info.for_.init = stmt;
+
+    _expect1(&ps->tok);
+    if (';' == *pstokn(ps->tok)) {
+        ps->tok = lext(ps->ls);
+        _expect1(&ps->tok);
+        if (')' == *pstokn(ps->tok)) {
+            ps->tok = lext(ps->ls);
+
+            ps->disallow_decl = true;
+            _parse_stmt_top(ps, &(struct _parse_stmt_capture){
+                    .next= capt,
+                    .then= _parse_stmt_attach_body,
+                }, &(statement){0});
+            return;
+        }
+    }
+
+    parse_expression(&(parse_expr_state){
+            .ls= ps->ls,
+            .usr= (void*[2]){ps, capt},
+            .on= _parse_on_ctrl_expr,
+        }, ps->tok);
 }
 
 /// attaches the body in each of:

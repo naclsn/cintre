@@ -24,6 +24,7 @@
 #include "runner.h"
 
 void print_decl(FILE ref strm, struct lex_state cref ls, declaration cref decl);
+// TODO: phase out print_expr or rename it, so the current print_cxpr can be renamed print_expr
 void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr, unsigned const depth);
 void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr);
 void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth);
@@ -361,6 +362,14 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
 
 void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth)
 {
+    for (struct stmt_label const* curr = stmt->labels; curr; curr = curr->next) {
+        if (curr->case_) {
+            fprintf(strm, "\x1b[36mcase\x1b[m ");
+            print_cxpr(strm, ls, curr->case_);
+            fprintf(strm, ":\n");
+        } else fprintf(strm, "\x1b[36m%s\x1b[m:\n", ls->tokens.ptr+curr->name);
+    }
+
     if (!stmt) {
         fprintf(strm, "%*s\x1b[31m(void)\"\x1b[31m!?\x1b[m\";\x1b[m\n", depth*4, "");
         return;
@@ -420,9 +429,9 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_DOWHILE:
-        fprintf(strm, "%*s\x1b[34mdo\x1b[m", depth*4, "");
+        fprintf(strm, "%*s\x1b[34mdo\x1b[m\n", depth*4, "");
         print_stmt(strm, ls, stmt->info.dowhile.body, depth+1);
-        fprintf(strm, "%*s\x1b[34mwhile (", depth, "");
+        fprintf(strm, "%*s\x1b[34mwhile\x1b[m (", depth*4, "");
         print_cxpr(strm, ls, stmt->info.dowhile.ctrl);
         fprintf(strm, ");\n");
         break;
@@ -431,31 +440,33 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         fprintf(strm, "%*s\x1b[34mfor\x1b[m (", depth*4, "");
         switch (stmt->info.for_.init->kind) {
         case STMT_KIND_EXPR:
-            print_cxpr(strm, ls, stmt->info.expr);
+            print_cxpr(strm, ls, stmt->info.for_.init->info.expr);
             break;
         case STMT_KIND_DECL:
-            print_decl(strm, ls, stmt->info.decl->decl);
-            if (stmt->info.decl->expr) {
+            print_decl(strm, ls, stmt->info.for_.init->info.decl->decl);
+            if (stmt->info.for_.init->info.decl->expr) {
                 fprintf(strm, " = ");
-                print_cxpr(strm, ls, stmt->info.decl->expr);
+                print_cxpr(strm, ls, stmt->info.for_.init->info.decl->expr);
             }
             break;
-        case STMT_KIND_EMPTY:    fprintf(strm, "\x1b[31mSTMT_KIND_EMPTY\x1b[m");    break;
-        case STMT_KIND_COMP:     fprintf(strm, "\x1b[31mSTMT_KIND_COMP\x1b[m");     break;
-        case STMT_KIND_IF:       fprintf(strm, "\x1b[31mSTMT_KIND_IF\x1b[m");       break;
-        case STMT_KIND_SWITCH:   fprintf(strm, "\x1b[31mSTMT_KIND_SWITCH\x1b[m");   break;
-        case STMT_KIND_WHILE:    fprintf(strm, "\x1b[31mSTMT_KIND_WHILE\x1b[m");    break;
-        case STMT_KIND_DOWHILE:  fprintf(strm, "\x1b[31mSTMT_KIND_DOWHILE\x1b[m");  break;
-        case STMT_KIND_FOR:      fprintf(strm, "\x1b[31mSTMT_KIND_FOR\x1b[m");      break;
-        case STMT_KIND_BREAK:    fprintf(strm, "\x1b[31mSTMT_KIND_BREAK\x1b[m");    break;
-        case STMT_KIND_CONTINUE: fprintf(strm, "\x1b[31mSTMT_KIND_CONTINUE\x1b[m"); break;
-        case STMT_KIND_RETURN:   fprintf(strm, "\x1b[31mSTMT_KIND_RETURN\x1b[m");   break;
-        case STMT_KIND_GOTO:     fprintf(strm, "\x1b[31mSTMT_KIND_GOTO\x1b[m");     break;
+        case STMT_KIND_EMPTY:
+            break;
+            // unreachable cases
+        case STMT_KIND_COMP:     fprintf(strm, "\x1b[31m/*STMT_KIND_COMP*/\x1b[m");     break;
+        case STMT_KIND_IF:       fprintf(strm, "\x1b[31m/*STMT_KIND_IF*/\x1b[m");       break;
+        case STMT_KIND_SWITCH:   fprintf(strm, "\x1b[31m/*STMT_KIND_SWITCH*/\x1b[m");   break;
+        case STMT_KIND_WHILE:    fprintf(strm, "\x1b[31m/*STMT_KIND_WHILE*/\x1b[m");    break;
+        case STMT_KIND_DOWHILE:  fprintf(strm, "\x1b[31m/*STMT_KIND_DOWHILE*/\x1b[m");  break;
+        case STMT_KIND_FOR:      fprintf(strm, "\x1b[31m/*STMT_KIND_FOR*/\x1b[m");      break;
+        case STMT_KIND_BREAK:    fprintf(strm, "\x1b[31m/*STMT_KIND_BREAK*/\x1b[m");    break;
+        case STMT_KIND_CONTINUE: fprintf(strm, "\x1b[31m/*STMT_KIND_CONTINUE*/\x1b[m"); break;
+        case STMT_KIND_RETURN:   fprintf(strm, "\x1b[31m/*STMT_KIND_RETURN*/\x1b[m");   break;
+        case STMT_KIND_GOTO:     fprintf(strm, "\x1b[31m/*STMT_KIND_GOTO*/\x1b[m");     break;
         }
-        fprintf(strm, "; ");
-        if (stmt->info.for_.ctrl) print_cxpr(strm, ls, stmt->info.for_.ctrl);
-        fprintf(strm, "; ");
-        if (stmt->info.for_.iter) print_cxpr(strm, ls, stmt->info.for_.iter);
+        fprintf(strm, ";"); if (stmt->info.for_.ctrl) fprintf(strm, " "), print_cxpr(strm, ls, stmt->info.for_.ctrl);
+        fprintf(strm, ";"); if (stmt->info.for_.iter) fprintf(strm, " "), print_cxpr(strm, ls, stmt->info.for_.iter);
+        fprintf(strm, ")\n");
+        print_stmt(strm, ls, stmt->info.for_.body, depth+1);
         break;
 
     case STMT_KIND_BREAK:

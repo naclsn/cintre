@@ -3,9 +3,8 @@
 Situation: you have a C lib (header/s + obj/ar/shared)
 
 Idea: automatically make a program that is a REPL linked against this lib, you
-enter C expressions, can interact with everything exposed in the header
-(declare variables with lib types, call lib functions, ...) as if you were
-writing a `main()` and compiling it over and over and editing it and mixing the order of the arguments and recompiling it and not thinking about having a `printf` right here and it should be printing something else and that was just an off by one and-
+enter C code, can interact with everything exposed in the header (declare
+variables with lib types, call lib functions, ...)
 
 ---
 
@@ -69,11 +68,13 @@ Assumes platform is:
 
 ### progress
 - pr: macros, like Err codes
-- pr: emit compound literals (somewhat breaking technically)
 - more conversions in `_fit_expr_to_slot`
 - handle bitfields in runtime types
 
 ### opti/cleanup
+- expect1
+- print\_expr/cxpr
+- better print\_cxpr (would be print\_expr)
 - maybe reverse the sp and vsp to have sane zero init (// xxx: sizeof stack)
 - (limit avoidable capture-copying)
 - go through tokn(...) to reduce expansion in favor of locals

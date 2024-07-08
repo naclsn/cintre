@@ -353,22 +353,21 @@ tokt parse_statement(parse_stmt_state ref ps, tokt const tok);
 
 #define pstokn(__at) (ps->ls->tokens.ptr+(__at))
 
-// TODO: phase out probably
 #define _expect1(_tok)                                                \
-    if (!*pstokn(*(_tok)) && (                                        \
+    if (!*pstokn((_tok)) && (                                         \
         report_lex_locate(ps->ls, "Unexpected end of input"), true))  \
         return
-// TODO: make it not a pointer
-#define _expect(_tok, ...)                                                                                  \
-    for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                             \
-        if (*_it) if (!strcmp(*_it, pstokn(*(_tok)))) break; else continue;                                 \
-        else if (                                                                                           \
-            report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got %s", quoted(pstokn(*(_tok)))), true)  \
+#define _expect(_tok, ...)                                                                          \
+    for (char const* const* _it = (char const*[]){__VA_ARGS__, NULL} ;3; _it++)                     \
+        if (*_it) if (!strcmp(*_it, pstokn((_tok)))) break; else continue;                          \
+        else if (                                                                                   \
+            report_lex_locate(ps->ls, "Expected " #__VA_ARGS__ ", got %s", _butgot((_tok))), true)  \
             return
-#define _expectid(_tok)                                                                            \
-    if (!isidstart(*pstokn(*(_tok))) && (                                                          \
-        report_lex_locate(ps->ls, "Expected identifier, got %s", quoted(pstokn(*(_tok)))), true))  \
+#define _expectid(_tok)                                                                    \
+    if (!isidstart(*pstokn((_tok))) && (                                                   \
+        report_lex_locate(ps->ls, "Expected identifier, got %s", _butgot((_tok))), true))  \
         return
+#define _butgot(_tok) (!*pstokn((_tok)) ? "end of input" : quoted(pstokn((_tok))))
 
 // parse declaration {{{
 struct _parse_decl_capture;
@@ -389,8 +388,7 @@ void _parse_on_array_size(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref decl_ps_capt = usr;
     declaration ref arr = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
-    _expect1(tok);
-    _expect(tok, "]");
+    _expect(*tok, "]");
     arr->type.info.arr.count = expr;
     ps->tok = lext(ps->ls);
     _parse_decl_post(ps, capt, arr);
@@ -399,15 +397,12 @@ void _parse_on_enumer_value(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref decl_ps_capt = usr;
     declaration ref enu = decl_ps_capt[0]; parse_decl_state ref ps = decl_ps_capt[1]; struct _parse_decl_capture ref capt = decl_ps_capt[2];
-    _expect1(tok);
+    _expect(*tok, ",", "}");
     for_linked (enu->type.info,enu) if (!curr->next) {
         curr->expr = expr;
         break;
     }
-    if (',' == *pstokn(*tok)) {
-        ps->tok = lext(ps->ls);
-        _expect1(&ps->tok);
-    } else ps->tok = *tok;
+    ps->tok = ',' == *pstokn(*tok) ? lext(ps->ls) : *tok;
     if ('}' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, enu);
@@ -417,15 +412,14 @@ void _parse_on_bitfield_width(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref decl_ps_capt = usr;
     declaration ref comp = decl_ps_capt[0], ref base = decl_ps_capt[1]; parse_decl_state ref ps = decl_ps_capt[2]; struct _parse_decl_capture ref capt = decl_ps_capt[3];
-    _expect1(tok);
-    _expect(tok, ",", ";");
+    _expect(*tok, ",", ";");
     for_linked (comp->type.info,comp) if (!curr->next) {
         curr->bitw = expr;
         break;
     }
     bool const reset = ';' == *pstokn(*tok);
     ps->tok = lext(ps->ls);
-    _expect1(&ps->tok);
+    _expect1(ps->tok);
     if (reset && '}' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, comp);
@@ -445,7 +439,7 @@ void _parse_on_bitfield_width(void ref usr, expression ref expr, tokt ref tok)
 /// pre-ish declarator part with '('<decl>')' | '*'<decl>
 void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl)
 {
-    _expect1(&ps->tok);
+    _expect1(ps->tok);
     switch (*pstokn(ps->tok)) {
     case '(':
         ps->tok = lext(ps->ls);
@@ -497,8 +491,7 @@ void _parse_decl_ator(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 /// skip closing parenthesis and parse post
 void _parse_decl_close(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref decl)
 {
-    _expect1(&ps->tok);
-    _expect(&ps->tok, ")");
+    _expect(ps->tok, ")");
     ps->tok = lext(ps->ls);
 
     declaration ref before = capt->hold;
@@ -558,8 +551,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
 
         if (!strcmp("...", pstokn(ps->tok))) {
             ps->tok = lext(ps->ls);
-            _expect1(&ps->tok);
-            _expect(&ps->tok, ")");
+            _expect(ps->tok, ")");
             ps->tok = lext(ps->ls);
 
             fun.type.info.fun.count = 1;
@@ -603,8 +595,7 @@ void _parse_decl_post(parse_decl_state ref ps, struct _parse_decl_capture ref ca
         switch (*pstokn(ps->tok)) {
         case '*':
             ps->tok = lext(ps->ls);
-            _expect1(&ps->tok);
-            _expect(&ps->tok, "]");
+            _expect(ps->tok, "]");
             // fall through
         case ']':
             ps->tok = lext(ps->ls);
@@ -629,7 +620,7 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
     struct decl_type_param node = {.decl= decl}; // here so it's not deallocated before the recursion
     declaration ref fun = capt->hold;
 
-    _expect1(&ps->tok);
+    _expect1(ps->tok);
     bool const last = ')' == *pstokn(ps->tok);
     if (last || ',' == *pstokn(ps->tok)) {
         union decl_type_info ref info = &fun->type.info;
@@ -637,8 +628,7 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
 
         if (!strcmp("...", pstokn(ps->tok))) {
             ps->tok = lext(ps->ls);
-            _expect1(&ps->tok);
-            _expect(&ps->tok, ")");
+            _expect(ps->tok, ")");
             ps->tok = lext(ps->ls);
 
             info->fun.count++;
@@ -659,7 +649,7 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
             if (last) {
                 info->fun.count = -1; // eg. `int a();`
                 _parse_decl_post(ps, capt, fun);
-            } else report_lex_locate(ps->ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
+            } else report_lex_locate(ps->ls, "Expected parameter declaration, got %s", _butgot(ps->tok));
             return;
         }
 
@@ -677,10 +667,10 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
             return;
         }
 
-        _expect1(&ps->tok);
+        _expect1(ps->tok);
     }
     if (')' == *pstokn(ps->tok)) {
-        report_lex_locate(ps->ls, "Expected parameter declaration, got %s", quoted(pstokn(ps->tok)));
+        report_lex_locate(ps->ls, "Expected parameter declaration, got %s", _butgot(ps->tok));
         return;
     }
 
@@ -694,15 +684,14 @@ void _parse_decl_params(parse_decl_state ref ps, struct _parse_decl_capture ref 
 void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref capt, declaration ref _)
 {
     (void)_;
-    _expect1(&ps->tok);
-    _expectid(&ps->tok);
+    _expectid(ps->tok);
 
     struct decl_type_enumer node = {.name= ps->tok}; // here so it's not deallocated before the recursion
     declaration ref enu = capt->hold;
     union decl_type_info ref info = &enu->type.info;
 
     ps->tok = lext(ps->ls);
-    _expect1(&ps->tok);
+    _expect(ps->tok, ",", "=", "}");
 
     info->enu.count++;
     if (!info->enu.first) info->enu.first = &node;
@@ -722,10 +711,8 @@ void _parse_decl_enumer(parse_decl_state ref ps, struct _parse_decl_capture ref 
         return;
     }
 
-    if (',' == *pstokn(ps->tok)) {
+    if (',' == *pstokn(ps->tok))
         ps->tok = lext(ps->ls);
-        _expect1(&ps->tok);
-    }
     if ('}' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, enu);
@@ -739,16 +726,16 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
     declaration ref comp = ((declaration**)capt->hold)[0]; // yyy: see at call location as for what is all that
     declaration* ref base = ((declaration**)capt->hold)+1;
 
-    _expect1(&ps->tok);
+    _expect1(ps->tok);
     bool const bitw = ':' == *pstokn(ps->tok);
     bool const reset = ';' == *pstokn(ps->tok);
     if (bitw || reset || ',' == *pstokn(ps->tok)) {
         union decl_type_info ref info = &comp->type.info;
         ps->tok = lext(ps->ls);
-        _expect1(&ps->tok);
+        _expect1(ps->tok);
 
         if (!decl) {
-            report_lex_locate(ps->ls, "Expected field declaration, got %s", quoted(pstokn(ps->tok)));
+            report_lex_locate(ps->ls, "Expected field declaration, got %s", _butgot(ps->tok));
             return;
         }
 
@@ -770,10 +757,7 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
         }
 
         if ('}' == *pstokn(ps->tok)) {
-            if (!reset) {
-                _expect(&ps->tok, ";");
-                return;
-            }
+            if (!reset) { _expect(ps->tok, ";"); }
             ps->tok = lext(ps->ls);
             _parse_decl_ator(ps, capt, comp);
             return;
@@ -781,10 +765,7 @@ void _parse_decl_fields(parse_decl_state ref ps, struct _parse_decl_capture ref 
     }
 
     if ('}' == *pstokn(ps->tok)) {
-        if (decl) {
-            _expect(&ps->tok, ";");
-            return;
-        }
+        if (decl) { _expect(ps->tok, ";"); }
         ps->tok = lext(ps->ls);
         _parse_decl_ator(ps, capt, comp);
         return;
@@ -898,7 +879,7 @@ void _parse_decl_spec(parse_decl_state ref ps, struct _parse_decl_capture ref ca
             return;
         }
 
-        report_lex_locate(ps->ls, "Expected declarator, got %s", quoted(pstokn(ps->tok)));
+        report_lex_locate(ps->ls, "Expected declarator, got %s", _butgot(ps->tok));
         return;
     } // for-switch tok
 
@@ -916,6 +897,7 @@ void _parse_decl_exit(parse_decl_state ref ps, struct _parse_decl_capture ref _,
 
 tokt parse_declaration(parse_decl_state ref ps, tokt tok)
 {
+    _expect1(tok) tok;
     ps->tok = tok;
     declaration base = {0};
     if (!ps->base) ps->base = &base;
@@ -949,14 +931,11 @@ void _parse_on_cast_type(void ref usr, declaration cref decl, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_expr_state ref ps = ps_capt[0]; struct _parse_expr_capture ref capt = ps_capt[1];
-    _expect1(tok);
-    _expect(tok, ")");
+    _expect(*tok, ")");
 
     ps->tok = lext(ps->ls);
-    _expect1(&ps->tok);
 
     if ('{' == *pstokn(ps->tok)) {
-        *tok = ps->tok;
         expression complit = {.kind= EXPR_COMPLIT, .info.comp.type= &decl->type};
         // yyy: capt->hold = &complit?
         _parse_expr_comp(ps, &(struct _parse_expr_capture){
@@ -1040,7 +1019,7 @@ enum expr_kind _parse_is_infix(char cref tok, bool const disallow_comma)
 /// parse one, including the prefix: [<prefix>] (<atom> | '('<expr>')') [<postfix>]
 void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref is_in_par)
 {
-    _expect1(&ps->tok);
+    _expect1(ps->tok);
 
     if (ps->allow_topcomplit) {
         if ('{' == *pstokn(ps->tok)) {
@@ -1075,7 +1054,6 @@ void _parse_expr_one(parse_expr_state ref ps, struct _parse_expr_capture ref cap
 
     if ('(' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
-        _expect1(&ps->tok);
 
         if (firstcharid(ps->tok) && (
                 !strcmp("char",     pstokn(ps->tok)) ||
@@ -1207,8 +1185,7 @@ void _parse_expr_one_post(parse_expr_state ref ps, struct _parse_expr_capture re
 /// skip a closing parenthesis in: '('<expr>')' [<postfix>]
 void _parse_expr_one_lext_parenth(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr)
 {
-    _expect1(&ps->tok);
-    _expect(&ps->tok, ")");
+    _expect(ps->tok, ")");
     // yyy: any non null if disallow comma was set
     ps->disallow_comma = !!capt->hold;
     ps->tok = lext(ps->ls);
@@ -1219,8 +1196,7 @@ void _parse_expr_one_lext_parenth(parse_expr_state ref ps, struct _parse_expr_ca
 /// skip a closing bracket and set the offset ("within"): <expr> '['<off>']' [<postfix>]
 void _parse_expr_one_lext_oneafter(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref within)
 {
-    _expect1(&ps->tok);
-    _expect(&ps->tok, "]");
+    _expect(ps->tok, "]");
     capt->hold->info.subscr.off = within;
     // yyy: any non null if disallow comma was set
     ps->disallow_comma = !!capt->hold->usr;
@@ -1233,8 +1209,7 @@ void _parse_expr_one_lext_oneafter(parse_expr_state ref ps, struct _parse_expr_c
 /// parse the arguments of a function call: <expr> '('<args>','..')' [<postfix>]
 void _parse_expr_fun_args(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr)
 {
-    _expect1(&ps->tok);
-    _expect(&ps->tok, ",", ")");
+    _expect(ps->tok, ",", ")");
 
     expression ref callbase = capt->hold;
     struct expr_call_arg* it = callbase->info.call.first;
@@ -1265,12 +1240,11 @@ void _parse_expr_fun_args(parse_expr_state ref ps, struct _parse_expr_capture re
 /// parse a compound literal starting at the '{'
 void _parse_expr_comp(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref expr)
 {
-    _expect1(&ps->tok);
     struct expr_comp_entry niw = {0};
     expression ref complit = capt->hold;
 
     if (!expr) {
-        _expect(&ps->tok, "{");
+        _expect(ps->tok, "{");
 
         ps->tok = lext(ps->ls);
         if ('}' == *pstokn(ps->tok)) {
@@ -1287,7 +1261,7 @@ void _parse_expr_comp(parse_expr_state ref ps, struct _parse_expr_capture ref ca
     }
 
     else {
-        _expect(&ps->tok, ",", "}");
+        _expect(ps->tok, ",", "}");
 
         if (',' == *pstokn(ps->tok)) ps->tok = lext(ps->ls);
         bool const last = '}' == *pstokn(ps->tok);
@@ -1325,8 +1299,7 @@ void _parse_expr_comp_desig(parse_expr_state ref ps, struct _parse_expr_capture 
             break;
         }
 
-        _expect1(&ps->tok);
-        _expect(&ps->tok, "]");
+        _expect(ps->tok, "]");
         ps->disallow_comma = true;
         ps->allow_topcomplit = true;
         ps->tok = lext(ps->ls);
@@ -1338,9 +1311,8 @@ void _parse_expr_comp_desig(parse_expr_state ref ps, struct _parse_expr_capture 
     };
 
     if (!niw.is_field && !niw.is_subscript) {
-        _expect1(&ps->tok);
         if (entry->desig) {
-            _expect(&ps->tok, "=");
+            _expect(ps->tok, "=");
             ps->tok = lext(ps->ls);
         }
 
@@ -1449,8 +1421,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
     case '.':
             if (pstokn(ps->tok)[1]) break;
         tokt name = lext(ps->ls);
-        _expect1(&name);
-        _expectid(&name);
+        _expectid(name);
         expression access = {
             .kind= pmem ? EXPR_UNOP_PMEMBER : EXPR_UNOP_MEMBER,
             .info.member= {.base= expr, .name= name},
@@ -1466,8 +1437,7 @@ void _parse_expr_one_after(parse_expr_state ref ps, struct _parse_expr_capture r
 /// lands there after the first branch of the ternary, so on the ':', no comma op in the third operand
 void _parse_expr_tern_cond(parse_expr_state ref ps, struct _parse_expr_capture ref capt, expression ref consequence)
 {
-    _expect1(&ps->tok);
-    _expect(&ps->tok, ":");
+    _expect(ps->tok, ":");
     expression ref condition_root = capt->hold;
     expression branches = {.kind= EXPR_BINOP_TERNBRANCH, .info.binary.lhs= consequence};
     condition_root->info.binary.rhs = &branches;
@@ -1719,6 +1689,7 @@ void _parse_expr_exit(parse_expr_state ref ps, struct _parse_expr_capture ref _,
 
 tokt parse_expression(parse_expr_state ref ps, tokt tok)
 {
+    _expect1(tok) tok;
     ps->tok = tok;
     _parse_expr_one(ps, &(struct _parse_expr_capture){.then= _parse_expr_entry}, NULL);
     return ps->tok;
@@ -1743,34 +1714,38 @@ void _parse_on_ctrl_expr(void ref usr, expression ref expr, tokt ref tok)
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
 
-    _expect1(tok);
-
     if (STMT_KIND_FOR == capt->hold->kind) {
-        char const c = *pstokn(*tok);
-        if (';' == c) {
+        // xxx: this makes eg `for (1; 2; 3; 4; 5; 6)` possible and parse as `for (1; 5; 6)`...
+        if (';' == *pstokn(*tok)) {
             capt->hold->info.for_.ctrl = expr;
+
+            ps->tok = lext(ps->ls);
+            if (')' == *pstokn(ps->tok)) goto for_semi_cpar;
+
             parse_expression(&(parse_expr_state){
                     .ls= ps->ls,
                     .usr= (void*[2]){ps, capt},
                     .on= _parse_on_ctrl_expr,
-                }, lext(ps->ls));
+                }, ps->tok); //lext(ps->ls));
             return;
         }
 
-        _expect(tok, ")");
-        ps->tok = lext(ps->ls);
         capt->hold->info.for_.iter = expr;
+
+        _expect(*tok, ")");
+for_semi_cpar:
+        ps->tok = lext(ps->ls);
     }
 
     else {
-        _expect(tok, ")");
+        _expect(*tok, ")");
         ps->tok = lext(ps->ls);
 
         // (yyy: this is duck-typing -ish for any of if/switch/while/dowhile - same layout)
         capt->hold->info.while_.ctrl = expr;
 
         if (STMT_KIND_DOWHILE == capt->hold->kind) {
-            _expect(&ps->tok, ";");
+            _expect(ps->tok, ";");
             ps->tok = lext(ps->ls);
             capt->then(ps, capt->next, capt->hold);
             return;
@@ -1788,8 +1763,7 @@ void _parse_on_ret_expr(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
-    _expect1(tok);
-    _expect(tok, ";");
+    _expect(*tok, ";");
     ps->tok = lext(ps->ls);
     capt->hold->info.return_ = expr;
     capt->then(ps, capt->next, capt->hold);
@@ -1799,8 +1773,7 @@ void _parse_on_case_expr(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
-    _expect1(tok);
-    _expect(tok, ":");
+    _expect(*tok, ":");
     ps->tok = lext(ps->ls);
     struct stmt_label niw = {.case_= expr};
     if (!capt->hold->labels) capt->hold->labels = &niw;
@@ -1815,7 +1788,6 @@ void _parse_on_stmt_expr(void ref usr, expression ref expr, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
-    _expect1(tok);
     ps->tok = lext(ps->ls);
     if (STMT_KIND_DECL == capt->hold->kind) {
         capt->hold->info.decl->expr = expr;
@@ -1825,7 +1797,7 @@ void _parse_on_stmt_expr(void ref usr, expression ref expr, tokt ref tok)
             return;
         }
     } else capt->hold->info.expr = expr;
-    _expect(tok, ";");
+    _expect(*tok, ";");
     capt->then(ps, capt->next, capt->hold);
 }
 
@@ -1833,7 +1805,7 @@ void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok)
 {
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
-    _expect1(tok);
+    _expect(*tok, "=", ",", ";");
     capt->hold->info.decl = &(struct stmt_decl_expr){.decl= decl};
     if ('=' == *pstokn(*tok)) {
         parse_expression(&(parse_expr_state){
@@ -1849,7 +1821,7 @@ void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok)
         notif("NIY: multiple declarators in statement");
         return;
     }
-    _expect(tok, ";");
+    _expect(*tok, ";");
     ps->tok = lext(ps->ls);
     capt->then(ps, capt->next, capt->hold);
 }
@@ -1859,7 +1831,6 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
 {
     capt->hold = r; // yyy: capt non copy re-use thingy notice
 
-    _expect1(&ps->tok);
     char const* tok = pstokn(ps->tok);
 
     switch (*tok) {
@@ -1891,7 +1862,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
         case 'w': r->kind = STMT_KIND_WHILE;  break;
         }
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, "(");
+        _expect(ps->tok, "(");
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
                 .usr= (void*[2]){ps, capt},
@@ -1914,7 +1885,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     if (!strcmp("for", tok)) {
         r->kind = STMT_KIND_FOR;
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, "(");
+        _expect(ps->tok, "(");
         ps->tok = lext(ps->ls);
         ps->disallow_decl = false;
         _parse_stmt_top(ps, &(struct _parse_stmt_capture){
@@ -1927,7 +1898,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     if (!strcmp("break", tok)) {
         r->kind = STMT_KIND_BREAK;
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, ";");
+        _expect(ps->tok, ";");
         ps->tok = lext(ps->ls);
         capt->then(ps, capt->next, r);
         return;
@@ -1936,7 +1907,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     if (!strcmp("continue", tok)) {
         r->kind = STMT_KIND_CONTINUE;
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, ";");
+        _expect(ps->tok, ";");
         ps->tok = lext(ps->ls);
         capt->then(ps, capt->next, r);
         return;
@@ -1957,9 +1928,9 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     if (!strcmp("goto", tok)) {
         r->kind = STMT_KIND_GOTO;
         ps->tok = lext(ps->ls);
-        _expectid(&ps->tok);
+        _expectid(ps->tok);
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, ";");
+        _expect(ps->tok, ";");
         ps->tok = lext(ps->ls);
         capt->then(ps, capt->next, r);
         return;
@@ -1975,7 +1946,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
             return;
         }
         tokt const ntok = lext(ps->ls);
-        if (!strcmp("default", tok)) { _expect(&ntok, ":"); }
+        if (!strcmp("default", tok)) { _expect(ntok, ":"); }
         if (':' == *pstokn(ntok)) {
             struct stmt_label niw = {.name= ps->tok};
             if (!r->labels) r->labels = &niw;
@@ -2073,10 +2044,8 @@ void _parse_stmt_forinit(parse_stmt_state ref ps, struct _parse_stmt_capture ref
 
     capt->hold->info.for_.init = stmt;
 
-    _expect1(&ps->tok);
     if (';' == *pstokn(ps->tok)) {
         ps->tok = lext(ps->ls);
-        _expect1(&ps->tok);
         if (')' == *pstokn(ps->tok)) {
             ps->tok = lext(ps->ls);
 
@@ -2126,9 +2095,9 @@ void _parse_stmt_attach_body(parse_stmt_state ref ps, struct _parse_stmt_capture
     capt->hold->info.while_.body = stmt;
 
     if (STMT_KIND_DOWHILE == capt->hold->kind) {
-        _expect(&ps->tok, "while");
+        _expect(ps->tok, "while");
         ps->tok = lext(ps->ls);
-        _expect(&ps->tok, "(");
+        _expect(ps->tok, "(");
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
                 .usr= (void*[2]){ps, capt},
@@ -2149,12 +2118,14 @@ void _parse_stmt_exit(parse_stmt_state ref ps, struct _parse_stmt_capture ref _,
 
 tokt parse_statement(parse_stmt_state ref ps, tokt const tok)
 {
+    _expect1(tok) tok;
     ps->tok = tok;
     _parse_stmt_top(ps, &(struct _parse_stmt_capture){.then= _parse_stmt_exit}, &(statement){0});
     return ps->tok;
 }
 // }}}
 
+#undef _butgot
 #undef _expectid
 #undef _expect
 #undef _expect1

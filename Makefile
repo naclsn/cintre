@@ -27,7 +27,7 @@ test-%:; test/run test/$* check && printf '\x1b[32m$@ success\x1b[m\n' || printf
 testup-%:; test/run test/$* update
 cover-%:; test/run test/$* cover
 test: $(addprefix test-,$(tests))
-testup: $(addprefix testup-,$(tests))
+#testup: $(addprefix testup-,$(tests))
 cover: $(addprefix cover-,$(tests))
 
 $(build)/coverage.html: clean cover; gcovr -f cintre --html $@

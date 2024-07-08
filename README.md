@@ -72,11 +72,9 @@ Assumes platform is:
 - handle bitfields in runtime types
 
 ### opti/cleanup
-- expect1
-- print\_expr/cxpr
-- better print\_cxpr (would be print\_expr)
+- better print\_expr
 - maybe reverse the sp and vsp to have sane zero init (// xxx: sizeof stack)
-- (limit avoidable capture-copying)
+- limit avoidable capture-copying
 - go through tokn(...) to reduce expansion in favor of locals
 - more coverage
 - pr: "ptr tail" in `emit_forward` => is a hack on fun/arr declarator, so do it proper

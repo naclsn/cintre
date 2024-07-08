@@ -24,9 +24,8 @@
 #include "runner.h"
 
 void print_decl(FILE ref strm, struct lex_state cref ls, declaration cref decl);
-// TODO: phase out print_expr or rename it, so the current print_cxpr can be renamed print_expr
-void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr, unsigned const depth);
-void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr);
+void print_tree(FILE ref strm, struct lex_state cref ls, expression cref expr, unsigned const depth);
+void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr);
 void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, bytecode const code);
@@ -61,7 +60,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
             fprintf(strm, " {");
             for (struct decl_type_field const* it = ty->info.comp.first; it; it = it->next) {
                 print_decl(strm, ls, it->decl);
-                if (it->bitw) fprintf(strm, " :"), print_cxpr(strm, ls, it->bitw);
+                if (it->bitw) fprintf(strm, " :"), print_expr(strm, ls, it->bitw);
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -75,7 +74,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
             fprintf(strm, " {");
             for (struct decl_type_enumer const* it = ty->info.enu.first; it; it = it->next) {
                 fprintf(strm, "%s", tokn(it->name));
-                if (it->expr) fprintf(strm, "= "), print_cxpr(strm, ls, it->expr);
+                if (it->expr) fprintf(strm, "= "), print_expr(strm, ls, it->expr);
                 if (it->next) fprintf(strm, ", ");
             }
             fprintf(strm, "}");
@@ -105,7 +104,7 @@ void _print_decl_type(FILE ref strm, lex_state cref ls, struct decl_type cref ty
         fprintf(strm, "\x1b[34marr\x1b[m[");
         if (ty->info.arr.is_static) fprintf(strm, "\x1b[36mstatic\x1b[m ");
         if (!ty->info.arr.count) fprintf(strm, "*");
-        else print_cxpr(strm, ls, ty->info.arr.count);
+        else print_expr(strm, ls, ty->info.arr.count);
         fprintf(strm, ", ");
         _print_decl_type(strm, ls, &ty->info.arr.item->type);
         fprintf(strm, "]");
@@ -128,7 +127,7 @@ void print_decl(FILE ref strm, lex_state cref ls, declaration cref decl)
     _print_decl_type(strm, ls, &decl->type);
 }
 
-void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned const depth)
+void print_tree(FILE ref strm, lex_state cref ls, expression cref expr, unsigned const depth)
 {
     static char cref op_kind_names[] = {"ATOM", "COMPLIT", "BINOP_SUBSCR", "BINOP_CALL", "BINOP_TERNCOND", "BINOP_TERNBRANCH", "BINOP_COMMA", "BINOP_ASGN", "BINOP_ASGN_BOR", "BINOP_ASGN_BXOR", "BINOP_ASGN_BAND", "BINOP_ASGN_BSHL", "BINOP_ASGN_BSHR", "BINOP_ASGN_SUB", "BINOP_ASGN_ADD", "BINOP_ASGN_REM", "BINOP_ASGN_DIV", "BINOP_ASGN_MUL", "BINOP_LOR", "BINOP_LAND", "BINOP_BOR", "BINOP_BXOR", "BINOP_BAND", "BINOP_EQ", "BINOP_NE", "BINOP_LT", "BINOP_GT", "BINOP_LE", "BINOP_GE", "BINOP_BSHL", "BINOP_BSHR", "BINOP_SUB", "BINOP_ADD", "BINOP_REM", "BINOP_DIV", "BINOP_MUL", "UNOP_ADDR", "UNOP_DEREF", "UNOP_CAST", "UNOP_BNOT", "UNOP_LNOT", "UNOP_MINUS", "UNOP_PLUS", "UNOP_PRE_DEC", "UNOP_PRE_INC", "UNOP_PMEMBER", "UNOP_MEMBER", "UNOP_POST_DEC", "UNOP_POST_INC"};
     for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
@@ -161,13 +160,14 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
                 }
                 if (de->is_subscript) {
                     fprintf(strm, "[");
-                    print_cxpr(strm, ls, de->info.subscript);
+                    // feels ironic..
+                    print_expr(strm, ls, de->info.subscript);
                     fprintf(strm, "]");
                     continue;
                 }
             } else fprintf(strm, "(no desig)");
             fprintf(strm, "\n");
-            print_expr(strm, ls, en->value, depth+2);
+            print_tree(strm, ls, en->value, depth+2);
         }
         break;
 
@@ -175,12 +175,12 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
         for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
         _print_decl_type(strm, ls, expr->info.cast.type);
         fprintf(strm, "\n");
-        print_expr(strm, ls, expr->info.cast.opr, depth+1);
+        print_tree(strm, ls, expr->info.cast.opr, depth+1);
         break;
 
     case EXPR_UNOP_MEMBER:
     case EXPR_UNOP_PMEMBER:
-        print_expr(strm, ls, expr->info.member.base, depth+1);
+        print_tree(strm, ls, expr->info.member.base, depth+1);
         for (unsigned k = 0; k < depth+1; k++) fprintf(strm, "|  ");
         fprintf(strm, "%s%s\n", EXPR_UNOP_MEMBER == expr->kind ? "." : "->", tokn(expr->info.member.name));
         break;
@@ -190,33 +190,33 @@ void print_expr(FILE ref strm, lex_state cref ls, expression cref expr, unsigned
     case EXPR_UNOP_MINUS:    case EXPR_UNOP_PLUS:
     case EXPR_UNOP_PRE_DEC:  case EXPR_UNOP_PRE_INC:
     case EXPR_UNOP_POST_DEC: case EXPR_UNOP_POST_INC:
-        print_expr(strm, ls, expr->info.unary.opr, depth+1);
+        print_tree(strm, ls, expr->info.unary.opr, depth+1);
         break;
 
     case EXPR_BINOP_CALL:
-        print_expr(strm, ls, expr->info.call.base, depth+1);
+        print_tree(strm, ls, expr->info.call.base, depth+1);
         size_t count = 0;
         for (struct expr_call_arg const* it = expr->info.call.first; it; it = it->next)
             count++;
         for (unsigned k = 0; k < depth; k++) fprintf(strm, "|  ");
         fprintf(strm, "|  \x1b[32m(%zu)\x1b[m\n", count);
         for (struct expr_call_arg const* it = expr->info.call.first; it; it = it->next)
-            print_expr(strm, ls, it->expr, depth+2);
+            print_tree(strm, ls, it->expr, depth+2);
         break;
 
     case EXPR_BINOP_SUBSCR:
-        print_expr(strm, ls, expr->info.subscr.base, depth+1);
-        print_expr(strm, ls, expr->info.subscr.off, depth+1);
+        print_tree(strm, ls, expr->info.subscr.base, depth+1);
+        print_tree(strm, ls, expr->info.subscr.off, depth+1);
         break;
 
     default: // (33 cases ><'')
-        print_expr(strm, ls, expr->info.binary.lhs, depth+1);
-        print_expr(strm, ls, expr->info.binary.rhs, depth+1);
+        print_tree(strm, ls, expr->info.binary.lhs, depth+1);
+        print_tree(strm, ls, expr->info.binary.rhs, depth+1);
         break;
     }
 }
 
-void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
+void print_expr(FILE ref strm, struct lex_state cref ls, expression cref expr)
 {
     fprintf(strm, "("); // xxx: needs to not if complit
     switch (expr->kind) {
@@ -240,30 +240,30 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
                     }
                     if (de->is_subscript) {
                         fprintf(strm, "[");
-                        print_cxpr(strm, ls, de->info.subscript);
+                        print_expr(strm, ls, de->info.subscript);
                         fprintf(strm, "]");
                         continue;
                     }
                 }
                 fprintf(strm, "= ");
             }
-            print_cxpr(strm, ls, en->value);
+            print_expr(strm, ls, en->value);
         }
         fprintf(strm, "}");
         break;
 
     case EXPR_BINOP_SUBSCR:
-        print_cxpr(strm, ls, expr->info.subscr.base);
+        print_expr(strm, ls, expr->info.subscr.base);
         fprintf(strm, "[");
-        print_cxpr(strm, ls, expr->info.subscr.off);
+        print_expr(strm, ls, expr->info.subscr.off);
         fprintf(strm, "]");
         break;
 
     case EXPR_BINOP_CALL:
-        print_cxpr(strm, ls, expr->info.call.base);
+        print_expr(strm, ls, expr->info.call.base);
         fprintf(strm, "(");
         for (struct expr_call_arg* it = expr->info.call.first; it; it = it->next) {
-            print_cxpr(strm, ls, it->expr);
+            print_expr(strm, ls, it->expr);
             if (it->next) fprintf(strm, ", ");
         }
         fprintf(strm, ")");
@@ -273,11 +273,11 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         fprintf(strm, "0");
         break;
     case EXPR_BINOP_TERNCOND:
-        print_cxpr(strm, ls, expr->info.binary.lhs); // condition
+        print_expr(strm, ls, expr->info.binary.lhs); // condition
         fprintf(strm, " ? ");
-        print_cxpr(strm, ls, expr->info.binary.rhs->info.binary.lhs); // consequence
+        print_expr(strm, ls, expr->info.binary.rhs->info.binary.lhs); // consequence
         fprintf(strm, " : ");
-        print_cxpr(strm, ls, expr->info.binary.rhs->info.binary.rhs); // alternative
+        print_expr(strm, ls, expr->info.binary.rhs->info.binary.rhs); // alternative
         break;
 
         char const* binop;
@@ -312,9 +312,9 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
     case EXPR_BINOP_DIV:       binop = "/";    goto binop;
     case EXPR_BINOP_MUL:       binop = "*";    goto binop;
     binop:
-        print_cxpr(strm, ls, expr->info.binary.lhs);
+        print_expr(strm, ls, expr->info.binary.lhs);
         fprintf(strm, "%s", binop);
-        print_cxpr(strm, ls, expr->info.binary.rhs);
+        print_expr(strm, ls, expr->info.binary.rhs);
         break;
 
     case EXPR_UNOP_CAST:
@@ -322,7 +322,7 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
         // FIXME: this is wrong btw
         _print_decl_type(strm, ls, expr->info.cast.type);
         fprintf(strm, ")");
-        print_cxpr(strm, ls, expr->info.cast.opr);
+        print_expr(strm, ls, expr->info.cast.opr);
         break;
 
         char const* unop;
@@ -336,24 +336,24 @@ void print_cxpr(FILE ref strm, struct lex_state cref ls, expression cref expr)
     case EXPR_UNOP_PRE_INC: unop = "++"; goto unop;
     unop:
         fprintf(strm, "%s", unop);
-        print_cxpr(strm, ls, expr->info.unary.opr);
+        print_expr(strm, ls, expr->info.unary.opr);
         break;
 
     case EXPR_UNOP_POST_DEC:
-        print_cxpr(strm, ls, expr->info.unary.opr);
+        print_expr(strm, ls, expr->info.unary.opr);
         fprintf(strm, "--");
         break;
     case EXPR_UNOP_POST_INC:
-        print_cxpr(strm, ls, expr->info.unary.opr);
+        print_expr(strm, ls, expr->info.unary.opr);
         fprintf(strm, "++");
         break;
 
     case EXPR_UNOP_PMEMBER:
-        print_cxpr(strm, ls, expr->info.member.base);
+        print_expr(strm, ls, expr->info.member.base);
         fprintf(strm, "->%s", tokn(expr->info.member.name));
         break;
     case EXPR_UNOP_MEMBER:
-        print_cxpr(strm, ls, expr->info.member.base);
+        print_expr(strm, ls, expr->info.member.base);
         fprintf(strm, ".%s", tokn(expr->info.member.name));
         break;
     }
@@ -365,7 +365,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
     for (struct stmt_label const* curr = stmt->labels; curr; curr = curr->next) {
         if (curr->case_) {
             fprintf(strm, "\x1b[36mcase\x1b[m ");
-            print_cxpr(strm, ls, curr->case_);
+            print_expr(strm, ls, curr->case_);
             fprintf(strm, ":\n");
         } else fprintf(strm, "\x1b[36m%s\x1b[m:\n", ls->tokens.ptr+curr->name);
     }
@@ -389,7 +389,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
 
     case STMT_KIND_EXPR:
         fprintf(strm, "%*s", depth*4, "");
-        print_cxpr(strm, ls, stmt->info.expr);
+        print_expr(strm, ls, stmt->info.expr);
         fprintf(strm, ";\n");
         break;
 
@@ -398,14 +398,14 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         print_decl(strm, ls, stmt->info.decl->decl);
         if (stmt->info.decl->expr) {
             fprintf(strm, " = ");
-            print_cxpr(strm, ls, stmt->info.decl->expr);
+            print_expr(strm, ls, stmt->info.decl->expr);
         }
         fprintf(strm, ";\n");
         break;
 
     case STMT_KIND_IF:
         fprintf(strm, "%*s\x1b[34mif\x1b[m (", depth*4, "");
-        print_cxpr(strm, ls, stmt->info.if_.ctrl);
+        print_expr(strm, ls, stmt->info.if_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.if_.body, depth+1);
         if (stmt->info.if_.else_) {
@@ -416,14 +416,14 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
 
     case STMT_KIND_SWITCH:
         fprintf(strm, "%*s\x1b[34mswitch\x1b[m (", depth*4, "");
-        print_cxpr(strm, ls, stmt->info.switch_.ctrl);
+        print_expr(strm, ls, stmt->info.switch_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.switch_.body, depth+1);
         break;
 
     case STMT_KIND_WHILE:
         fprintf(strm, "%*s\x1b[34mwhile\x1b[m (", depth*4, "");
-        print_cxpr(strm, ls, stmt->info.while_.ctrl);
+        print_expr(strm, ls, stmt->info.while_.ctrl);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.while_.body, depth+1);
         break;
@@ -432,7 +432,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         fprintf(strm, "%*s\x1b[34mdo\x1b[m\n", depth*4, "");
         print_stmt(strm, ls, stmt->info.dowhile.body, depth+1);
         fprintf(strm, "%*s\x1b[34mwhile\x1b[m (", depth*4, "");
-        print_cxpr(strm, ls, stmt->info.dowhile.ctrl);
+        print_expr(strm, ls, stmt->info.dowhile.ctrl);
         fprintf(strm, ");\n");
         break;
 
@@ -440,13 +440,13 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         fprintf(strm, "%*s\x1b[34mfor\x1b[m (", depth*4, "");
         switch (stmt->info.for_.init->kind) {
         case STMT_KIND_EXPR:
-            print_cxpr(strm, ls, stmt->info.for_.init->info.expr);
+            print_expr(strm, ls, stmt->info.for_.init->info.expr);
             break;
         case STMT_KIND_DECL:
             print_decl(strm, ls, stmt->info.for_.init->info.decl->decl);
             if (stmt->info.for_.init->info.decl->expr) {
                 fprintf(strm, " = ");
-                print_cxpr(strm, ls, stmt->info.for_.init->info.decl->expr);
+                print_expr(strm, ls, stmt->info.for_.init->info.decl->expr);
             }
             break;
         case STMT_KIND_EMPTY:
@@ -463,8 +463,8 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         case STMT_KIND_RETURN:   fprintf(strm, "\x1b[31m/*STMT_KIND_RETURN*/\x1b[m");   break;
         case STMT_KIND_GOTO:     fprintf(strm, "\x1b[31m/*STMT_KIND_GOTO*/\x1b[m");     break;
         }
-        fprintf(strm, ";"); if (stmt->info.for_.ctrl) fprintf(strm, " "), print_cxpr(strm, ls, stmt->info.for_.ctrl);
-        fprintf(strm, ";"); if (stmt->info.for_.iter) fprintf(strm, " "), print_cxpr(strm, ls, stmt->info.for_.iter);
+        fprintf(strm, ";"); if (stmt->info.for_.ctrl) fprintf(strm, " "), print_expr(strm, ls, stmt->info.for_.ctrl);
+        fprintf(strm, ";"); if (stmt->info.for_.iter) fprintf(strm, " "), print_expr(strm, ls, stmt->info.for_.iter);
         fprintf(strm, ")\n");
         print_stmt(strm, ls, stmt->info.for_.body, depth+1);
         break;
@@ -481,7 +481,7 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         fprintf(strm, "%*s\x1b[34mreturn\x1b[m", depth*4, "");
         if (stmt->info.return_) {
             fprintf(strm, " ");
-            print_cxpr(strm, ls, stmt->info.return_);
+            print_expr(strm, ls, stmt->info.return_);
         }
         fprintf(strm, ";");
         break;

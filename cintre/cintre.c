@@ -784,7 +784,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
 
     if (xcmdis("ast")) {
         printf("AST of the expression:\n");
-        print_expr(stdout, &gs->lexr, expr, 0);
+        print_tree(stdout, &gs->lexr, expr, 0);
         return;
     }
 

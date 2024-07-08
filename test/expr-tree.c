@@ -3,7 +3,7 @@
 void show(void ref usr, expression ref expr, tokt ref tok)
 {
     lex_state cref ls = usr;
-    print_expr(stdout, ls, expr, 0);
+    print_tree(stdout, ls, expr, 0);
     report_lex_locate(ls, " -- tok: %s", tokn(*tok));
 }
 

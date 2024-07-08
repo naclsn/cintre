@@ -709,7 +709,7 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         return;
     }
     if (ADPT_ITEM_VALUE == it->kind) {
-        fprintf(strm, "%li", it->as.value);
+        fprintf(strm, "%lli", it->as.value);
         return;
     }
 
@@ -741,16 +741,16 @@ void print_item(FILE ref strm, struct adpt_item cref it, char cref stack, unsign
         fprintf(strm, "\x1b[m");
         break;
 
-    case ADPT_TYPE_UCHAR:  fprintf(strm, "\x1b[33m0x%02hhx\x1b[m", *(unsigned char*)p);  break;
-    case ADPT_TYPE_SCHAR:  fprintf(strm, "\x1b[33m%hhi\x1b[m",     *(signed char*)p);    break;
-    case ADPT_TYPE_SHORT:  fprintf(strm, "\x1b[33m%hi\x1b[m",      *(short*)p);          break;
-    case ADPT_TYPE_INT:    fprintf(strm, "\x1b[33m%i\x1b[m",       *(int*)p);            break;
-    case ADPT_TYPE_LONG:   fprintf(strm, "\x1b[33m%li\x1b[m",      *(long*)p);           break;
-    case ADPT_TYPE_USHORT: fprintf(strm, "\x1b[33m%hu\x1b[m",      *(unsigned short*)p); break;
-    case ADPT_TYPE_UINT:   fprintf(strm, "\x1b[33m%u\x1b[m",       *(unsigned int*)p);   break;
-    case ADPT_TYPE_ULONG:  fprintf(strm, "\x1b[33m%lu\x1b[m",      *(unsigned long*)p);  break;
-    case ADPT_TYPE_FLOAT:  fprintf(strm, "\x1b[33m%f\x1b[m",       *(float*)p);          break;
-    case ADPT_TYPE_DOUBLE: fprintf(strm, "\x1b[33m%lf\x1b[m",      *(double*)p);         break;
+    case ADPT_TYPE_UCHAR:  fprintf(strm, "\x1b[33m0x%02hhx\x1b[m", *(unsigned char*)p);      break;
+    case ADPT_TYPE_SCHAR:  fprintf(strm, "\x1b[33m%hhi\x1b[m",     *(signed char*)p);        break;
+    case ADPT_TYPE_SHORT:  fprintf(strm, "\x1b[33m%hi\x1b[m",      *(short*)p);              break;
+    case ADPT_TYPE_INT:    fprintf(strm, "\x1b[33m%i\x1b[m",       *(int*)p);                break;
+    case ADPT_TYPE_LONG:   fprintf(strm, "\x1b[33m%lli\x1b[m",     *(long long*)p);          break;
+    case ADPT_TYPE_USHORT: fprintf(strm, "\x1b[33m%hu\x1b[m",      *(unsigned short*)p);     break;
+    case ADPT_TYPE_UINT:   fprintf(strm, "\x1b[33m%u\x1b[m",       *(unsigned int*)p);       break;
+    case ADPT_TYPE_ULONG:  fprintf(strm, "\x1b[33m%llu\x1b[m",     *(unsigned long long*)p); break;
+    case ADPT_TYPE_FLOAT:  fprintf(strm, "\x1b[33m%f\x1b[m",       *(float*)p);              break;
+    case ADPT_TYPE_DOUBLE: fprintf(strm, "\x1b[33m%lf\x1b[m",      *(double*)p);             break;
 
     case ADPT_TYPE_STRUCT: fprintf(strm, "\x1b[34mstruct\x1b[m"); if (0)
     case ADPT_TYPE_UNION:  fprintf(strm, "\x1b[34munion\x1b[m");
@@ -862,10 +862,10 @@ void print_slot(FILE ref strm, struct slot cref slot)
         case ADPT_TYPE_SCHAR:  fprintf(strm, "%hhi",     slot->as.value.sc); break;
         case ADPT_TYPE_SHORT:  fprintf(strm, "%hi",      slot->as.value.ss); break;
         case ADPT_TYPE_INT:    fprintf(strm, "%i",       slot->as.value.si); break;
-        case ADPT_TYPE_LONG:   fprintf(strm, "%li",      slot->as.value.sl); break;
+        case ADPT_TYPE_LONG:   fprintf(strm, "%lli",     slot->as.value.sl); break;
         case ADPT_TYPE_USHORT: fprintf(strm, "%hu",      slot->as.value.us); break;
         case ADPT_TYPE_UINT:   fprintf(strm, "%u",       slot->as.value.ui); break;
-        case ADPT_TYPE_ULONG:  fprintf(strm, "%lu",      slot->as.value.ul); break;
+        case ADPT_TYPE_ULONG:  fprintf(strm, "%llu",     slot->as.value.ul); break;
         case ADPT_TYPE_FLOAT:  fprintf(strm, "%f",       slot->as.value.f);  break;
         case ADPT_TYPE_DOUBLE: fprintf(strm, "%lf",      slot->as.value.d);  break;
         case ADPT_TYPE_FUN:

@@ -274,7 +274,7 @@ void emit_adpt_type_val(struct decl_type cref ty, bool const in_decl, bool const
                 emitln(",");
                 emit(".params= ");
                 size_t count = 0;
-                if (-1ul == ty->info.fun.count || 0 == ty->info.fun.count) emitln("(void*)0,");
+                if (-1ull == ty->info.fun.count || 0 == ty->info.fun.count) emitln("(void*)0,");
                 else {
                     indented ("(struct adpt_fun_param[]){") for_linked (ty->info,fun) {
                         if (!curr->decl) errdie("Variadic functions are not supported");
@@ -349,7 +349,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
     case DECL_KIND_UNION:  emit("union ");
             if (*tokn(ty->name)) {
                 emit("%s", tokn(ty->name));
-                if (-1ul == ty->info.comp.count) break;
+                if (-1ull == ty->info.comp.count) break;
 
                 bool found = false;
                 find_seen (ty->name, seen.tags) { found = true; break; }
@@ -442,7 +442,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
             if (name) emit(" (*%s%s)", twice ? "*" : "", name);
             else emit(" (*%s)", twice ? "*" : "");
             emit("(");
-            if (-1ul != ty2->info.fun.count) {
+            if (-1ull != ty2->info.fun.count) {
                 if (0 == ty2->info.fun.count) emit("void");
                 else for_linked (ty2->info,fun) {
                     if (!curr->decl) errdie("Variadic functions are not supported");
@@ -475,7 +475,7 @@ void emit_forward(struct decl_type cref ty, char cref name, bool const in_cast)
         emit_forward(&ty->info.fun.ret->type, NULL, in_cast);
         if (name) emit(" %s", name);
         emit("(");
-        if (-1ul != ty->info.fun.count) {
+        if (-1ull != ty->info.fun.count) {
             if (0 == ty->info.fun.count) emit("void");
             else for_linked (ty->info,fun) {
                 if (!curr->decl) errdie("Variadic functions are not supported");
@@ -533,7 +533,7 @@ void emit_named_comps_adpt_type_def(struct decl_type cref ty)
 
     case DECL_KIND_STRUCT:
     case DECL_KIND_UNION:
-        if (-1ul == ty->info.comp.count)
+        if (-1ull == ty->info.comp.count)
     case DECL_KIND_NOTAG:
             return;
     }
@@ -903,10 +903,10 @@ int do_merge(int argc, char** argv)
         emit_empty();
 
         emitln("struct adpt_namespace const* const namespaces_first = &namespaces[0];");
-        emitln("unsigned long const namespaces_count = sizeof namespaces/sizeof*namespaces;");
+        emitln("size_t const namespaces_count = sizeof namespaces/sizeof*namespaces;");
     } else {
         emitln("struct adpt_namespace const* const namespaces_first = NULL;");
-        emitln("unsigned long const namespaces_count = 0;");
+        emitln("size_t const namespaces_count = 0;");
     }
 
     return EXIT_SUCCESS;

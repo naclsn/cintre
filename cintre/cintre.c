@@ -3,7 +3,7 @@
 /// it expects the two following symbols:
 /// ```c
 /// extern struct adpt_namespace cref namespaces_first;
-/// extern unsigned long const namespaces_count;
+/// extern size_t const namespaces_count;
 /// ```
 ///
 /// see `$ preparer -h`
@@ -372,7 +372,7 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
 
     case DECL_KIND_STRUCT:
     case DECL_KIND_UNION:
-        if (-1ul == ty->info.comp.count) {
+        if (-1ull == ty->info.comp.count) {
             char ref name = gstokn(ty->name);
             // xxx: lexer internal (the fact that we know we can)
             name[-1] = '@';
@@ -417,7 +417,7 @@ struct adpt_type const* _decl_to_adpt_type(cintre_state ref gs, struct decl_type
             }, sizeof*r);
 
     case DECL_KIND_FUN:
-        if (-1ul == ty->info.fun.count) return NULL;
+        if (-1ull == ty->info.fun.count) return NULL;
 
         struct adpt_type cref ret = _decl_to_adpt_type(gs, &ty->info.fun.ret->type);
         if (!ret) return NULL;
@@ -658,7 +658,7 @@ void accept_expr(void ref usr, expression ref expr, tokt ref tok)
             for (size_t k = 0; k < gs->namespaces.spaces[ns].count; k++) {
                 struct adpt_item cref it = gs->namespaces.spaces[ns].items+k;
                 switch (it->kind) {
-                case ADPT_ITEM_VALUE:   printf("   [=%li] %-8s\t", it->as.value, it->name); break;
+                case ADPT_ITEM_VALUE:   printf("   [=%lli] %-8s\t", it->as.value, it->name); break;
                 case ADPT_ITEM_OBJECT:  printf("   [%p] %-8s\t", it->as.object, it->name);  break;
                 case ADPT_ITEM_TYPEDEF: printf("   [typedef] %-8s\t", it->name);            break;
                     // unreachable case
@@ -871,7 +871,7 @@ int main(int argc, char cref* argv)
     };
     {
         extern struct adpt_namespace cref namespaces_first;
-        extern unsigned long const namespaces_count;
+        extern size_t const namespaces_count;
         _gs.namespaces.spaces = namespaces_first;
         _gs.namespaces.count = namespaces_count;
     }

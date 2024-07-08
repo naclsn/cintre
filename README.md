@@ -55,10 +55,13 @@ The `driver.Makefile` does exactly that, see `example/Makefile`.
 
 ## Bugs
 
-Assumes platform is:
-- 8 bits bytes (ie. `CHAR_BIT == 8`);
-- little endian (ie. `(char[4]){0xd6, 0xff, 0x00, 0x00} == (int)0xff2d`);
-- LP64 (ie. `sizeof(size_t) == sizeof(void*) == sizeof(long int) == 8`).
+Assumes platform:
+- has 8 bits bytes (ie. `CHAR_BIT == 8`);
+- is little endian (ie. `(char[4]){0xd6, 0xff, 0x00, 0x00} == (int)0xff2d`);
+- respects `sizeof(size_t) == sizeof(void*)` (which is "not guarenteed", but like..).
+
+It also collapses `long` and `long long` into the largest (ie. at runtime
+`sizeof(long) == sizeof(long long)` and usually `== 2*sizeof(int)`).
 
 ## (wip and such)
 

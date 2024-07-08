@@ -63,16 +63,16 @@ struct slot {
           signed char sc;
           signed short ss;
           signed int si;
-          signed long sl;
+          signed long long sl;
           unsigned char uc;
           unsigned short us;
           unsigned int ui;
-          unsigned long ul;
+          unsigned long long ul;
           float f;
           double d;
           char const* p;
           void (*fn)(char*, char**);
-          unsigned char bytes[8]; // (yyy: sizeof @This() -- assumes 64b)
+          unsigned char bytes[sizeof(double)]; // (assumes it's the largest, which it should be most of the time unless you have a >64b long long or void* ...)
       } value;
       size_t variable;
   } as;
@@ -84,6 +84,16 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 // ---
 
 #define cstokn(__at) (cs->ls->tokens.ptr+(__at))
+
+// - ILP32 (win32/unix32): size_t == unsigned int == 4B
+// - LLP64 (win64): size_t == unsigned long long == 8B
+// - LP64 (unix64): size_t == unsigned long == unsigned long long == 8B
+//
+// used in:
+// - arr/ptr subscr
+// - ptr arith
+// - pmember
+static struct adpt_type cref _offset_type = sizeof(size_t) == sizeof(unsigned int) ? &adptb_int_type : &adptb_long_type;
 
 // compile utils {{{
 #define at(__slt)  ((__slt)->loc - cs->vsp)
@@ -628,7 +638,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
         }
 
         if ('\'' == atom[0]) {
-            union { long l; char b[sizeof(long)]; } r = {0};
+            union { long long l; char b[sizeof(long long)]; } r = {0};
             lex_struqo(r.b, sizeof r.b, atom);
             slot->as.value.c = r.l; // xxx: little endian
             slot->usage = _slot_value;
@@ -649,7 +659,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                     if ('9' < atom[len-1]) slot->as.value.ul = atom[0]-'0';
                     else slot->as.value.ul = atom[len-1]-'0' + (2 == len ? (atom[len-2]-'0')*10 : 0);
                 } else {
-                    unsigned long r = 0;
+                    unsigned long long r = 0;
                     size_t k = 0;
 
                     unsigned shft = 0;
@@ -682,7 +692,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                             r+= (atom[k]-'0')*(d/= 10);
                     }
                     if (k < len && 'e' == (atom[k]|32)) {
-                        unsigned long d = atom[++k]-'0';
+                        unsigned d = atom[++k]-'0';
                         while (++k < len && 'f' != (atom[k]|32)) d = d*10 + (atom[k]-'0');
                         for (; d; d--) r*= 10;
                     }
@@ -698,7 +708,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                             r+= (strchr(dgts, atom[k]|32)-dgts)*(d/= 16);
                     }
                     if (k < len && 'p' == (atom[k]|32)) {
-                        unsigned long d = atom[++k]-'0';
+                        unsigned d = atom[++k]-'0';
                         while (++k < len && 'f' != (atom[k]|32)) d = d*2 + (atom[k]-'0');
                         for (; d; d--) r*= 2;
                     }
@@ -759,7 +769,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                     return;
                 }
 
-                struct slot off = {.ty= &adptb_long_type};
+                struct slot off = {.ty= _offset_type};
                 _alloc_slot(cs, &off);
                 _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
 
@@ -815,7 +825,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                 // add res onto base
                 // read from at base into slot over slot size
 
-                struct slot off = {.ty= &adptb_long_type};
+                struct slot off = {.ty= _offset_type};
                 _alloc_slot(cs, &off);
                 _fit_expr_to_slot(cs, expr->info.subscr.off, &off);
 
@@ -1023,7 +1033,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             struct slot lhs = *slot, rhs = {0};
 
             if (ADPT_TYPE_PTR == slot->ty->tyty) {
-                // one is a pointer(/array), the other is promoted to long and mult by sizeof item
+                // one is a pointer(/array), the other is promoted to offset_type and mult by sizeof item
                 expression const* ptr, * off;
                 struct adpt_type const* ty = _truetype(expr->info.binary.lhs->usr);
                 if (ADPT_TYPE_PTR == ty->tyty || ADPT_TYPE_ARR == ty->tyty)
@@ -1050,7 +1060,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
 
                 struct adpt_type cref item_tty = _truetype(slot->ty->info.ptr);
 
-                rhs.ty = &adptb_long_type;
+                rhs.ty = _offset_type;
                 _alloc_slot(cs, &rhs);
                 _fit_expr_to_slot(cs, off, &rhs);
                 if (_slot_value == rhs.usage) {
@@ -1129,7 +1139,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             case _slot_value    <<8| _slot_variable:
                     // lhs is value, use the [..]i form
                     val = &lhs, xhs = &rhs;
-                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
+                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is offset_type, case arith, sizes of lhs/rhs/slot all same
                         _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_arith_v(val),
                         _slot_variable == xhs->usage ? atv(xhs) : at(xhs));
@@ -1155,7 +1165,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
                     // unreachable cases
                 default:; // (15 cases ><'')
                 }
-                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is long, case arith, sizes of lhs/rhs/slot all same
+                _emit_arith(cs, op, _slot_arith_w(&rhs), // yyy: case ptr arith, is offset_type, case arith, sizes of lhs/rhs/slot all same
                         _slot_variable == slot->usage ? atv(slot) : at(slot),
                         _slot_variable == lhs.usage ? atv(&lhs) : at(&lhs),
                         _slot_variable == rhs.usage ? atv(&rhs) : at(&rhs));
@@ -1273,7 +1283,7 @@ void compile_expression(compile_state ref cs, expression cref expr, struct slot 
             // add onto base
             // read from at base into slot over slot size
 
-            _emit_arith(cs, _ops_addi, _slot_arith_w(&(struct slot){.ty= &adptb_long_type}),
+            _emit_arith(cs, _ops_addi, _slot_arith_w(&(struct slot){.ty= _offset_type}),
                     at(&base),
                     off,
                     at(&base));

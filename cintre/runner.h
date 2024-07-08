@@ -103,15 +103,15 @@ void run(run_state ref rs, bytecode const code)
         cvt(from_w<<4 | to_w | 0x4, unsigned from, unsigned to)
         extend_cvt(0, char, 1, short)
         extend_cvt(0, char, 2, int)
-        extend_cvt(0, char, 3, long)
+        extend_cvt(0, char, 3, long long)
         extend_cvt(1, short, 2, int)
-        extend_cvt(1, short, 3, long)
-        extend_cvt(2, int, 3, long)
+        extend_cvt(1, short, 3, long long)
+        extend_cvt(2, int, 3, long long)
 #       undef extend_cvt
         cvt(0x11, float, int)
-        cvt(0x22, double, long)
+        cvt(0x22, double, long long)
         cvt(0x15, int, float)
-        cvt(0x26, long, double)
+        cvt(0x26, long long, double)
         cvt(0x21, double, float)
         cvt(0x25, float, double)
 #       undef cvt
@@ -157,12 +157,12 @@ void run(run_state ref rs, bytecode const code)
                 case 0x0: dox(x, op, unsigned char)   \
                 case 0x1: dox(x, op, unsigned short)  \
                 case 0x2: dox(x, op, unsigned int)    \
-                case 0x3: dox(x, op, unsigned long)
+                case 0x3: dox(x, op, unsigned long long)
 #           define bop_b(x, op)                       \
                 case 0x4: dox(x, op, unsigned char)   \
                 case 0x5: dox(x, op, unsigned short)  \
                 case 0x6: dox(x, op, unsigned int)    \
-                case 0x7: dox(x, op, unsigned long)
+                case 0x7: dox(x, op, unsigned long long)
 #           define bop_f(x, op)                       \
                 case 0xd: dox(x, op, double)          \
                 case 0xf: dox(x, op, float)

@@ -5,20 +5,18 @@
 /// object or a function with its type. Everything is considered static and
 /// immutable, because that's how it would be in an adapter file.
 ///
-/// Once again LP64 is assumed, this matters for `sizeof(size_t) == sizeof(long) == 8`.
+/// Once again `long` and `long long` are collapsed.
 
 #ifndef CINTRE_ADAPT_H
 #define CINTRE_ADAPT_H
 
+#include <stddef.h>
 #ifndef alignof
-# ifndef offsetof
-#  include <stddef.h>
-# endif
 # define alignof(...) (offsetof(struct { char _; __VA_ARGS__ it; }, it))
 #endif
 
 static struct adpt_type {
-    unsigned long const size, align;
+    size_t const size, align;
 
     enum adpt_type_tag {
         ADPT_TYPE_VOID,
@@ -39,10 +37,10 @@ static struct adpt_type {
             struct adpt_comp_field {
                 char const* const name;
                 struct adpt_type const* const type;
-                unsigned long const offset;
+                size_t const offset;
                 // TODO: does not handle bitfields
             } const* const fields;
-            unsigned long const count;
+            size_t const count;
         } const comp; // struct and union
 
         struct adpt_fun_desc {
@@ -51,14 +49,14 @@ static struct adpt_type {
                 char const* const name;
                 struct adpt_type const* const type;
             } const* const params;
-            unsigned long const count;
+            size_t const count;
         } const fun; // fun
 
         struct adpt_type const* const ptr; // ptr
 
         struct adpt_arr_desc {
             struct adpt_type const* const item;
-            unsigned long const count;
+            size_t const count;
         } const arr; // arr
 
         struct adpt_named_desc {
@@ -68,17 +66,17 @@ static struct adpt_type {
     } const info;
 }
 const adptb_void_type = {0}
-, adptb_char_type     = {.size= sizeof(char),           .align= sizeof(char),           .tyty= ADPT_TYPE_CHAR  }
-, adptb_uchar_type    = {.size= sizeof(unsigned char),  .align= sizeof(unsigned char),  .tyty= ADPT_TYPE_UCHAR }
-, adptb_schar_type    = {.size= sizeof(signed char),    .align= sizeof(signed char),    .tyty= ADPT_TYPE_SCHAR }
-, adptb_short_type    = {.size= sizeof(short),          .align= sizeof(short),          .tyty= ADPT_TYPE_SHORT }
-, adptb_int_type      = {.size= sizeof(int),            .align= sizeof(int),            .tyty= ADPT_TYPE_INT   }
-, adptb_long_type     = {.size= sizeof(long),           .align= sizeof(long),           .tyty= ADPT_TYPE_LONG  }
-, adptb_ushort_type   = {.size= sizeof(unsigned short), .align= sizeof(unsigned short), .tyty= ADPT_TYPE_USHORT}
-, adptb_uint_type     = {.size= sizeof(unsigned int),   .align= sizeof(unsigned int),   .tyty= ADPT_TYPE_UINT  }
-, adptb_ulong_type    = {.size= sizeof(unsigned long),  .align= sizeof(unsigned long),  .tyty= ADPT_TYPE_ULONG }
-, adptb_float_type    = {.size= sizeof(float),          .align= sizeof(float),          .tyty= ADPT_TYPE_FLOAT }
-, adptb_double_type   = {.size= sizeof(double),         .align= sizeof(double),         .tyty= ADPT_TYPE_DOUBLE}
+, adptb_char_type     = {.size= sizeof(char),               .align= sizeof(char),               .tyty= ADPT_TYPE_CHAR  }
+, adptb_uchar_type    = {.size= sizeof(unsigned char),      .align= sizeof(unsigned char),      .tyty= ADPT_TYPE_UCHAR }
+, adptb_schar_type    = {.size= sizeof(signed char),        .align= sizeof(signed char),        .tyty= ADPT_TYPE_SCHAR }
+, adptb_short_type    = {.size= sizeof(short),              .align= sizeof(short),              .tyty= ADPT_TYPE_SHORT }
+, adptb_int_type      = {.size= sizeof(int),                .align= sizeof(int),                .tyty= ADPT_TYPE_INT   }
+, adptb_long_type     = {.size= sizeof(long long),          .align= sizeof(long long),          .tyty= ADPT_TYPE_LONG  }
+, adptb_ushort_type   = {.size= sizeof(unsigned short),     .align= sizeof(unsigned short),     .tyty= ADPT_TYPE_USHORT}
+, adptb_uint_type     = {.size= sizeof(unsigned int),       .align= sizeof(unsigned int),       .tyty= ADPT_TYPE_UINT  }
+, adptb_ulong_type    = {.size= sizeof(unsigned long long), .align= sizeof(unsigned long long), .tyty= ADPT_TYPE_ULONG }
+, adptb_float_type    = {.size= sizeof(float),              .align= sizeof(float),              .tyty= ADPT_TYPE_FLOAT }
+, adptb_double_type   = {.size= sizeof(double),             .align= sizeof(double),             .tyty= ADPT_TYPE_DOUBLE}
 ;
 
 static inline struct adpt_type const* _truetype(struct adpt_type const* ty)
@@ -102,16 +100,16 @@ struct adpt_item {
         ADPT_ITEM_VARIABLE, // runtime stack variable
     } kind;
     union {
-        long const value; // int is enough, but to be safer
+        long long const value;
         void* const object;
         void (* const function)(char*, char**);
-        unsigned long const variable;
+        size_t const variable;
     } as;
 };
 
 struct adpt_namespace {
     char const* const name;
-    unsigned long const count;
+    size_t const count;
     struct adpt_item const* const items;
 };
 

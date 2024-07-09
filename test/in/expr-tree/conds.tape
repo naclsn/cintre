@@ -56,3 +56,11 @@
 |  |  |  |  |  |  [36m"tree"[m
 |  |  |  |  |  |  [36m"sun"[m
 [1m[test/in/expr-tree/conds:6][m 1 ? "one" : 2 ? "two" : 3 ? "tree" : "sun"; [1m##[m  -- tok: ;
+[34mBINOP_ASGN[m
+|  [0ma[m
+|  [34mBINOP_TERNCOND[m
+|  |  [33m1[m
+|  |  [34mBINOP_TERNBRANCH[m
+|  |  |  [33m2[m
+|  |  |  [33m3[m
+[1m[test/in/expr-tree/conds:7][m a = 1 ? 2 : 3; [1m##[m  -- tok: ;

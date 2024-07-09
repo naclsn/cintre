@@ -12,7 +12,7 @@
 [1m[test/in/expr-tree/complit:2][m (int){0}; [1m##[m  -- tok: ;
 [34mCOMPLIT[m
 |  [32mabc[m
-|  .a[(0)].b.c[(-(1))]
+|  .a[0].b.c[-1]
 |  |  [34mBINOP_COMMA[m
 |  |  |  [33m17[m
 |  |  |  [33m5[m

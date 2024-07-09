@@ -4,3 +4,4 @@ a ? (b, c) : (d, e);
 a ? b, c : d;
 a ? b, c : d, e;
 1 ? "one" : 2 ? "two" : 3 ? "tree" : "sun";
+a = 1 ? 2 : 3;

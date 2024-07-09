@@ -144,3 +144,12 @@
 [34mUNOP_MINUS[m
 |  [0ma[m
 [1m[test/in/expr-tree/simple:30][m -(a); [1m##[m  -- tok: ;
+[34mUNOP_DEREF[m
+|  [34mUNOP_POST_INC[m
+|  |  [0ma[m
+[1m[test/in/expr-tree/simple:31][m *a++; [1m##[m  -- tok: ;
+[34mUNOP_PRE_INC[m
+|  [34mBINOP_CALL[m
+|  |  [0ma[m
+|  |  [32m(0)[m
+[1m[test/in/expr-tree/simple:32][m ++a(); [1m##[m  -- tok: ;

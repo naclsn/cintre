@@ -66,6 +66,7 @@ It also collapses `long` and `long long` into the largest (ie. at runtime
 ## (wip and such)
 
 ### breaking
+- fix precedence in `a = 1 ? 2 : 3`
 - pr: bitfields here and there
 - pr: array size/align
 
@@ -75,7 +76,6 @@ It also collapses `long` and `long long` into the largest (ie. at runtime
 - handle bitfields in runtime types
 
 ### opti/cleanup
-- better print\_expr
 - maybe reverse the sp and vsp to have sane zero init (// xxx: sizeof stack)
 - limit avoidable capture-copying
 - go through tokn(...) to reduce expansion in favor of locals

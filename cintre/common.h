@@ -88,7 +88,7 @@ struct run_state;
 
 void print_decl(FILE ref strm, struct lex_state cref ls, struct declaration cref decl);
 void print_tree(FILE ref strm, struct lex_state cref ls, struct expression cref expr, unsigned const depth);
-void print_expr(FILE ref strm, struct lex_state cref ls, struct expression cref expr);
+void print_expr(FILE ref strm, struct lex_state cref ls, struct expression cref expr, bool const protect_comma);
 void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref stmt, unsigned const depth);
 void print_type(FILE ref strm, struct adpt_type cref ty, bool const top);
 void print_code(FILE ref strm, struct bytecode const code);

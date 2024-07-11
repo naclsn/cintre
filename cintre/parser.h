@@ -288,11 +288,10 @@ typedef struct statement {
 
         struct expression* expr;
 
-        // TODO: needs to be changed to a linked list too
-        //       (because can have multiple declarators)
         struct stmt_decl_expr {
             struct declaration const* decl;
             struct expression* expr; // NULL if not given
+            struct stmt_decl_expr* next;
         }* decl;
 
         // (/!\\ the if/switch/while/dowhile/for have to keep the same layout
@@ -344,7 +343,7 @@ typedef struct parse_stmt_state {
     // declaration not allowed in:
     // - a body (must be in a compound statement)
     // - a label's statement (usually an empty statement is used)
-    bool disallow_decl; // TODO: use
+    bool disallow_decl;
 } parse_stmt_state;
 
 tokt parse_statement(parse_stmt_state ref ps, tokt const tok);
@@ -1789,14 +1788,29 @@ void _parse_on_stmt_expr(void ref usr, expression ref expr, tokt ref tok)
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
     ps->tok = lext(ps->ls);
+
     if (STMT_KIND_DECL == capt->hold->kind) {
         capt->hold->info.decl->expr = expr;
+        for (struct stmt_decl_expr* curr = capt->hold->info.decl; curr; curr = curr->next) if (!curr->next) {
+            curr->expr = expr;
+            break;
+        }
+
         if (',' == *pstokn(*tok)) {
-            // TODO
-            notif("NIY: multiple declarators in statement");
+            void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok);
+            declaration copy = *capt->hold->info.decl->decl;
+            parse_declaration(&(parse_decl_state){
+                    .ls= ps->ls,
+                    .usr= (void*[2]){ps, capt},
+                    .on= _parse_on_stmt_decl,
+                    .base= &copy,
+                }, lext(ps->ls));
             return;
         }
-    } else capt->hold->info.expr = expr;
+    }
+
+    else capt->hold->info.expr = expr;
+
     _expect(*tok, ";");
     capt->then(ps, capt->next, capt->hold);
 }
@@ -1806,7 +1820,14 @@ void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok)
     void ref ref ps_capt = usr;
     parse_stmt_state ref ps = ps_capt[0]; struct _parse_stmt_capture ref capt = ps_capt[1];
     _expect(*tok, "=", ",", ";");
-    capt->hold->info.decl = &(struct stmt_decl_expr){.decl= decl};
+
+    struct stmt_decl_expr niw = {.decl= decl};
+    if (!capt->hold->info.decl) capt->hold->info.decl = &niw;
+    else for (struct stmt_decl_expr* curr = capt->hold->info.decl; curr; curr = curr->next) if (!curr->next) {
+        curr->next = &niw;
+        break;
+    }
+
     if ('=' == *pstokn(*tok)) {
         parse_expression(&(parse_expr_state){
                 .ls= ps->ls,
@@ -1816,11 +1837,18 @@ void _parse_on_stmt_decl(void ref usr, declaration cref decl, tokt ref tok)
             }, lext(ps->ls));
         return;
     }
+
     if (',' == *pstokn(*tok)) {
-        // TODO
-        notif("NIY: multiple declarators in statement");
+        declaration copy = *decl;
+        parse_declaration(&(parse_decl_state){
+                .ls= ps->ls,
+                .usr= (void*[2]){ps, capt},
+                .on= _parse_on_stmt_decl,
+                .base= &copy,
+            }, lext(ps->ls));
         return;
     }
+
     _expect(*tok, ";");
     ps->tok = lext(ps->ls);
     capt->then(ps, capt->next, capt->hold);
@@ -1831,7 +1859,7 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
 {
     capt->hold = r; // yyy: capt non copy re-use thingy notice
 
-    char const* tok = pstokn(ps->tok);
+    char cref tok = pstokn(ps->tok);
 
     switch (*tok) {
     case ';':
@@ -1963,7 +1991,8 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
     }
 
     if (!ps->disallow_decl && !r->labels) {
-        if (isidstart(*tok) && (
+        if (isidstart(*tok)) {
+            bool const kw =
                 !strcmp("char",     tok) ||
                 !strcmp("short",    tok) ||
                 !strcmp("int",      tok) ||
@@ -1977,28 +2006,33 @@ void _parse_stmt_top(parse_stmt_state ref ps, struct _parse_stmt_capture ref cap
                 !strcmp("union",    tok) ||
                 !strcmp("enum",     tok) ||
                 !strcmp("typedef",  tok) ||
-                !strcmp("static",  tok)  ||
-                !strcmp("extern",  tok)  ||
-                !strcmp("const",    tok) )) {
-            r->kind = STMT_KIND_DECL;
-            parse_declaration(&(parse_decl_state){
-                    .ls= ps->ls,
-                    .usr= (void*[2]){ps, capt},
-                    .on= _parse_on_stmt_decl,
-                }, ps->tok);
-            return;
+                !strcmp("static",   tok) ||
+                !strcmp("extern",   tok) ||
+                !strcmp("const",    tok);
+
+            bool likely_decl = kw;
+            if (!kw) {
+                tokt next_at = lext(ps->ls);
+                char cref next = pstokn(next_at);
+                // XXX: some other cases might be declarations that looks too much like expression..
+                // this catches cases like:
+                // - `type_t* a`, with the assumption that a mult in this possition doesn't make sense
+                // - `type_t const` (tho post `const` is maybe rare or unnatural to some)
+                // sadly there is not much else that can be done without knowing the kind of ident `tok`
+                likely_decl = '*' == *next || isidstart(*next);
+                lex_rewind(ps->ls, 1);
+            }
+
+            if (likely_decl) {
+                r->kind = STMT_KIND_DECL;
+                parse_declaration(&(parse_decl_state){
+                        .ls= ps->ls,
+                        .usr= (void*[2]){ps, capt},
+                        .on= _parse_on_stmt_decl,
+                    }, ps->tok);
+                return;
+            }
         }
-        // TODO: some other cases that can be identified:
-        // - ident const
-        // - ident**
-        // - ident* (
-        // - actually, will simply consider ident* to be a declaration
-        // - ident (*
-        // - ident ident
-        // so that is:
-        // - ident ident
-        // - ident*
-        // - ident (*
     }
 
     r->kind = STMT_KIND_EXPR;

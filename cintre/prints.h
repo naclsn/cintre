@@ -406,13 +406,15 @@ void print_stmt(FILE ref strm, struct lex_state cref ls, struct statement cref s
         break;
 
     case STMT_KIND_DECL:
-        fprintf(strm, "%*s", depth*4, "");
-        print_decl(strm, ls, stmt->info.decl->decl);
-        if (stmt->info.decl->expr) {
-            fprintf(strm, " = ");
-            print_expr(strm, ls, stmt->info.decl->expr, true);
+        for (struct stmt_decl_expr const* curr = stmt->info.decl; curr; curr = curr->next) {
+            fprintf(strm, "%*s", depth*4, "");
+            print_decl(strm, ls, curr->decl);
+            if (curr->expr) {
+                fprintf(strm, " = ");
+                print_expr(strm, ls, curr->expr, true);
+            }
+            fprintf(strm, ";\n");
         }
-        fprintf(strm, ";\n");
         break;
 
     case STMT_KIND_IF:

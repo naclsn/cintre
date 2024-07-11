@@ -5,4 +5,5 @@
 {;{};}
 char a;
 int b = 0;
-//float x, y; // TODO
+float x, y;
+char a = 'b', c = 'd', e = b+d;

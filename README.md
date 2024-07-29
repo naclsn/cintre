@@ -79,10 +79,12 @@ It also collapses `long` and `long long` into the largest (ie. at runtime
 - maybe reverse the sp and vsp to have sane zero init (// xxx: sizeof stack)
 - limit avoidable capture-copying
 - go through tokn(...) to reduce expansion in favor of locals
+- something in using cstream to lex and rewind makes `lskdjlksj` go to the stmt decl route as if 2 idents in a row
 - more coverage
 - pr: "ptr tail" in `emit_forward` => is a hack on fun/arr declarator, so do it proper
 - pr: is getting weird again (eg. `emit_forward` for ptr to x, `emit_adpt_type_val` for param[n], size/align situation for arrays, ..)
 - n -> logn ns search
+- (i386, core linux, qemu, tcc.tcz) `tcc: error: undefined symbol '_dso_handle'`
 
 ---
 

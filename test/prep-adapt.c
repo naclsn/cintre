@@ -25,7 +25,12 @@ void run_test(FILE* stream, char* file)
     strcpy(_ns, src+strlen("/tmp/"));
     char* const ns = name_space(_ns);
 
-    stacat(com, "${CC:-cc} " __FILE__ " -Icintre -include ", src, " -D_PREP_ADAPT_DUMP_NS=adptns_", ns, " -o ", bin, " -Wl,--unresolved-symbols=ignore-all");
+    stacat(com, "${CC:-cc} "
+            __FILE__
+            " -Icintre -include ", src,
+            " -D_PREP_ADAPT_DUMP_NS=adptns_", ns,
+            " -o ", bin,
+            " -Wl,--unresolved-symbols=ignore-all -static");
 
     if (!strcmp("cintre_test_std", ns))
         do_prepare(6, (char*[]){file, "-Pno-emit-decl", "-Pno-emit-incl", "-Pdo-follow-incl", "-o", src, NULL});

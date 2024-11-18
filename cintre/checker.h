@@ -358,6 +358,7 @@ struct adpt_type const* check_expression(compile_state ref cs, expression ref ex
         return expr->usr = (void*)found->type;
 
     case EXPR_COMPLIT:
+        // here
         notif("NIY: (checker) compound literal");
         return NULL;
 
